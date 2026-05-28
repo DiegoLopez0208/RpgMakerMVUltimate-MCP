@@ -1,0 +1,441 @@
+{
+  "commands": {
+    "0": {
+      "name": "End of Event Processing",
+      "params": []
+    },
+    "101": {
+      "name": "Show Text",
+      "params": ["faceName:string", "faceIndex:number", "background:number", "position:number"]
+    },
+    "102": {
+      "name": "Show Choices",
+      "params": ["choices:string[]", "cancelType:number", "defaultType:number?", "positionType:number?", "background:number?"]
+    },
+    "103": {
+      "name": "Input Number",
+      "params": ["variableId:number", "digits:number"]
+    },
+    "104": {
+      "name": "Select Item",
+      "params": ["variableId:number", "itemType:number"]
+    },
+    "105": {
+      "name": "Show Scrolling Text",
+      "params": ["scrollSpeed:number", "noFast:boolean"]
+    },
+    "108": {
+      "name": "Comment",
+      "params": ["text:string"]
+    },
+    "111": {
+      "name": "Conditional Branch",
+      "params": ["type:number(0=switch,1=variable,2=selfSwitch,3=timer,4=actor,5=enemy,6=character,7=gold,8=item,9=weapon,10=armor,11=button,12=script,13=vehicle)", "...additional params vary by type"]
+    },
+    "112": {
+      "name": "Loop",
+      "params": []
+    },
+    "113": {
+      "name": "Break Loop",
+      "params": []
+    },
+    "115": {
+      "name": "Exit Event Processing",
+      "params": []
+    },
+    "117": {
+      "name": "Call Common Event",
+      "params": ["commonEventId:number"]
+    },
+    "118": {
+      "name": "Label",
+      "params": ["name:string"]
+    },
+    "119": {
+      "name": "Jump to Label",
+      "params": ["name:string"]
+    },
+    "121": {
+      "name": "Control Switches",
+      "params": ["startId:number", "endId:number", "value:number(0=ON,1=OFF)"]
+    },
+    "122": {
+      "name": "Control Variables",
+      "params": ["startId:number", "endId:number", "operation:number(0=set,1=add,2=sub,3=mul,4=div,5=mod)", "operand:number(0=const,1=var,2=random,3=gamedata,4=script)", "...operandParams"]
+    },
+    "123": {
+      "name": "Control Self Switch",
+      "params": ["key:string(A/B/C/D)", "value:number(0=ON,1=OFF)"]
+    },
+    "124": {
+      "name": "Control Timer",
+      "params": ["action:number(0=start,1=stop)", "seconds:number"]
+    },
+    "125": {
+      "name": "Change Gold",
+      "params": ["operation:number(0=add,1=sub)", "operandType:number", "operand:number"]
+    },
+    "126": {
+      "name": "Change Items",
+      "params": ["itemId:number", "operation:number", "operandType:number", "operand:number", "includeEquip:boolean?"]
+    },
+    "127": {
+      "name": "Change Weapons",
+      "params": ["weaponId:number", "operation:number", "operandType:number", "operand:number", "includeEquip:boolean"]
+    },
+    "128": {
+      "name": "Change Armors",
+      "params": ["armorId:number", "operation:number", "operandType:number", "operand:number", "includeEquip:boolean"]
+    },
+    "129": {
+      "name": "Change Party Member",
+      "params": ["actorId:number", "action:number(0=add,1=remove)", "initialize:boolean"]
+    },
+    "132": {
+      "name": "Change Battle BGM",
+      "params": ["bgm:audioFile"]
+    },
+    "133": {
+      "name": "Change Victory ME",
+      "params": ["me:audioFile"]
+    },
+    "134": {
+      "name": "Change Save Access",
+      "params": ["access:number(0=disable,1=enable)"]
+    },
+    "135": {
+      "name": "Change Menu Access",
+      "params": ["access:number(0=disable,1=enable)"]
+    },
+    "136": {
+      "name": "Change Encounter Disable",
+      "params": ["access:number(0=disable,1=enable)"]
+    },
+    "137": {
+      "name": "Change Formation Access",
+      "params": ["access:number(0=disable,1=enable)"]
+    },
+    "138": {
+      "name": "Change Window Color",
+      "params": ["tone:number[]"]
+    },
+    "139": {
+      "name": "Change Defeat ME",
+      "params": ["me:audioFile"]
+    },
+    "140": {
+      "name": "Change Vehicle BGM",
+      "params": ["vehicleType:number", "bgm:audioFile"]
+    },
+    "201": {
+      "name": "Transfer Player",
+      "params": ["designation:number(0=direct,1=variables)", "mapId:number", "x:number", "y:number", "direction:number(0=retain,2=down,4=left,6=right,8=up)", "fadeType:number(0=black,1=white,2=none)"]
+    },
+    "202": {
+      "name": "Set Vehicle Location",
+      "params": ["vehicleType:number", "designation:number", "mapId:number", "x:number", "y:number"]
+    },
+    "203": {
+      "name": "Set Event Location",
+      "params": ["eventId:number", "designation:number(0=direct,1=variables,2=exchange)", "x:number", "y:number", "direction:number"]
+    },
+    "204": {
+      "name": "Scroll Map",
+      "params": ["direction:number(2=down,4=left,6=right,8=up)", "distance:number", "speed:number"]
+    },
+    "205": {
+      "name": "Set Movement Route",
+      "params": ["eventId:number", "route:object"]
+    },
+    "206": {
+      "name": "Getting On and Off Vehicles",
+      "params": []
+    },
+    "211": {
+      "name": "Change Transparency",
+      "params": ["transparency:number(0=transparent,1=normal)"]
+    },
+    "212": {
+      "name": "Show Animation",
+      "params": ["eventId:number", "animationId:number", "wait:boolean"]
+    },
+    "213": {
+      "name": "Show Balloon Icon",
+      "params": ["eventId:number", "balloonId:number", "wait:boolean"]
+    },
+    "214": {
+      "name": "Erase Event",
+      "params": []
+    },
+    "216": {
+      "name": "Change Player Followers",
+      "params": ["show:number(0=show,1=hide)"]
+    },
+    "217": {
+      "name": "Gather Followers",
+      "params": []
+    },
+    "221": {
+      "name": "Fadeout Screen",
+      "params": []
+    },
+    "222": {
+      "name": "Fadein Screen",
+      "params": []
+    },
+    "223": {
+      "name": "Tint Screen",
+      "params": ["tone:number[]", "duration:number", "wait:boolean"]
+    },
+    "224": {
+      "name": "Flash Screen",
+      "params": ["color:number[]", "duration:number", "wait:boolean"]
+    },
+    "225": {
+      "name": "Shake Screen",
+      "params": ["power:number", "speed:number", "duration:number", "wait:boolean"]
+    },
+    "230": {
+      "name": "Wait",
+      "params": ["frames:number"]
+    },
+    "231": {
+      "name": "Show Picture",
+      "params": ["pictureId:number", "name:string", "origin:number", "designation:number", "x:number", "y:number", "scaleX:number", "scaleY:number", "opacity:number", "blendMode:number"]
+    },
+    "232": {
+      "name": "Move Picture",
+      "params": ["pictureId:number", "origin:number", "designation:number", "x:number", "y:number", "scaleX:number", "scaleY:number", "opacity:number", "blendMode:number", "duration:number", "wait:boolean"]
+    },
+    "233": {
+      "name": "Rotate Picture",
+      "params": ["pictureId:number", "speed:number"]
+    },
+    "234": {
+      "name": "Tint Picture",
+      "params": ["pictureId:number", "tone:number[]", "duration:number", "wait:boolean"]
+    },
+    "235": {
+      "name": "Erase Picture",
+      "params": ["pictureId:number"]
+    },
+    "236": {
+      "name": "Set Weather Effect",
+      "params": ["type:string(none/rain/storm/snow)", "power:number", "duration:number", "wait:boolean"]
+    },
+    "241": {
+      "name": "Play BGM",
+      "params": ["bgm:audioFile"]
+    },
+    "242": {
+      "name": "Fadeout BGM",
+      "params": ["duration:number"]
+    },
+    "243": {
+      "name": "Save BGM",
+      "params": []
+    },
+    "244": {
+      "name": "Resume BGM",
+      "params": []
+    },
+    "245": {
+      "name": "Play BGS",
+      "params": ["bgs:audioFile"]
+    },
+    "246": {
+      "name": "Fadeout BGS",
+      "params": ["duration:number"]
+    },
+    "249": {
+      "name": "Play ME",
+      "params": ["me:audioFile"]
+    },
+    "250": {
+      "name": "Play SE",
+      "params": ["se:audioFile"]
+    },
+    "251": {
+      "name": "Stop SE",
+      "params": []
+    },
+    "261": {
+      "name": "Play Movie",
+      "params": ["name:string"]
+    },
+    "281": {
+      "name": "Change Map Name Display",
+      "params": ["show:number(0=show,1=hide)"]
+    },
+    "282": {
+      "name": "Change Tileset",
+      "params": ["tilesetId:number"]
+    },
+    "283": {
+      "name": "Change Battle Back",
+      "params": ["battleback1Name:string", "battleback2Name:string"]
+    },
+    "284": {
+      "name": "Change Parallax",
+      "params": ["name:string", "loopX:boolean", "loopY:boolean", "sx:number", "sy:number"]
+    },
+    "285": {
+      "name": "Get Location Info",
+      "params": ["variableId:number", "infoType:number(0=terrainTag,1=eventId,2-5=tileId layers 1-4,6=regionId)", "designation:number", "x:number", "y:number"]
+    },
+    "301": {
+      "name": "Battle Processing",
+      "params": ["designation:number(0=direct,1=variable,2=randomEncounter)", "troopId:number", "canEscape:boolean", "canLose:boolean"]
+    },
+    "302": {
+      "name": "Shop Processing",
+      "params": ["itemType:number(0=item,1=weapon,2=armor)", "itemId:number", "priceType:number(0=standard,1=custom)", "price:number", "purchaseOnly:boolean"]
+    },
+    "303": {
+      "name": "Name Input Processing",
+      "params": ["actorId:number", "maxLength:number"]
+    },
+    "311": {
+      "name": "Change HP",
+      "params": ["actorDesignation:number", "actorId:number", "operation:number", "operandType:number", "operand:number", "allowDeath:boolean"]
+    },
+    "312": {
+      "name": "Change MP",
+      "params": ["actorDesignation:number", "actorId:number", "operation:number", "operandType:number", "operand:number"]
+    },
+    "313": {
+      "name": "Change State",
+      "params": ["actorDesignation:number", "actorId:number", "action:number(0=add,1=remove)", "stateId:number"]
+    },
+    "314": {
+      "name": "Recover All",
+      "params": ["actorDesignation:number", "actorId:number"]
+    },
+    "315": {
+      "name": "Change EXP",
+      "params": ["actorDesignation:number", "actorId:number", "operation:number", "operandType:number", "operand:number", "showLevelUp:boolean"]
+    },
+    "316": {
+      "name": "Change Level",
+      "params": ["actorDesignation:number", "actorId:number", "operation:number", "operandType:number", "operand:number", "showLevelUp:boolean"]
+    },
+    "317": {
+      "name": "Change Parameter",
+      "params": ["actorDesignation:number", "actorId:number", "paramId:number", "operation:number", "operandType:number", "operand:number"]
+    },
+    "318": {
+      "name": "Change Skill",
+      "params": ["actorDesignation:number", "actorId:number", "action:number(0=learn,1=forget)", "skillId:number"]
+    },
+    "319": {
+      "name": "Change Equipment",
+      "params": ["actorId:number", "slotType:number", "itemId:number"]
+    },
+    "320": {
+      "name": "Change Name",
+      "params": ["actorId:number", "name:string"]
+    },
+    "321": {
+      "name": "Change Class",
+      "params": ["actorId:number", "classId:number", "keepExp:boolean"]
+    },
+    "322": {
+      "name": "Change Actor Images",
+      "params": ["actorId:number", "characterName:string", "characterIndex:number", "faceName:string", "faceIndex:number", "battlerName:string"]
+    },
+    "323": {
+      "name": "Change Vehicle Image",
+      "params": ["vehicleType:number", "characterName:string", "characterIndex:number"]
+    },
+    "324": {
+      "name": "Change Nickname",
+      "params": ["actorId:number", "nickname:string"]
+    },
+    "325": {
+      "name": "Change Profile",
+      "params": ["actorId:number", "profile:string"]
+    },
+    "326": {
+      "name": "Change TP",
+      "params": ["actorDesignation:number", "actorId:number", "operation:number", "operandType:number", "operand:number"]
+    },
+    "331": {
+      "name": "Change Enemy HP",
+      "params": ["enemyDesignation:number", "operation:number", "operandType:number", "operand:number", "allowDeath:boolean"]
+    },
+    "332": {
+      "name": "Change Enemy MP",
+      "params": ["enemyDesignation:number", "operation:number", "operandType:number", "operand:number"]
+    },
+    "333": {
+      "name": "Change Enemy State",
+      "params": ["enemyDesignation:number", "action:number(0=add,1=remove)", "stateId:number"]
+    },
+    "334": {
+      "name": "Enemy Recover All",
+      "params": ["enemyDesignation:number"]
+    },
+    "335": {
+      "name": "Enemy Appear",
+      "params": ["enemyDesignation:number"]
+    },
+    "336": {
+      "name": "Enemy Transform",
+      "params": ["enemyDesignation:number", "enemyId:number"]
+    },
+    "337": {
+      "name": "Show Battle Animation",
+      "params": ["enemyDesignation:number", "animationId:number", "allEnemies:boolean"]
+    },
+    "339": {
+      "name": "Force Action",
+      "params": ["battlerDesignation:number", "battlerId:number", "skillId:number", "targetIndex:number"]
+    },
+    "340": {
+      "name": "Abort Battle",
+      "params": []
+    },
+    "351": {
+      "name": "Open Menu Screen",
+      "params": []
+    },
+    "352": {
+      "name": "Open Save Screen",
+      "params": []
+    },
+    "353": {
+      "name": "Game Over",
+      "params": []
+    },
+    "354": {
+      "name": "Return to Title Screen",
+      "params": []
+    },
+    "355": {
+      "name": "Script",
+      "params": ["script:string"]
+    },
+    "356": {
+      "name": "Plugin Command",
+      "params": ["command:string"]
+    }
+  },
+  "subCodes": {
+    "401": "Text data (follows code 101)",
+    "402": "When [choice] branch",
+    "403": "When [cancel] branch",
+    "404": "End choices",
+    "405": "Scrolling text data (follows code 105)",
+    "408": "Comment continuation",
+    "411": "Else branch",
+    "412": "End conditional branch",
+    "413": "Repeat above (loop end)",
+    "505": "Move route command data (follows code 205)",
+    "601": "If win branch",
+    "602": "If escape branch",
+    "603": "If lose branch",
+    "605": "Shop goods continuation",
+    "655": "Script continuation"
+  }
+}

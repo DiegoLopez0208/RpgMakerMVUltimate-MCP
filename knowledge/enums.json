@@ -1,0 +1,104 @@
+{
+  "scope": {
+    "0": "None",
+    "1": "1 Enemy",
+    "2": "All Enemies",
+    "3": "1 Random Enemy",
+    "4": "2 Random Enemies",
+    "5": "3 Random Enemies",
+    "6": "4 Random Enemies",
+    "7": "All Allies",
+    "8": "1 Ally",
+    "9": "All Allies (Dead)",
+    "10": "1 Ally (Dead)",
+    "11": "User"
+  },
+  "occasion": {
+    "0": "Always",
+    "1": "Battle",
+    "2": "Menu",
+    "3": "Never"
+  },
+  "hitType": {
+    "0": "Certain Hit",
+    "1": "Physical",
+    "2": "Magical"
+  },
+  "damageType": {
+    "0": "None",
+    "1": "HP Damage",
+    "2": "MP Damage",
+    "3": "HP Recover",
+    "4": "MP Recover",
+    "5": "MP Drain",
+    "6": "HP Drain"
+  },
+  "restriction": {
+    "0": "None",
+    "1": "Attack an Enemy",
+    "2": "Attack Anyone",
+    "3": "Attack an Ally",
+    "4": "Cannot Move"
+  },
+  "autoRemovalTiming": {
+    "0": "None",
+    "1": "Action End",
+    "2": "Turn End"
+  },
+  "scrollType": {
+    "0": "No Loop",
+    "1": "Loop Vertically",
+    "2": "Loop Horizontally",
+    "3": "Loop Both"
+  },
+  "directions": {
+    "2": "Down",
+    "4": "Left",
+    "6": "Right",
+    "8": "Up"
+  },
+  "triggerTypes": {
+    "0": "Action Button",
+    "1": "Player Touch",
+    "2": "Event Touch",
+    "3": "Autorun",
+    "4": "Parallel"
+  },
+  "moveTypes": {
+    "0": "Fixed",
+    "1": "Random",
+    "2": "Custom Route"
+  },
+  "priorityTypes": {
+    "0": "Below Characters",
+    "1": "Same as Characters",
+    "2": "Above Characters"
+  },
+  "commonEventTrigger": {
+    "0": "None",
+    "1": "Autorun",
+    "2": "Parallel"
+  },
+  "dropItemKind": {
+    "0": "None",
+    "1": "Item",
+    "2": "Weapon",
+    "3": "Armor"
+  },
+  "blendModes": {
+    "0": "Normal",
+    "1": "Additive",
+    "2": "Multiply",
+    "3": "Screen"
+  },
+  "weatherTypes": ["none", "rain", "storm", "snow"],
+  "vehicleTypes": {
+    "0": "Boat",
+    "1": "Ship",
+    "2": "Airship"
+  },
+  "tilesetMode": {
+    "0": "Overworld",
+    "1": "Area"
+  }
+}

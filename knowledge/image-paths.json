@@ -1,0 +1,45 @@
+{
+  "directories": {
+    "animations": "img/animations/",
+    "battlebacks1": "img/battlebacks1/",
+    "battlebacks2": "img/battlebacks2/",
+    "enemies": "img/enemies/",
+    "characters": "img/characters/",
+    "faces": "img/faces/",
+    "parallaxes": "img/parallaxes/",
+    "pictures": "img/pictures/",
+    "sv_actors": "img/sv_actors/",
+    "sv_enemies": "img/sv_enemies/",
+    "system": "img/system/",
+    "tilesets": "img/tilesets/",
+    "titles1": "img/titles1/",
+    "titles2": "img/titles2/"
+  },
+  "tilesetSlots": {
+    "0": "A1 (img/tilesets/, setNumber=0)",
+    "1": "A2 (img/tilesets/, setNumber=1)",
+    "2": "A3 (img/tilesets/, setNumber=2)",
+    "3": "A4 (img/tilesets/, setNumber=3)",
+    "4": "A5 (img/tilesets/, setNumber=4)",
+    "5": "B (img/tilesets/, setNumber=5)",
+    "6": "C (img/tilesets/, setNumber=6)",
+    "7": "D (img/tilesets/, setNumber=7)",
+    "8": "E (img/tilesets/, setNumber=8)"
+  },
+  "tilesetNamesArrayIndex": "tilesetNames[0..8] maps to slots A1,A2,A3,A4,A5,B,C,D,E",
+  "namingConventions": {
+    "characterPrefix": {
+      "!": "Object character (directionFix=true, 1 row sprite)",
+      "$": "Big character (3x4 grid instead of 4x4, 1 character per sheet)",
+      "!$": "Big object character (both flags)"
+    },
+    "parallaxPrefix": {
+      "!": "Zero parallax (scrolls with map at 1:1, no half-speed)"
+    },
+    "extension": ".png (all images must be PNG format)",
+    "tileSize": "48x48 pixels per tile",
+    "normalCharacterGrid": "4 columns x 2 rows (8 characters per sheet, each 3x4 sprites)",
+    "bigCharacterGrid": "1 character per sheet (3 columns x 4 rows of 48px sprites)",
+    "objectCharacterGrid": "1 row of 3x4 sprites"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "flagBits": {
+    "0x0001": "passage down (bit 0)",
+    "0x0002": "passage left (bit 1)",
+    "0x0004": "passage right (bit 2)",
+    "0x0008": "passage up (bit 3)",
+    "0x000F": "all 4 passage directions",
+    "0x0010": "higher tile / star flag (render above characters)",
+    "0x0020": "ladder flag",
+    "0x0040": "bush flag (semi-transparent overlay)",
+    "0x0080": "counter flag (table / talk over)",
+    "0x0100": "damage floor flag",
+    "0x0200": "boat passable",
+    "0x0400": "ship passable",
+    "0x0800": "airship land OK",
+    "0xF000": "terrain tag (bits 12-15, value 0-15)"
+  },
+  "commonFlags": {
+    "0": "passable in all directions (o)",
+    "15": "impassable in all directions (x)",
+    "16": "no effect on passage (star/higher tile)",
+    "1536": "passable + star flag (B-E decorative overlay)",
+    "1551": "impassable + star flag (B-E wall/pillar overlay)",
+    "1552": "impassable + counter flag (tables, counters)"
+  },
+  "passageCheck": "checkPassage(x, y, bit): iterates layeredTiles top-to-bottom. If flag & 0x10 → skip (no effect). If flag & bit === 0 → passable (return true). If flag & bit === bit → impassable (return false).",
+  "terrainTag": "flags[tileId] >> 12 (bits 12-15, 0-15)",
+  "regionId": "tileId at layer 5 of map data"
+}

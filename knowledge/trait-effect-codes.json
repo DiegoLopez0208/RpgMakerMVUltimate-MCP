@@ -1,0 +1,302 @@
+{
+  "traitCodes": {
+    "11": {
+      "name": "Element Rate",
+      "dataId": "elementId",
+      "value": "multiplier (1.0=100%)",
+      "description": "Multiplier for elemental damage taken"
+    },
+    "12": {
+      "name": "Debuff Rate",
+      "dataId": "paramId",
+      "value": "multiplier",
+      "description": "Multiplier for debuff infliction chance"
+    },
+    "13": {
+      "name": "State Rate",
+      "dataId": "stateId",
+      "value": "multiplier",
+      "description": "Multiplier for state infliction chance"
+    },
+    "14": {
+      "name": "State Resist",
+      "dataId": "stateId",
+      "value": "unused(always1)",
+      "description": "Complete immunity to a state"
+    },
+    "21": {
+      "name": "Param",
+      "dataId": "paramId(0-7)",
+      "value": "multiplier",
+      "description": "Parameter multiplier (mhp,mmp,atk,def,mat,mdf,agi,luk)"
+    },
+    "22": {
+      "name": "X-Param",
+      "dataId": "xparamId(0-9)",
+      "value": "bonus",
+      "description": "Extra parameter bonus (hit,eva,cri,cev,mev,mrf,cnt,hrg,mrg,trg)"
+    },
+    "23": {
+      "name": "S-Param",
+      "dataId": "sparamId(0-9)",
+      "value": "multiplier",
+      "description": "Special parameter multiplier (tgr,grd,rec,pha,mcr,tcr,pdr,mdr,fdr,exr)"
+    },
+    "31": {
+      "name": "Attack Element",
+      "dataId": "elementId",
+      "value": "unused",
+      "description": "Element added to normal attacks"
+    },
+    "32": {
+      "name": "Attack State",
+      "dataId": "stateId",
+      "value": "infliction_rate",
+      "description": "State added to normal attacks"
+    },
+    "33": {
+      "name": "Attack Speed",
+      "dataId": "unused(0)",
+      "value": "bonus",
+      "description": "Speed bonus for normal attacks"
+    },
+    "34": {
+      "name": "Attack Times",
+      "dataId": "unused(0)",
+      "value": "count",
+      "description": "Number of extra attacks"
+    },
+    "41": {
+      "name": "Skill Type Add",
+      "dataId": "stypeId",
+      "value": "unused(1)",
+      "description": "Add skill type availability"
+    },
+    "42": {
+      "name": "Skill Type Seal",
+      "dataId": "stypeId",
+      "value": "unused(1)",
+      "description": "Seal skill type"
+    },
+    "43": {
+      "name": "Skill Add",
+      "dataId": "skillId",
+      "value": "unused(1)",
+      "description": "Add skill availability"
+    },
+    "44": {
+      "name": "Skill Seal",
+      "dataId": "skillId",
+      "value": "unused(1)",
+      "description": "Seal skill"
+    },
+    "51": {
+      "name": "Equip Weapon",
+      "dataId": "wtypeId",
+      "value": "unused(1)",
+      "description": "Allow weapon type equip"
+    },
+    "52": {
+      "name": "Equip Armor",
+      "dataId": "atypeId",
+      "value": "unused(1)",
+      "description": "Allow armor type equip"
+    },
+    "53": {
+      "name": "Equip Lock",
+      "dataId": "etypeId",
+      "value": "unused(1)",
+      "description": "Lock equipment slot"
+    },
+    "54": {
+      "name": "Equip Seal",
+      "dataId": "etypeId",
+      "value": "unused(1)",
+      "description": "Seal equipment slot (cannot change)"
+    },
+    "55": {
+      "name": "Slot Type",
+      "dataId": "unused(0=normal,1=dualWield)",
+      "value": "unused(1)",
+      "description": "Set slot type (normal or dual wield)"
+    },
+    "61": {
+      "name": "Action Plus",
+      "dataId": "unused(0)",
+      "value": "chance",
+      "description": "Extra action chance"
+    },
+    "62": {
+      "name": "Special Flag",
+      "dataId": "flagId(0=autoBattle,1=guard,2=substitute,3=preserveTP)",
+      "value": "unused(1)",
+      "description": "Special battle flag"
+    },
+    "63": {
+      "name": "Collapse Type",
+      "dataId": "type(0=normal,1=boss,2=instant,3=noCollapse)",
+      "value": "unused(1)",
+      "description": "Collapse animation type"
+    },
+    "64": {
+      "name": "Party Ability",
+      "dataId": "abilityId(0=encounterHalf,1=encounterNone,2=cancelSurprise,3=raisePreemptive,4=goldDouble,5=dropItemDouble)",
+      "value": "unused(1)",
+      "description": "Party-wide ability"
+    }
+  },
+  "effectCodes": {
+    "11": {
+      "name": "Recover HP",
+      "dataId": "unused(0)",
+      "value1": "percent",
+      "value2": "flat",
+      "description": "Recover HP by percent and/or flat amount"
+    },
+    "12": {
+      "name": "Recover MP",
+      "dataId": "unused(0)",
+      "value1": "percent",
+      "value2": "flat",
+      "description": "Recover MP by percent and/or flat amount"
+    },
+    "13": {
+      "name": "Gain TP",
+      "dataId": "unused(0)",
+      "value1": "amount",
+      "value2": "unused(0)",
+      "description": "Gain TP"
+    },
+    "21": {
+      "name": "Add State",
+      "dataId": "stateId",
+      "value1": "chance(%)",
+      "value2": "unused(0)",
+      "description": "Add state with chance"
+    },
+    "22": {
+      "name": "Remove State",
+      "dataId": "stateId",
+      "value1": "chance(%)",
+      "value2": "unused(0)",
+      "description": "Remove state with chance"
+    },
+    "31": {
+      "name": "Add Buff",
+      "dataId": "paramId",
+      "value1": "turns",
+      "value2": "unused(0)",
+      "description": "Add parameter buff for turns"
+    },
+    "32": {
+      "name": "Add Debuff",
+      "dataId": "paramId",
+      "value1": "turns",
+      "value2": "unused(0)",
+      "description": "Add parameter debuff for turns"
+    },
+    "33": {
+      "name": "Remove Buff",
+      "dataId": "paramId",
+      "value1": "unused(0)",
+      "value2": "unused(0)",
+      "description": "Remove parameter buff"
+    },
+    "34": {
+      "name": "Remove Debuff",
+      "dataId": "paramId",
+      "value1": "unused(0)",
+      "value2": "unused(0)",
+      "description": "Remove parameter debuff"
+    },
+    "41": {
+      "name": "Escape",
+      "dataId": "unused(0)",
+      "value1": "unused(0)",
+      "value2": "unused(0)",
+      "description": "Escape from battle"
+    },
+    "42": {
+      "name": "Game Over",
+      "dataId": "unused(0)",
+      "value1": "unused(0)",
+      "value2": "unused(0)",
+      "description": "Trigger game over"
+    },
+    "43": {
+      "name": "Common Event",
+      "dataId": "commonEventId",
+      "value1": "unused(0)",
+      "value2": "unused(0)",
+      "description": "Call common event"
+    },
+    "44": {
+      "name": "Grow",
+      "dataId": "paramId",
+      "value1": "amount",
+      "value2": "unused(0)",
+      "description": "Permanently increase parameter"
+    },
+    "45": {
+      "name": "Learn Skill",
+      "dataId": "skillId",
+      "value1": "unused(0)",
+      "value2": "unused(0)",
+      "description": "Learn a skill permanently"
+    }
+  },
+  "paramIds": {
+    "0": "MaxHP",
+    "1": "MaxMP",
+    "2": "ATK",
+    "3": "DEF",
+    "4": "MAT",
+    "5": "MDF",
+    "6": "AGI",
+    "7": "LUK"
+  },
+  "xparamIds": {
+    "0": "HIT",
+    "1": "EVA",
+    "2": "CRI",
+    "3": "CEV",
+    "4": "MEV",
+    "5": "MRF",
+    "6": "CNT",
+    "7": "HRG",
+    "8": "MRG",
+    "9": "TRG"
+  },
+  "sparamIds": {
+    "0": "TGR",
+    "1": "GRD",
+    "2": "REC",
+    "3": "PHA",
+    "4": "MCR",
+    "5": "TCR",
+    "6": "PDR",
+    "7": "MDR",
+    "8": "FDR",
+    "9": "EXR"
+  },
+  "specialFlags": {
+    "0": "Auto Battle",
+    "1": "Guard",
+    "2": "Substitute",
+    "3": "Preserve TP"
+  },
+  "collapseTypes": {
+    "0": "Normal",
+    "1": "Boss",
+    "2": "Instant",
+    "3": "No Collapse"
+  },
+  "partyAbilities": {
+    "0": "Encounter Half",
+    "1": "Encounter None",
+    "2": "Cancel Surprise",
+    "3": "Raise Preemptive",
+    "4": "Gold Double",
+    "5": "Drop Item Double"
+  }
+}

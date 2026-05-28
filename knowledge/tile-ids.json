@@ -1,0 +1,40 @@
+{
+  "TILE_ID_B": 0,
+  "TILE_ID_C": 256,
+  "TILE_ID_D": 512,
+  "TILE_ID_E": 768,
+  "TILE_ID_A5": 1536,
+  "TILE_ID_A1": 2048,
+  "TILE_ID_A2": 2816,
+  "TILE_ID_A3": 4352,
+  "TILE_ID_A4": 5888,
+  "TILE_ID_MAX": 8192,
+  "autotileFormula": "tileId = 2048 + kind * 48 + shape",
+  "maxKindPerSheet": {
+    "A1": 16,
+    "A2": 32,
+    "A3": 16,
+    "A4": 48
+  },
+  "maxShape": 47,
+  "sheetDescriptions": {
+    "A1": "Water/ground animations (tileset index 0). Contains animated water surfaces, deep water, waterfalls. Kinds 0-3 are water surfaces with animation, 4-5 are deep water, 6+ are ground/waterfall combos.",
+    "A2": "Floor/ground autotiles (tileset index 1). Top 2 rows = ground type, bottom row = decoration/border. Kinds 0-15 = floors with border transitions. Table flag = 0x80.",
+    "A3": "Roof/building autotiles (tileset index 2). Kinds 0-7 = roofs (wall-top type), 8-15 = walls (wall-side type). Uses WALL_AUTOTILE_TABLE.",
+    "A4": "Wall/floor interior autotiles (tileset index 3). Even kinds = floor/wall-top, odd kinds = wall-side. Uses FLOOR_AUTOTILE_TABLE for wall-tops, WALL_AUTOTILE_TABLE for wall-sides.",
+    "A5": "Static tiles (tileset index 4). No autotile behavior. 8 columns x 16 rows = 128 tiles. IDs 1536-2047.",
+    "B": "Normal tiles page 1 (tileset index 5). 8 columns x 16 rows = 128 tiles. IDs 0-255.",
+    "C": "Normal tiles page 2 (tileset index 6). Same layout. IDs 256-511.",
+    "D": "Normal tiles page 3 (tileset index 7). Same layout. IDs 512-767.",
+    "E": "Normal tiles page 4 (tileset index 8). Same layout. IDs 768-1535."
+  },
+  "mapDataIndex": "index = (layer * height + y) * width + x",
+  "layers": {
+    "0": "ground (lower tiles, rendered below characters)",
+    "1": "decoration (upper/lower depending on flag 0x10)",
+    "2": "shadow (4-bit shadow bits, each quarter-tile)",
+    "3": "region (region ID for events/encounters)",
+    "4": "unused",
+    "5": "unused"
+  }
+}
