@@ -703,9 +703,9 @@ async function createShop(projectPath, mapId, x, y, name, itemIds, weaponIds, ar
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
-  var itemList = (itemIds || []).map(function(id) { return [0, id]; });
-  var weaponList = (weaponIds || []).map(function(id) { return [1, id]; });
-  var armorList = (armorIds || []).map(function(id) { return [2, id]; });
+  var itemList = (itemIds || []).map(function(id) { return [0, id, 0, 0]; });
+  var weaponList = (weaponIds || []).map(function(id) { return [1, id, 0, 0]; });
+  var armorList = (armorIds || []).map(function(id) { return [2, id, 0, 0]; });
   var goods = itemList.concat(weaponList).concat(armorList);
   if (goods.length === 0) goods = [[0, 1]];
   var pageList = [
@@ -738,11 +738,13 @@ async function createInn(projectPath, mapId, x, y, name, cost, characterName, ch
   characterIndex = characterIndex || 0;
   cost = cost || 50;
   var page1List = [
-    { code: 102, indent: 0, parameters: [['Rest here for ' + cost + ' gold?', 'Yes', 'No'], 1] },
+    { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
+    { code: 401, indent: 0, parameters: ['Rest here for ' + cost + ' gold?'] },
+    { code: 102, indent: 0, parameters: [['Yes', 'No'], 1] },
     { code: 402, indent: 0, parameters: [0, 'Yes'] },
-    { code: 111, indent: 1, parameters: [7, cost, 0, 0] },
+    { code: 111, indent: 1, parameters: [7, 0, cost, 0] },
     { code: 125, indent: 2, parameters: [1, 0, cost] },
-    { code: 314, indent: 2, parameters: [0, 0, 0, 1, 1, 0, 0] },
+    { code: 314, indent: 2, parameters: [0, 0] },
     { code: 101, indent: 2, parameters: ['', 0, 0, 2] },
     { code: 401, indent: 2, parameters: ['You feel refreshed!'] },
     { code: 0, indent: 2, parameters: [] },

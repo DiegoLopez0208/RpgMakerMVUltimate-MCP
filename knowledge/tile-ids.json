@@ -30,11 +30,11 @@
   },
   "mapDataIndex": "index = (layer * height + y) * width + x",
   "layers": {
-    "0": "ground (lower tiles, rendered below characters)",
-    "1": "decoration (upper/lower depending on flag 0x10)",
-    "2": "shadow (4-bit shadow bits, each quarter-tile)",
-    "3": "region (region ID for events/encounters)",
-    "4": "unused",
-    "5": "unused"
+    "0": "lower tile slot 1 — ground, rendered below characters. Contains ground/floor autotiles.",
+    "1": "lower tile slot 2 — ground, rendered below characters. Second ground layer for overlapping ground tiles.",
+    "2": "upper tile slot 1 — rendered above characters if the tile has the star flag (0x10). Used for tree canopies, roofs, decorations.",
+    "3": "upper tile slot 2 — rendered above characters if the tile has the star flag (0x10). Second upper layer.",
+    "4": "shadow bits — integer bitmask 0–15. Each of the 4 bits represents a quarter-tile shadow. This is NOT a tile ID. Writing a tile ID here will produce incorrect shadow artifacts.",
+    "5": "region ID — integer 1–255. Used to define encounter regions, event trigger zones, and spawn areas. Value 0 means no region."
   }
 }
