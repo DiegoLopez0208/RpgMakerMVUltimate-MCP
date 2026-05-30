@@ -1,15 +1,17 @@
 # RPG Maker MV Ultimate MCP Server
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides ~77 tools for actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, image analysis, and **knowledge-driven map generation**.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides **79+ tools** for actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, **AI vision analysis**, **offline ASCII map rendering**, and **knowledge-driven map generation**.
 
 ## Features
 
-- **77+ MCP tools** covering every aspect of RPG Maker MV project data
+- **79+ MCP tools** covering every aspect of RPG Maker MV project data
+- **Vision AI analysis** — `analyze_screenshot` sends project images to NVIDIA Llama 3.2 90B Vision via proxy for detailed AI descriptions (tilesets, sprites, map screenshots)
+- **Offline ASCII map rendering** — `render_map_ascii` generates ASCII maps with event markers and region IDs, no API needed
 - **Knowledge-driven map generation (V2)** with 11 themes, shadow/region layers, and tileset-aware tile selection
 - **Asset scanning** — indexes your project's img/ folder and Tilesets.json to build categorized tile inventories
 - **7 static knowledge files** — tile IDs, passage flags, event commands, enums, trait/effect codes, database schemas, image paths
 - **High-level event builders** — NPC with dialogue, chest, teleport, shop, inn, boss battle, puzzle switch
-- **Image analysis** — tileset dimension detection, screenshot quadrant analysis (via sharp)
+- **Map validation** — detects invalid tile IDs, broken event commands, null references
 - **CommonJS, no TypeScript** — pure Node.js, zero build step
 
 ## Quick Start
@@ -30,12 +32,15 @@ Add to your MCP config:
       "command": "node",
       "args": ["/path/to/RpgMakerMVUltimate-MCP/server.js"],
       "env": {
-        "RPGMAKER_PROJECT_PATH": "/path/to/your/project"
+        "RPGMAKER_PROJECT_PATH": "/path/to/your/project",
+        "PROXY_VISION_URL": "http://127.0.0.1:9999"
       }
     }
   }
 }
 ```
+
+> **Vision AI**: Set `PROXY_VISION_URL` to your [nvidia-glm-proxy](https://github.com/DiegoLopez0208/nvidia-glm-proxy) instance to enable `analyze_screenshot`. Without it, only `render_map_ascii` (offline) is available.
 
 ## Tool Categories
 
@@ -54,9 +59,47 @@ Add to your MCP config:
 | **Troop** | 5 | CRUD, add enemy, random encounter builder |
 | **Animation** | 2 | Get, get by ID |
 | **System** | 8 | Switches, variables, game title, starting position |
-| **Project** | 2 | Summary, set path |
+| **Project** | 4 | Summary, context, validate map, set path |
 | **Asset** | 2 | Scan project assets, get tile IDs for tileset |
-| **Vision** | 2 | Tileset image analysis, screenshot quadrant analysis |
+| **Vision AI** | 2 | AI screenshot analysis (Llama 3.2 90B Vision), ASCII map render |
+| **Image** | 2 | Tileset dimension analysis, screenshot quadrant analysis |
+
+## Vision AI
+
+### analyze_screenshot
+
+Sends a project image to NVIDIA Llama 3.2 90B Vision via the nvidia-glm-proxy for AI-powered analysis. Works with tilesets, character sprites, map screenshots, battlers, faces, etc.
+
+```json
+{
+  "tool": "analyze_screenshot",
+  "arguments": {
+    "image_path": "img/tilesets/Outside.png",
+    "prompt": "Describe the tile categories and colors",
+    "resize_max": 1024
+  }
+}
+```
+
+**Requirements**: [nvidia-glm-proxy](https://github.com/DiegoLopez0208/nvidia-glm-proxy) v1.1.0+ running with `VISION_MODEL=meta/llama-3.2-90b-vision-instruct`.
+
+### render_map_ascii
+
+Generates an ASCII representation of a map. No API required — works offline.
+
+```json
+{
+  "tool": "render_map_ascii",
+  "arguments": {
+    "map_id": 1,
+    "layer": 0,
+    "show_events": true,
+    "show_regions": false
+  }
+}
+```
+
+Output uses tileset flag-based characters: `.` empty, `~` water, `#` wall, `H` ladder, `"` bush, `,` terrain, `T` tree, `D` decoration, `A` autotile. Event positions shown as first-letter markers.
 
 ## Map Generation V2
 
