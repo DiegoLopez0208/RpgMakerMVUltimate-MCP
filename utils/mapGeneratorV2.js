@@ -204,8 +204,8 @@ function generateForest(data, w, h, grass, dirt, water, deepWater, wallSide, roo
     for (var x = 0; x < w; x++) {
       var dx3 = x - cx;
       var dy3 = y - cy;
-      if (dx3 * dx3 + dy3 * dy3 <= clearR * clearR) {
-        addRegionId(data, w, h, x, y, 0);
+        if (dx3 * dx3 + dy3 * dy3 <= clearR * clearR) {
+          addRegionId(data, w, h, x, y, 2);
       } else {
         addRegionId(data, w, h, x, y, 1);
       }
@@ -339,7 +339,7 @@ function generateTown(data, w, h, grass, dirt, roof, wallSide, cfg) {
 
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
-      addRegionId(data, w, h, x, y, 0);
+      addRegionId(data, w, h, x, y, 1);
     }
   }
 }
@@ -384,7 +384,7 @@ function generateCastle(data, w, h, stone, wallSide, roof, cfg) {
   }
   for (var y = 3; y < h - 3; y++) {
     for (var x = 3; x < w - 3; x++) {
-      if (x !== midX) addRegionId(data, w, h, x, y, 0);
+      if (x !== midX) addRegionId(data, w, h, x, y, 1);
     }
   }
 }
@@ -489,11 +489,11 @@ function generateVillage(data, w, h, grass, dirt, roof, wallSide, cfg) {
   var wellDeco = pickDeco(cfg, 7) || FALLBACK.pillarB;
   var wcx = Math.floor(w / 2);
   var wcy = Math.floor(h / 2);
-  if (wcx < w && wcy < h) setTile(data, w, h, wcx, wcy, 1, wellDeco);
+if (wcx < w && wcy < h) setTile(data, w, h, wcx, wcy, 1, wellDeco);
 
-  for (var y = 0; y < h; y++) {
+for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
-      addRegionId(data, w, h, x, y, 0);
+      addRegionId(data, w, h, x, y, 1);
     }
   }
 }
@@ -721,7 +721,7 @@ function generateInterior(data, w, h, stone, wallSide, cfg) {
 
   for (var y = 2; y < h - 2; y++) {
     for (var x = 2; x < w - 2; x++) {
-      addRegionId(data, w, h, x, y, 0);
+      addRegionId(data, w, h, x, y, 1);
     }
   }
 }

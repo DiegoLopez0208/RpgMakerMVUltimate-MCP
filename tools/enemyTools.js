@@ -48,8 +48,8 @@ async function createBossEnemy(projectPath, params) {
   var enemy = makeDefaultEnemy(params.name, params);
   enemy.id = newId;
   enemy.params = params.params || [5000, 0, 80, 60, 60, 60, 50, 50];
-  enemy.exp = params.exp || 500;
-  enemy.gold = params.gold || 200;
+  enemy.exp = params.exp !== undefined ? params.exp : 500;
+  enemy.gold = params.gold !== undefined ? params.gold : 200;
   enemy.actions = params.actions || [
     { skillId: 1, conditionType: 1, conditionParam1: 0, conditionParam2: 1, rating: 5 },
     { skillId: params.specialSkillId || 2, conditionType: 2, conditionParam1: 0.3, conditionParam2: 1, rating: 7 }

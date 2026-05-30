@@ -89,11 +89,11 @@ async function createMap(projectPath, params) {
   if (theme) {
     try {
       var tilesetConfig = await getTileIdsForTileset(projectPath, tilesetId);
-      var hasTiles = tilesetConfig && (
-        (tilesetConfig.ground && tilesetConfig.ground.length > 0) ||
-        (tilesetConfig.water && tilesetConfig.water.length > 0) ||
-        (tilesetConfig.decoration && tilesetConfig.decoration.length > 0)
-      );
+            var hasTiles = tilesetConfig && tilesetConfig.availableTiles && (
+                (tilesetConfig.availableTiles.ground && tilesetConfig.availableTiles.ground.length > 0) ||
+                (tilesetConfig.availableTiles.water && tilesetConfig.availableTiles.water.length > 0) ||
+                (tilesetConfig.availableTiles.decoration && tilesetConfig.availableTiles.decoration.length > 0)
+            );
       if (hasTiles) {
         tileResult = generateTileLayoutV2(width, height, theme, tilesetConfig);
       } else {
@@ -310,9 +310,10 @@ async function createNpc(projectPath, mapId, x, y, name, dialogues, characterNam
       if (msgCommands[i].code === 0 && i === msgCommands.length - 1) continue;
       page1List.push(msgCommands[i]);
     }
-  }
-  // Add the page terminator (code 0 = End of Event Processing)
-  page1List.push({ code: 0, indent: 0, parameters: [] });
+    }
+    page1List.push({ code: 123, indent: 0, parameters: ['A', 1] });
+    // Add the page terminator (code 0 = End of Event Processing)
+    page1List.push({ code: 0, indent: 0, parameters: [] });
 
   // Page 1: Action button trigger, NPC sprite, dialogue
   var page1 = {
@@ -640,8 +641,8 @@ function createDefaultEventPage(trigger) {
  * Unlike readJson which takes a projectPath + filename, this takes the full path.
  */
 async function readJsonDirect(filePath) {
-  const content = await readFile(filePath, 'utf-8');
-  return JSON.parse(content);
+    const content = await readFile(filePath, 'utf-8');
+    return JSON.parse(content.replace(/^\uFEFF/, ''));
 }
 
 /**
@@ -659,7 +660,6 @@ async function writeJsonDirect(filePath, data) {
 
   var jsonString = JSON.stringify(data, null, 2);
   await writeFile(filePath, jsonString, 'utf-8');
-  console.error('[WRITE] ' + filePath);
 }
 
 async function deleteMapEvent(projectPath, mapId, eventId) {
@@ -707,15 +707,14 @@ async function createShop(projectPath, mapId, x, y, name, itemIds, weaponIds, ar
   var weaponList = (weaponIds || []).map(function(id) { return [1, id, 0, 0]; });
   var armorList = (armorIds || []).map(function(id) { return [2, id, 0, 0]; });
   var goods = itemList.concat(weaponList).concat(armorList);
-  if (goods.length === 0) goods = [[0, 1]];
-  var pageList = [
-    { code: 302, indent: 0, parameters: [0, goods, true] },
-    { code: 605, indent: 0, parameters: goods[0] },
-    { code: 0, indent: 0, parameters: [] }
-  ];
-  for (var i = 1; i < goods.length; i++) {
-    pageList.splice(pageList.length - 1, 0, { code: 605, indent: 0, parameters: goods[i] });
-  }
+    if (goods.length === 0) goods = [[0, 1, 0, 0]];
+    var pageList = [
+        { code: 302, indent: 0, parameters: [0, 1] },
+    ];
+    for (var i = 0; i < goods.length; i++) {
+        pageList.push({ code: 605, indent: 0, parameters: goods[i] });
+    }
+    pageList.push({ code: 0, indent: 0, parameters: [] });
   var page1 = {
     conditions: createDefaultConditions(), directionFix: true,
     image: { characterIndex: characterIndex, characterName: characterName, direction: 2, pattern: 1, tileId: 0 },
@@ -742,7 +741,7 @@ async function createInn(projectPath, mapId, x, y, name, cost, characterName, ch
     { code: 401, indent: 0, parameters: ['Rest here for ' + cost + ' gold?'] },
     { code: 102, indent: 0, parameters: [['Yes', 'No'], 1] },
     { code: 402, indent: 0, parameters: [0, 'Yes'] },
-    { code: 111, indent: 1, parameters: [7, 0, cost, 0] },
+        { code: 111, indent: 1, parameters: [11, '$gameParty.gold() >= ' + cost] },
     { code: 125, indent: 2, parameters: [1, 0, cost] },
     { code: 314, indent: 2, parameters: [0, 0] },
     { code: 101, indent: 2, parameters: ['', 0, 0, 2] },
@@ -778,16 +777,18 @@ async function createBossEvent(projectPath, mapId, x, y, name, troopId, characte
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
-  var page1List = [
-    { code: 301, indent: 0, parameters: [0, troopId, true, true] },
-    { code: 601, indent: 0, parameters: [] },
-    { code: 123, indent: 1, parameters: ['A', 0] },
-    { code: 0, indent: 1, parameters: [] },
-    { code: 603, indent: 0, parameters: [] },
-    { code: 353, indent: 1, parameters: [] },
-    { code: 0, indent: 1, parameters: [] },
-    { code: 0, indent: 0, parameters: [] }
-  ];
+    var page1List = [
+        { code: 301, indent: 0, parameters: [0, troopId, 0, 1] },
+        { code: 601, indent: 0, parameters: [] },
+        { code: 123, indent: 1, parameters: ['A', 1] },
+        { code: 0, indent: 1, parameters: [] },
+        { code: 602, indent: 0, parameters: [] },
+        { code: 0, indent: 1, parameters: [] },
+        { code: 603, indent: 0, parameters: [] },
+        { code: 353, indent: 1, parameters: [] },
+        { code: 0, indent: 1, parameters: [] },
+        { code: 0, indent: 0, parameters: [] }
+    ];
   var page2 = {
     conditions: Object.assign({}, createDefaultConditions(), { selfSwitchCh: 'A', selfSwitchValid: true }),
     directionFix: true,
@@ -858,12 +859,11 @@ async function createPuzzleSwitch(projectPath, mapId, x, y, switchId, doorX, doo
     conditions: Object.assign({}, createDefaultConditions(), { switch1Id: switchId, switch1Valid: true }),
     directionFix: true,
     image: { characterIndex: 0, characterName: '', direction: 2, pattern: 1, tileId: 0 },
-    list: [
-      { code: 205, indent: 0, parameters: [-1, { list: [{ code: 44, parameters: [] }, { code: 41, parameters: [8] }, { code: 0, parameters: [] }], repeat: false, skippable: true, wait: true }] },
-      { code: 505, indent: 0, parameters: [{ code: 44, parameters: [] }] },
-      { code: 505, indent: 0, parameters: [{ code: 41, parameters: [8] }] },
-      { code: 123, indent: 0, parameters: ['A', 0] },
-      { code: 0, indent: 0, parameters: [] }
+        list: [
+        { code: 205, indent: 0, parameters: [-1, { list: [{ code: 44, parameters: [] }, { code: 0, parameters: [] }], repeat: false, skippable: true, wait: true }] },
+        { code: 505, indent: 0, parameters: [{ code: 44, parameters: [] }] },
+        { code: 123, indent: 0, parameters: ['A', 1] },
+        { code: 0, indent: 0, parameters: [] }
     ],
     moveFrequency: 3,
     moveRoute: { list: [{ code: 0, parameters: [] }], repeat: true, skippable: false, wait: false },

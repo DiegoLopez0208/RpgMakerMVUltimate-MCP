@@ -15,7 +15,6 @@
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { CallToolRequestSchema, ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
-const z = require('zod');
 const sharp = require('sharp');
 
 const { validateProjectPath } = require('./utils/fileHandler');
@@ -36,6 +35,146 @@ const projectTools = require('./tools/projectTools');
 const assetTools = require('./tools/assetTools');
 
 const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
+
+// ─── Project Context & Validation Functions ───
+
+async function getProjectContext(projectPath) {
+  const fs = require('fs');
+  const path = require('path');
+  const dataDir = path.join(projectPath, 'data');
+  const imgDir = path.join(projectPath, 'img');
+
+  function readJsonSync(filename) {
+    const fp = path.join(dataDir, filename);
+    if (!fs.existsSync(fp)) return null;
+    const content = fs.readFileSync(fp, 'utf-8');
+    return JSON.parse(content.replace(/^\uFEFF/, ''));
+  }
+
+  function listPngs(dir) {
+    const fullDir = path.join(imgDir, dir);
+    if (!fs.existsSync(fullDir)) return [];
+    return fs.readdirSync(fullDir).filter(function(f) { return f.endsWith('.png'); }).map(function(f) { return f.replace('.png', ''); });
+  }
+
+  var system = readJsonSync('System.json') || {};
+  var mapInfos = readJsonSync('MapInfos.json') || [];
+  var actors = readJsonSync('Actors.json') || [];
+  var items = readJsonSync('Items.json') || [];
+  var weapons = readJsonSync('Weapons.json') || [];
+  var armors = readJsonSync('Armors.json') || [];
+  var skills = readJsonSync('Skills.json') || [];
+  var enemies = readJsonSync('Enemies.json') || [];
+  var troops = readJsonSync('Troops.json') || [];
+  var states = readJsonSync('States.json') || [];
+  var tilesets = readJsonSync('Tilesets.json') || [];
+  var commonEvents = readJsonSync('CommonEvents.json') || [];
+
+  var maps = mapInfos.filter(function(m) { return m !== null; }).map(function(m) { return { id: m.id, name: m.name, parentId: m.parentId }; });
+  var actorList = actors.filter(function(a) { return a !== null; }).map(function(a) { return { id: a.id, name: a.name, classId: a.classId, initialLevel: a.initialLevel }; });
+  var itemList = items.filter(function(i) { return i !== null; }).map(function(i) { return { id: i.id, name: i.name, iconIndex: i.iconIndex, price: i.price, itypeId: i.itypeId }; });
+  var weaponList = weapons.filter(function(w) { return w !== null; }).map(function(w) { return { id: w.id, name: w.name, iconIndex: w.iconIndex, price: w.price, wtypeId: w.wtypeId }; });
+  var armorList = armors.filter(function(a) { return a !== null; }).map(function(a) { return { id: a.id, name: a.name, iconIndex: a.iconIndex, price: a.price, atypeId: a.atypeId }; });
+  var skillList = skills.filter(function(s) { return s !== null; }).map(function(s) { return { id: s.id, name: s.name, mpCost: s.mpCost, scope: s.scope, stypeId: s.stypeId }; });
+  var enemyList = enemies.filter(function(e) { return e !== null; }).map(function(e) { return { id: e.id, name: e.name, battlerName: e.battlerName }; });
+  var troopList = troops.filter(function(t) { return t !== null; }).map(function(t) { return { id: t.id, name: t.name, members: (t.members || []).map(function(m) { return { enemyId: m.enemyId, x: m.x, y: m.y }; }) }; });
+  var stateList = states.filter(function(s) { return s !== null; }).map(function(s) { return { id: s.id, name: s.name, iconIndex: s.iconIndex, restriction: s.restriction }; });
+  var tilesetList = tilesets.filter(function(t) { return t !== null; }).map(function(t) { return { id: t.id, name: t.name, mode: t.mode, tilesetNames: t.tilesetNames }; });
+  var ceList = commonEvents.filter(function(c) { return c !== null; }).map(function(c) { return { id: c.id, name: c.name, trigger: c.trigger, switchId: c.switchId }; });
+
+  return {
+    gameTitle: system.gameTitle || 'Untitled',
+    startMapId: system.startMapId,
+    startX: system.startX,
+    startY: system.startY,
+    partyMembers: system.partyMembers || [],
+    switches: system.switches || [],
+    variables: system.variables || [],
+    maps: maps,
+    actors: actorList,
+    items: itemList,
+    weapons: weaponList,
+    armors: armorList,
+    skills: skillList,
+    enemies: enemyList,
+    troops: troopList,
+    states: stateList,
+    tilesets: tilesetList,
+    commonEvents: ceList,
+    sprites: {
+      characters: listPngs('characters'),
+      faces: listPngs('faces'),
+      enemies: listPngs('enemies'),
+      battlers: listPngs('battlers'),
+      pictures: listPngs('pictures')
+    }
+  };
+}
+
+async function validateMap(projectPath, mapId) {
+  const map = await mapTools.getMap(projectPath, mapId);
+  var issues = [];
+  var w = map.width;
+  var h = map.height;
+
+  // Check tile IDs
+  if (map.data) {
+    for (var i = 0; i < map.data.length; i++) {
+      var layer = Math.floor(i / (w * h));
+      var tileId = map.data[i];
+      if (layer < 4 && tileId > 8191) {
+        issues.push({ type: 'invalid_tile', layer: layer, tileId: tileId, index: i, message: 'Tile ID ' + tileId + ' exceeds max (8191) on layer ' + layer });
+      }
+      if (layer === 4 && (tileId < 0 || tileId > 15)) {
+        issues.push({ type: 'invalid_shadow', tileId: tileId, index: i, message: 'Shadow bits ' + tileId + ' out of range 0-15' });
+      }
+      if (layer === 5 && (tileId < 0 || tileId > 255)) {
+        issues.push({ type: 'invalid_region', tileId: tileId, index: i, message: 'Region ID ' + tileId + ' out of range 0-255' });
+      }
+    }
+  }
+
+  // Check events
+  var events = map.events || [];
+  for (var ei = 0; ei < events.length; ei++) {
+    var ev = events[ei];
+    if (ev === null) continue;
+    for (var pi = 0; pi < (ev.pages || []).length; pi++) {
+      var page = ev.pages[pi];
+      var list = page.list || [];
+      var hasTerminator = false;
+      for (var ci = 0; ci < list.length; ci++) {
+        var cmd = list[ci];
+        if (cmd.code === 0 && cmd.indent === 0 && ci === list.length - 1) {
+          hasTerminator = true;
+        }
+        // Check for common bad commands
+        if (cmd.code === 126 && cmd.parameters && cmd.parameters.length >= 1 && cmd.parameters[0] === 0) {
+          issues.push({ type: 'null_item_ref', event: ev.id, eventName: ev.name, page: pi, cmdIndex: ci, message: 'Change Item with itemId=0 (null) in event "' + ev.name + '"' });
+        }
+        if (cmd.code === 123 && cmd.parameters && cmd.parameters[1] === 0) {
+          issues.push({ type: 'self_switch_off', event: ev.id, eventName: ev.name, page: pi, cmdIndex: ci, message: 'Self Switch set to OFF (0) instead of ON (1) in event "' + ev.name + '" - events may not lock properly' });
+        }
+        if (cmd.code === 201 && cmd.parameters && cmd.parameters.length >= 2 && cmd.parameters[1] === 0) {
+          issues.push({ type: 'null_transfer', event: ev.id, eventName: ev.name, page: pi, cmdIndex: ci, message: 'Transfer Player to mapId=0 (nonexistent) in event "' + ev.name + '"' });
+        }
+      }
+      if (!hasTerminator) {
+        issues.push({ type: 'missing_terminator', event: ev.id, eventName: ev.name, page: pi, message: 'Page ' + pi + ' of event "' + ev.name + '" missing code 0 terminator' });
+      }
+    }
+  }
+
+  return {
+    mapId: mapId,
+    mapName: map.displayName || '',
+    width: w,
+    height: h,
+    eventCount: events.filter(function(e) { return e !== null; }).length,
+    issueCount: issues.length,
+    issues: issues
+  };
+}
 
 // ─── Tool Definitions ───
 // Each tool has: name, description, inputSchema (JSON Schema)
@@ -77,9 +216,13 @@ const TOOL_DEFINITIONS = [
         characterIndex: { type: 'number', description: 'Character sprite index (0-7)' },
         faceName: { type: 'string', description: 'Face graphic filename' },
         faceIndex: { type: 'number', description: 'Face graphic index (0-7)' },
-        battlerName: { type: 'string', description: 'Battler sprite filename' }
-      },
-      required: ['name']
+          battlerName: { type: 'string', description: 'Battler sprite filename' },
+          profile: { type: 'string', description: 'Actor profile text' },
+          traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
+          equips: { type: 'array', description: 'Array of initial equip IDs' },
+          note: { type: 'string', description: 'Note field' }
+          },
+          required: ['name']
     }
   },
   {
@@ -156,14 +299,17 @@ const TOOL_DEFINITIONS = [
         scope: { type: 'number', description: 'Target scope: 1=single enemy, 7=all allies, 11=user' },
         occasion: { type: 'number', description: 'When usable: 0=always, 1=battle, 2=menu, 3=never' },
         animationId: { type: 'number', description: 'Animation ID when used' },
-        effects: { type: 'array', description: 'Array of effect objects {code, dataId, value1, value2}' },
-        note: { type: 'string', description: 'Note field for plugins' }
-      },
-      required: ['name']
-    }
-  },
-  {
-    name: 'create_weapon',
+          effects: { type: 'array', description: 'Array of effect objects {code, dataId, value1, value2}' },
+          note: { type: 'string', description: 'Note field for plugins' },
+          iconIndex: { type: 'number', description: 'Icon index' },
+          itypeId: { type: 'number', description: 'Item type ID' },
+          traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' }
+          },
+          required: ['name']
+          }
+          },
+          {
+          name: 'create_weapon',
     description: 'Create a new weapon. Generates a complete RPG Maker MV weapon object.',
     inputSchema: {
       type: 'object',
@@ -177,14 +323,17 @@ const TOOL_DEFINITIONS = [
           description: 'Parameter bonuses [mhp, mmp, atk, def, mat, mdf, agi, luk]',
           items: { type: 'number' }
         },
-        traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
-        note: { type: 'string', description: 'Note field' }
-      },
-      required: ['name']
-    }
-  },
-  {
-    name: 'create_armor',
+          traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
+          note: { type: 'string', description: 'Note field' },
+          iconIndex: { type: 'number', description: 'Icon index' },
+          etypeId: { type: 'number', description: 'Equip type ID' },
+          animationId: { type: 'number', description: 'Animation ID' }
+          },
+          required: ['name']
+          }
+          },
+          {
+          name: 'create_armor',
     description: 'Create a new armor. Generates a complete RPG Maker MV armor object.',
     inputSchema: {
       type: 'object',
@@ -199,14 +348,15 @@ const TOOL_DEFINITIONS = [
           items: { type: 'number' }
         },
         traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
-        etypeId: { type: 'number', description: 'Equip type: 2=shield, 3=head, 4=body, 5=accessory' },
-        note: { type: 'string', description: 'Note field' }
-      },
-      required: ['name']
-    }
-  },
-  {
-    name: 'update_item',
+          etypeId: { type: 'number', description: 'Equip type: 2=shield, 3=head, 4=body, 5=accessory' },
+          note: { type: 'string', description: 'Note field' },
+          iconIndex: { type: 'number', description: 'Icon index' }
+          },
+          required: ['name']
+          }
+          },
+          {
+          name: 'update_item',
     description: 'Update an existing item, weapon, or armor by ID (partial update).',
     inputSchema: {
       type: 'object',
@@ -276,10 +426,23 @@ const TOOL_DEFINITIONS = [
             critical: { type: 'boolean', description: 'Can critical hit (default false)' }
           }
         },
-        effects: { type: 'array', description: 'Array of effect objects {code, dataId, value1, value2}' },
-        note: { type: 'string', description: 'Note field' }
-      },
-      required: ['name']
+          effects: { type: 'array', description: 'Array of effect objects {code, dataId, value1, value2}' },
+          note: { type: 'string', description: 'Note field' },
+          iconIndex: { type: 'number', description: 'Icon index' },
+          stypeId: { type: 'number', description: 'Skill type ID' },
+          hitType: { type: 'number', description: 'Hit type: 0=certain, 1=physical, 2=magical' },
+          speed: { type: 'number', description: 'Speed correction' },
+          successRate: { type: 'number', description: 'Success rate (default 100)' },
+          repeats: { type: 'number', description: 'Number of repeats (default 1)' },
+          tpGain: { type: 'number', description: 'TP gained (default 0)' },
+          message1: { type: 'string', description: 'Message line 1 when used' },
+          message2: { type: 'string', description: 'Message line 2 when used' },
+          requiredWtypeId1: { type: 'number', description: 'Required weapon type ID 1' },
+          requiredWtypeId2: { type: 'number', description: 'Required weapon type ID 2' },
+          messageType: { type: 'number', description: 'Message type' },
+          traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' }
+          },
+          required: ['name']
     }
   },
   {
@@ -796,14 +959,16 @@ const TOOL_DEFINITIONS = [
       message1: { type: 'string', description: 'Message when applied' },
       message2: { type: 'string', description: 'Message when remaining' },
       message3: { type: 'string', description: 'Message when removed' },
-      message4: { type: 'string', description: 'Message on failure' },
-      note: { type: 'string', description: 'Note field' }
-    },
-    required: ['name']
-  }
-},
-{
-  name: 'update_state',
+          message4: { type: 'string', description: 'Message on failure' },
+          note: { type: 'string', description: 'Note field' },
+          removeByRestriction: { type: 'boolean', description: 'Remove by restriction (default false)' },
+          stepsToRemove: { type: 'number', description: 'Steps to remove (default 100)' }
+          },
+          required: ['name']
+          }
+          },
+          {
+          name: 'update_state',
   description: 'Update an existing state (partial update).',
   inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'State ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
 },
@@ -849,13 +1014,14 @@ const TOOL_DEFINITIONS = [
       name: { type: 'string', description: 'Common event name' },
       trigger: { type: 'number', description: 'Trigger type: 0=none, 1=autorun, 2=parallel' },
       switchId: { type: 'number', description: 'Switch ID that activates this event (required if trigger>0)' },
-      list: { type: 'array', description: 'Event command list' }
-    },
-    required: ['name']
-  }
-},
-{
-  name: 'update_common_event',
+          list: { type: 'array', description: 'Event command list' },
+          note: { type: 'string', description: 'Note field' }
+          },
+          required: ['name']
+          }
+          },
+          {
+          name: 'update_common_event',
   description: 'Update an existing common event (partial update).',
   inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Common event ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
 },
@@ -895,19 +1061,17 @@ const TOOL_DEFINITIONS = [
   }
 },
 {
-  name: 'add_enemy_to_troop',
-  description: 'Add an enemy to an existing troop at specified battle position.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      troopId: { type: 'number', description: 'Troop ID' },
-      enemyId: { type: 'number', description: 'Enemy ID to add' },
-      x: { type: 'number', description: 'X position on battle screen' },
-      y: { type: 'number', description: 'Y position on battle screen' }
-    },
-    required: ['troopId', 'enemyId', 'x', 'y']
-  }
-},
+            name: 'add_enemy_to_troop',
+            description: 'Add an enemy to an existing troop at auto-generated battle position.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    troopId: { type: 'number', description: 'Troop ID' },
+                    enemyId: { type: 'number', description: 'Enemy ID to add' }
+                },
+                required: ['troopId', 'enemyId']
+            }
+        },
 {
   name: 'create_random_encounter_troop',
   description: 'Create a troop with specified enemies at auto-generated battle positions. Simplified helper for random encounters.',
@@ -1056,6 +1220,22 @@ const TOOL_DEFINITIONS = [
   inputSchema: { type: 'object', properties: {}, required: [] }
 },
 {
+  name: 'get_project_context',
+  description: 'Get a complete pre-digested context of the project. Call this FIRST before creating maps, events, or database entries. Returns: tilesets with available tile categories, maps list, actors, items/weapons/armors IDs, switches, variables, and available sprites.',
+  inputSchema: { type: 'object', properties: {}, required: [] }
+},
+{
+  name: 'validate_map',
+  description: 'Validate a map for common errors: invalid tile IDs, wrong layer usage, broken event commands, invalid references to switches/variables/items/troops, missing page terminators. Returns a list of issues found.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      mapId: { type: 'number', description: 'Map ID to validate' }
+    },
+    required: ['mapId']
+  }
+},
+{
   name: 'set_project_path',
   description: 'Switch the server to a different RPG Maker MV project at runtime. Validates the new path.',
   inputSchema: {
@@ -1108,6 +1288,34 @@ const TOOL_DEFINITIONS = [
         tilesetId: { type: 'number', description: 'The tileset ID to scan' }
       },
       required: ['tilesetId']
+    }
+  },
+  // ──────── VISION AI TOOLS ────────
+  {
+    name: 'analyze_screenshot',
+    description: 'Analyze an image from the RPG Maker MV project using NVIDIA Llama 3.2 90B Vision AI. Can analyze: tilesets (tile categories, rows/cols), character sprites (directions, poses), map screenshots (terrain, events, layout), battlers, faces, etc. Returns a detailed textual description. Requires the nvidia-glm-proxy to be running with VISION_MODEL configured.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        image_path: { type: 'string', description: 'Relative path to the image within the project (e.g. "img/tilesets/Outside.png" or "img/characters/Actor1.png")' },
+        prompt: { type: 'string', description: 'Custom analysis prompt (optional). Default: RPG Maker specific analysis in Spanish.' },
+        resize_max: { type: 'number', description: 'Max width in pixels to resize the image before sending (default: 1024, saves tokens)' }
+      },
+      required: ['image_path']
+    }
+  },
+  {
+    name: 'render_map_ascii',
+    description: 'Render an ASCII representation of an RPG Maker MV map. Works offline without any API. Shows tile layout, event positions, and region IDs. Useful when no screenshot is available or you need precise coordinate information.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        map_id: { type: 'number', description: 'Map ID to render' },
+        layer: { type: 'number', description: 'Tile layer to render (0=ground, 2=upper, default: 0)' },
+        show_events: { type: 'boolean', description: 'Show event positions (default: true)' },
+        show_regions: { type: 'boolean', description: 'Show region IDs (default: false)' }
+      },
+      required: ['map_id']
     }
   }
 ];
@@ -1286,10 +1494,10 @@ case 'get_troop':
   return await troopTools.getTroop(p, args.id);
 case 'create_troop':
   return await troopTools.createTroop(p, args);
-case 'add_enemy_to_troop':
-  return await troopTools.addEnemyToTroop(p, args.troopId, args.enemyId, args.x, args.y);
-case 'create_random_encounter_troop':
-  return await troopTools.createRandomEncounterTroop(p, args.name, args.enemyIds);
+            case 'add_enemy_to_troop':
+                return await troopTools.addEnemyToTroop(p, args.troopId, args.enemyId);
+            case 'create_random_encounter_troop':
+                return await troopTools.createRandomEncounterTroop(p, { name: args.name, enemyIds: args.enemyIds });
 
 // ── Animation Tools ──
 case 'get_animations':
@@ -1308,20 +1516,30 @@ case 'delete_skill':
 // ── New Map Helper Tools ──
 case 'delete_map_event':
   return await mapTools.deleteMapEvent(p, args.mapId, args.eventId);
-case 'duplicate_map':
-  return await mapTools.duplicateMap(p, args.sourceMapId, args.name, args.displayName);
-case 'create_shop':
-  return await mapTools.createShop(p, args);
-case 'create_inn':
-  return await mapTools.createInn(p, args);
-case 'create_boss_event':
-  return await mapTools.createBossEvent(p, args);
-case 'create_puzzle_switch':
-  return await mapTools.createPuzzleSwitch(p, args);
+            case 'duplicate_map':
+                return await mapTools.duplicateMap(p, args.sourceMapId, args);
+            case 'create_shop':
+                return await mapTools.createShop(
+                    p, args.mapId, args.x, args.y, args.name,
+                    (args.goods || []).filter(function(g) { return g[0] === 0; }).map(function(g) { return g[1]; }),
+                    (args.goods || []).filter(function(g) { return g[0] === 1; }).map(function(g) { return g[1]; }),
+                    (args.goods || []).filter(function(g) { return g[0] === 2; }).map(function(g) { return g[1]; }),
+                    args.characterName, args.characterIndex
+                );
+            case 'create_inn':
+                return await mapTools.createInn(p, args.mapId, args.x, args.y, args.name, args.cost, args.characterName, args.characterIndex);
+            case 'create_boss_event':
+                return await mapTools.createBossEvent(p, args.mapId, args.x, args.y, args.name, args.troopId, args.characterName, args.characterIndex);
+            case 'create_puzzle_switch':
+                return await mapTools.createPuzzleSwitch(p, args.mapId, args.switchX, args.switchY, args.gameSwitchId, args.doorX, args.doorY, args.switchName);
 
 // ── Project Tools ──
 case 'get_project_summary':
   return await projectTools.getProjectSummary(p);
+case 'get_project_context':
+  return await getProjectContext(p);
+case 'validate_map':
+  return await validateMap(p, args.mapId);
 case 'set_project_path':
   var setResult = await projectTools.setProjectPath(args.path);
   return setResult;
@@ -1337,6 +1555,12 @@ case 'set_project_path':
       return await assetTools.scanProjectAssets(p);
     case 'get_tile_ids_for_tileset':
       return await assetTools.getTileIdsForTileset(p, args.tilesetId);
+
+    // ── Vision AI Tools ──
+    case 'analyze_screenshot':
+      return await analyzeScreenshot(p, args.image_path, args.prompt, args.resize_max);
+    case 'render_map_ascii':
+      return await renderMapAscii(p, args.map_id, args.layer, args.show_events, args.show_regions);
 
     default:
       throw new Error('Unknown tool: ' + name);
@@ -1417,6 +1641,244 @@ async function readScreenshot(base64PNG) {
   };
 }
 
+// ─── Vision AI Tool Implementations ───
+
+var PROXY_VISION_URL = process.env.PROXY_VISION_URL || 'http://127.0.0.1:9999';
+
+var VISION_DEFAULT_PROMPT = [
+  'Analiza esta imagen de un proyecto RPG Maker MV. Describe detalladamente:',
+  '1. Tipo de contenido (tileset, sprite de personaje, battler, screenshot de mapa, face, etc.)',
+  '2. Si es tileset: número de filas/columnas, categorías de tiles (terreno, agua, muros, techos, decoraciones), colores dominantes',
+  '3. Si es sprite de personaje: direcciones, poses, estilo artístico, colores',
+  '4. Si es screenshot de mapa: layout, tipos de terreno, eventos visibles, caminos, edificios, agua',
+  '5. Si es battler: estilo, tamaño relativo, elementos visuales',
+  '6. Problemas visuales potenciales (overlaps, gaps, inconsistencias de color, misaligned tiles)',
+].join('\n');
+
+async function analyzeScreenshot(projectPath, imagePath, customPrompt, resizeMax) {
+  const fs = require('fs');
+  const path = require('path');
+  const http = require('http');
+
+  var fullPath = path.join(projectPath, imagePath);
+  if (!fs.existsSync(fullPath)) {
+    throw new Error('Image not found: ' + imagePath + ' (resolved: ' + fullPath + ')');
+  }
+
+  var maxWidth = resizeMax || 1024;
+  var prompt = customPrompt || VISION_DEFAULT_PROMPT;
+
+  var imageBuffer = await sharp(fullPath)
+    .resize(maxWidth, null, { withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+
+  var base64Image = imageBuffer.toString('base64');
+  var dataUrl = 'data:image/jpeg;base64,' + base64Image;
+
+  var requestBody = JSON.stringify({
+    model: 'meta/llama-3.2-90b-vision-instruct',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: dataUrl } },
+          { type: 'text', text: prompt }
+        ]
+      }
+    ],
+    max_tokens: 500,
+    temperature: 0.1,
+    stream: false
+  });
+
+  return new Promise(function(resolve, reject) {
+    var parsedUrl = new URL(PROXY_VISION_URL + '/v1/chat/completions');
+    var options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || 80,
+      path: parsedUrl.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(requestBody),
+        'Authorization': 'Bearer sk-proxy'
+      }
+    };
+
+    var req = http.request(options, function(res) {
+      var chunks = [];
+      res.on('data', function(chunk) { chunks.push(chunk); });
+      res.on('end', function() {
+        var body = Buffer.concat(chunks).toString('utf8');
+        try {
+          var data = JSON.parse(body);
+          if (data.error) {
+            reject(new Error('Vision API error: ' + JSON.stringify(data.error)));
+            return;
+          }
+          var content = '';
+          if (data.choices && data.choices[0] && data.choices[0].message) {
+            content = data.choices[0].message.content || '';
+          }
+          var usage = data.usage || {};
+          resolve({
+            image_path: imagePath,
+            analysis: content,
+            model: data.model || 'unknown',
+            tokens_used: {
+              prompt: usage.prompt_tokens || 0,
+              completion: usage.completion_tokens || 0,
+              total: usage.total_tokens || 0
+            }
+          });
+        } catch (e) {
+          reject(new Error('Failed to parse vision API response: ' + e.message + ' | body: ' + body.slice(0, 500)));
+        }
+      });
+    });
+
+    req.on('error', function(err) {
+      reject(new Error('Vision API request failed: ' + err.message + '. Is nvidia-glm-proxy running at ' + PROXY_VISION_URL + '?'));
+    });
+
+    req.setTimeout(120000, function() {
+      req.destroy(new Error('Vision API timeout (120s)'));
+    });
+
+    req.write(requestBody);
+    req.end();
+  });
+}
+
+async function renderMapAscii(projectPath, mapId, layer, showEvents, showRegions) {
+  const fs = require('fs');
+  const path = require('path');
+
+  var map = await mapTools.getMap(projectPath, mapId);
+  var tileLayer = layer !== undefined ? layer : 0;
+  var showEv = showEvents !== false;
+  var showReg = showRegions === true;
+
+  var w = map.width;
+  var h = map.height;
+  var data = map.data;
+  if (!data || data.length === 0) {
+    return { mapId: mapId, error: 'Map has no tile data' };
+  }
+
+  var tilesetList = [];
+  try {
+    var tilesetContent = fs.readFileSync(path.join(projectPath, 'data', 'Tilesets.json'), 'utf-8');
+    tilesetList = JSON.parse(tilesetContent.replace(/^\uFEFF/, ''));
+  } catch (e) {}
+
+  var tileset = tilesetList[map.tilesetId] || null;
+  var tileCharMap = {};
+  tileCharMap[0] = '.';
+
+  if (tileset && tileset.flags) {
+    for (var tid = 1; tid <= 8191; tid++) {
+      if (tid >= data.length) break;
+      var flag = tileset.flags[tid] || 0;
+      var isWall = (flag & 0x10) !== 0;
+      var isTerrain = (flag & 0x40) !== 0;
+      var isLadder = (flag & 0x02) !== 0;
+      var isBush = (flag & 0x04) !== 0;
+      var isWater = (flag & 0x80) !== 0;
+      var isDamage = (flag & 0x20) !== 0;
+
+      if (isWater) tileCharMap[tid] = '~';
+      else if (isWall) tileCharMap[tid] = '#';
+      else if (isLadder) tileCharMap[tid] = 'H';
+      else if (isBush) tileCharMap[tid] = '"';
+      else if (isDamage) tileCharMap[tid] = 'x';
+      else if (isTerrain) tileCharMap[tid] = ',';
+    }
+  }
+
+  var autotileChars = 'GTFDRBSCWMLKPAEINU';
+  function getTileChar(tileId) {
+    if (tileId === 0) return '.';
+    if (tileCharMap[tileId]) return tileCharMap[tileId];
+    if (tileId < 2048) {
+      var kindIdx = Math.floor(tileId / 48);
+      return autotileChars[kindIdx % autotileChars.length] || 'A';
+    }
+    if (tileId >= 2048 && tileId < 2816) return 'A';
+    if (tileId >= 2816 && tileId < 4352) return 'T';
+    if (tileId >= 4352 && tileId < 5888) return 'W';
+    if (tileId >= 5888) return 'D';
+    return '?';
+  }
+
+  var layerSize = w * h;
+  var layerOffset = tileLayer * layerSize;
+  var grid = [];
+  for (var y = 0; y < h; y++) {
+    var row = '';
+    for (var x = 0; x < w; x++) {
+      var idx = layerOffset + y * w + x;
+      var tileId = idx < data.length ? data[idx] : 0;
+      row += getTileChar(tileId);
+    }
+    grid.push(row);
+  }
+
+  var eventMarkers = [];
+  if (showEv && map.events) {
+    for (var ei = 0; ei < map.events.length; ei++) {
+      var ev = map.events[ei];
+      if (!ev) continue;
+      if (ev.x < w && ev.y < h) {
+        var marker = ev.name ? ev.name.charAt(0).toUpperCase() : 'E';
+        var rowChars = grid[ev.y].split('');
+        rowChars[ev.x] = marker;
+        grid[ev.y] = rowChars.join('');
+        eventMarkers.push({ id: ev.id, name: ev.name, x: ev.x, y: ev.y, marker: marker });
+      }
+    }
+  }
+
+  var regionGrid = null;
+  if (showReg && data.length >= 6 * layerSize) {
+    regionGrid = [];
+    var regOffset = 5 * layerSize;
+    for (var y = 0; y < h; y++) {
+      var row = '';
+      for (var x = 0; x < w; x++) {
+        var idx = regOffset + y * w + x;
+        var rid = idx < data.length ? data[idx] : 0;
+        row += rid === 0 ? '.' : (rid < 10 ? String(rid) : String.fromCharCode(55 + rid));
+      }
+      regionGrid.push(row);
+    }
+  }
+
+  var legend = [
+    'Legend: . = empty, ~ = water, # = wall, H = ladder,',
+    '  " = bush, x = damage, , = terrain, T = tree, W = water tile,',
+    '  D = decoration, A = autotile, G/F/R/B/S/C = autotile kinds',
+    '  Uppercase letters on map = event markers (first char of name)'
+  ];
+
+  var result = {
+    mapId: mapId,
+    mapName: map.displayName || '',
+    width: w,
+    height: h,
+    tilesetId: map.tilesetId,
+    layer: tileLayer,
+    ascii: grid.join('\n'),
+    legend: legend,
+    events: eventMarkers
+  };
+  if (regionGrid) {
+    result.regionAscii = regionGrid.join('\n');
+  }
+  return result;
+}
+
 // ─── Server Setup ───
 
 async function main() {
@@ -1438,7 +1900,7 @@ async function main() {
   logger.info('Project path: ' + PROJECT_PATH);
 
   const server = new Server(
-    { name: 'rpgmaker-mv-mcp', version: '2.0.0' },
+    { name: 'rpgmaker-mv-mcp', version: '3.1.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -1502,7 +1964,7 @@ transport.send = function(message) {
   return originalSend(message);
 };
 await server.connect(transport);
-  logger.info('RPG Maker MV MCP server v2.0.0 running on stdio (' + TOOL_DEFINITIONS.length + ' tools)');
+  logger.info('RPG Maker MV MCP server v3.1.0 running on stdio (' + TOOL_DEFINITIONS.length + ' tools)');
 }
 
 main().catch(function(error) {

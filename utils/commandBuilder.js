@@ -111,9 +111,9 @@ function conditionalSelfSwitch(key, value) {
  * @returns {Array<{code:number, indent:number, parameters:any[]}>}
  */
 function conditionalVariable(varId, operator, val) {
-  return [
-    { code: 111, indent: 0, parameters: [1, varId, operator, val] }
-  ];
+    return [
+        { code: 111, indent: 0, parameters: [1, varId, operator, 0, val] }
+    ];
 }
 
 /**
@@ -412,10 +412,10 @@ function changePartyMember(actorId, add) {
 }
 
 function changeHP(actorId, value, isAdd) {
-  isAdd = isAdd !== undefined ? isAdd : true;
-  return [
-    { code: 311, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, false] }
-  ];
+    isAdd = isAdd !== undefined ? isAdd : true;
+    return [
+        { code: 311, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, 0] }
+    ];
 }
 
 function changeMP(actorId, value, isAdd) {
@@ -426,24 +426,31 @@ function changeMP(actorId, value, isAdd) {
 }
 
 function changeEXP(actorId, value, isAdd) {
-  isAdd = isAdd !== undefined ? isAdd : true;
-  return [
-    { code: 315, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, false] }
-  ];
+    isAdd = isAdd !== undefined ? isAdd : true;
+    return [
+        { code: 315, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, 0] }
+    ];
 }
 
 function changeLevel(actorId, value, isAdd) {
-  isAdd = isAdd !== undefined ? isAdd : true;
-  return [
-    { code: 317, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, false] }
-  ];
+    isAdd = isAdd !== undefined ? isAdd : true;
+    return [
+        { code: 317, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, 0] }
+    ];
 }
 
 function changeSkill(actorId, skillId, learn) {
-  learn = learn !== undefined ? learn : true;
-  return [
-    { code: 318, indent: 0, parameters: [0, actorId, learn ? 0 : 1, skillId] }
-  ];
+    learn = learn !== undefined ? learn : true;
+    return [
+        { code: 318, indent: 0, parameters: [0, actorId, learn ? 0 : 1, skillId] }
+    ];
+}
+
+function changeState(actorId, stateId, add) {
+    add = add !== undefined ? add : true;
+    return [
+        { code: 313, indent: 0, parameters: [0, actorId, add ? 0 : 1, stateId] }
+    ];
 }
 
 function changeEquip(actorId, slotType, itemId) {
@@ -459,25 +466,22 @@ function scrollMap(direction, distance, speed) {
 }
 
 function battleProcessing(troopId, canEscape, canLose) {
-  canEscape = canEscape !== undefined ? canEscape : true;
-  canLose = canLose !== undefined ? canLose : false;
-  return [
-    { code: 301, indent: 0, parameters: [0, troopId, canEscape, canLose] }
-  ];
+    canEscape = canEscape !== undefined ? canEscape : true;
+    canLose = canLose !== undefined ? canLose : false;
+    return [
+        { code: 301, indent: 0, parameters: [0, troopId, canEscape ? 1 : 0, canLose ? 1 : 0] }
+    ];
 }
 
 function shopProcessing(goods, purchaseOnly) {
-  purchaseOnly = purchaseOnly !== undefined ? purchaseOnly : true;
-  var result = [
-    { code: 302, indent: 0, parameters: [0, goods, purchaseOnly] }
-  ];
-  if (goods.length > 0) {
-    result.push({ code: 605, indent: 0, parameters: goods[0] });
-  }
-  for (var i = 1; i < goods.length; i++) {
-    result.push({ code: 605, indent: 0, parameters: goods[i] });
-  }
-  return result;
+    purchaseOnly = purchaseOnly !== undefined ? purchaseOnly : true;
+    var result = [
+        { code: 302, indent: 0, parameters: [0, purchaseOnly ? 1 : 0] }
+    ];
+    for (var i = 0; i < goods.length; i++) {
+        result.push({ code: 605, indent: 0, parameters: goods[i] });
+    }
+    return result;
 }
 
 function nameInput(actorId, maxLength) {
@@ -589,8 +593,9 @@ const cmd = {
   changeMP,
   changeEXP,
   changeLevel,
-  changeSkill,
-  changeEquip,
+    changeSkill,
+    changeState,
+    changeEquip,
   scrollMap,
   battleProcessing,
   shopProcessing,

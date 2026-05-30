@@ -25,9 +25,9 @@ function getMapPath(projectPath, mapId) {
  * @returns {Promise<any>} Parsed JSON content
  */
 async function readJson(projectPath, filename) {
-  const filePath = getDataPath(projectPath, filename);
-  const content = await readFile(filePath, 'utf-8');
-  return JSON.parse(content);
+    const filePath = getDataPath(projectPath, filename);
+    const content = await readFile(filePath, 'utf-8');
+    return JSON.parse(content.replace(/^\uFEFF/, ''));
 }
 
 /**

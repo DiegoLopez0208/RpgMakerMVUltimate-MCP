@@ -237,7 +237,7 @@ async function getTileIdsForTileset(projectPath, tilesetId) {
     }
   }
 
-  return categorizeTiles(id, ts.tilesetNames, sheets);
+    return { availableTiles: categorizeTiles(id, ts.tilesetNames, sheets) };
 }
 
 module.exports = { scanProjectAssets, getTileIdsForTileset };
