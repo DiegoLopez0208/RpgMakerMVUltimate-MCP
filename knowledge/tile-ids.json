@@ -18,23 +18,73 @@
   },
   "maxShape": 47,
   "sheetDescriptions": {
-    "A1": "Water/ground animations (tileset index 0). Contains animated water surfaces, deep water, waterfalls. Kinds 0-3 are water surfaces with animation, 4-5 are deep water, 6+ are ground/waterfall combos.",
-    "A2": "Floor/ground autotiles (tileset index 1). Top 2 rows = ground type, bottom row = decoration/border. Kinds 0-15 = floors with border transitions. Table flag = 0x80.",
-    "A3": "Roof/building autotiles (tileset index 2). Kinds 0-7 = roofs (wall-top type), 8-15 = walls (wall-side type). Uses WALL_AUTOTILE_TABLE.",
-    "A4": "Wall/floor interior autotiles (tileset index 3). Even kinds = floor/wall-top, odd kinds = wall-side. Uses FLOOR_AUTOTILE_TABLE for wall-tops, WALL_AUTOTILE_TABLE for wall-sides.",
-    "A5": "Static tiles (tileset index 4). No autotile behavior. 8 columns x 16 rows = 128 tiles. IDs 1536-2047.",
-    "B": "Normal tiles page 1 (tileset index 5). 8 columns x 16 rows = 128 tiles. IDs 0-255.",
-    "C": "Normal tiles page 2 (tileset index 6). Same layout. IDs 256-511.",
-    "D": "Normal tiles page 3 (tileset index 7). Same layout. IDs 512-767.",
-    "E": "Normal tiles page 4 (tileset index 8). Same layout. IDs 768-1535."
+    "A1": "Water/ground animations (tileset index 0). Contains animated water surfaces, deep water, waterfalls. Kinds 0-3 are water surfaces with animation, 4-5 are deep water, 6+ are ground/waterfall combos. Size: 768x576 (16x12 tiles).",
+    "A2": "Floor/ground autotiles (tileset index 1). Top 2 rows = ground type, bottom row = decoration/border. Kinds 0-15 = floors with border transitions. Table flag = 0x80. Size: 768x576 (16x12 tiles).",
+    "A3": "Roof/building autotiles (tileset index 2). Kinds 0-7 = roofs (wall-top type), 8-15 = walls (wall-side type). Uses WALL_AUTOTILE_TABLE. Size: 768x384 (16x8 tiles).",
+    "A4": "Wall/floor interior autotiles (tileset index 3). Even kinds = floor/wall-top, odd kinds = wall-side. Uses FLOOR_AUTOTILE_TABLE for wall-tops, WALL_AUTOTILE_TABLE for wall-sides. Size: 768x720 (16x15 tiles).",
+    "A5": "Static tiles (tileset index 4). No autotile behavior. 8 columns x 16 rows = 128 tiles. IDs 1536-2047. Size: 384x768 (8x16 tiles).",
+    "B": "Normal tiles page 1 (tileset index 5). 8 columns x 16 rows = 128 tiles. IDs 0-255. Slot 0 (top-left) MUST be blank (represents 'nothing placed'). Size: 768x768 (16x16 tiles).",
+    "C": "Normal tiles page 2 (tileset index 6). Same layout as B. IDs 256-511. Size: 768x768 (16x16 tiles).",
+    "D": "Normal tiles page 3 (tileset index 7). Same layout as B. IDs 512-767. Size: 768x768 (16x16 tiles).",
+    "E": "Normal tiles page 4 (tileset index 8). Same layout as B. IDs 768-1535. Size: 768x768 (16x16 tiles)."
   },
   "mapDataIndex": "index = (layer * height + y) * width + x",
   "layers": {
-    "0": "lower tile slot 1 — ground, rendered below characters. Contains ground/floor autotiles.",
-    "1": "lower tile slot 2 — ground, rendered below characters. Second ground layer for overlapping ground tiles.",
-    "2": "upper tile slot 1 — rendered above characters if the tile has the star flag (0x10). Used for tree canopies, roofs, decorations.",
-    "3": "upper tile slot 2 — rendered above characters if the tile has the star flag (0x10). Second upper layer.",
-    "4": "shadow bits — integer bitmask 0–15. Each of the 4 bits represents a quarter-tile shadow. This is NOT a tile ID. Writing a tile ID here will produce incorrect shadow artifacts.",
-    "5": "region ID — integer 1–255. Used to define encounter regions, event trigger zones, and spawn areas. Value 0 means no region."
+    "0": "Lower tile layer 1 — Tile ID (any slot A1-E). Rendered BELOW characters by default. If tile has star flag (0x10), rendered ABOVE characters. Typically used for ground/floor: A1 water, A2 grass/dirt, A5 static ground.",
+    "1": "Lower tile layer 2 — Tile ID (any slot A1-E). Same rendering rules as layer 0. Second ground layer for overlapping tiles. Typically used for A2 paths/borders, A5 ground details.",
+    "2": "Upper tile layer 1 — Tile ID (any slot A1-E). Rendered BELOW characters by default; ABOVE if star flag (0x10). Typically used for A3 roofs, A4 walls, B/C/D/E decorations and furniture.",
+    "3": "Upper tile layer 2 — Tile ID (any slot A1-E). Same rendering rules as layer 2. Second upper layer for additional decorations. Typically used for B/C/D/E overlay decorations.",
+    "4": "Shadow bits — WARNING: NOT a tile ID! Integer bitmask 0-15. Each bit controls a quarter-tile shadow: bit 0=top-left, bit 1=top-right, bit 2=bottom-left, bit 3=bottom-right. Value 15 = full shadow. Writing a tile ID here produces visual artifacts.",
+    "5": "Region ID — WARNING: NOT a tile ID! Integer 1-255. Used for encounter regions, event trigger zones, vehicle spawn areas. Value 0 = no region. Read via $gameMap.regionId(x,y)."
+  },
+  "tileIdRanges": {
+    "B":  {"start": 0,   "end": 255,  "count": 256},
+    "C":  {"start": 256, "end": 511,  "count": 256},
+    "D":  {"start": 512, "end": 767,  "count": 256},
+    "E":  {"start": 768, "end": 1535, "count": 768},
+    "A5": {"start": 1536,"end": 2047, "count": 512},
+    "A1": {"start": 2048,"end": 2815, "count": 768},
+    "A2": {"start": 2816,"end": 4351, "count": 1536},
+    "A3": {"start": 4352,"end": 5887, "count": 1536},
+    "A4": {"start": 5888,"end": 8191, "count": 2304}
+  },
+  "tileTypeDetection": {
+    "isTileA1":      "tileId >= 2048 && tileId < 2816",
+    "isTileA2":      "tileId >= 2816 && tileId < 4352",
+    "isTileA3":      "tileId >= 4352 && tileId < 5888",
+    "isTileA4":      "tileId >= 5888 && tileId < 8192",
+    "isTileA5":      "tileId >= 1536 && tileId < 2048",
+    "isAutotile":    "tileId >= 2048",
+    "isGroundTile":  "A1 || A2 || A5",
+    "isShadowingTile":"A3 || A4",
+    "isRoofTile":    "A3 && kind%16 < 8",
+    "isWallTopTile": "A4 && kind%16 < 8",
+    "isWallSideTile":"(A3 || A4) && kind%16 >= 8",
+    "isWaterTile":   "A1 && !(kind >= 2 && kind < 4)",
+    "isWaterfallTile":"A1 && kind >= 4 && kind%2 === 1"
+  },
+  "flagsBitmask": {
+    "0x0001": "Impassable downward",
+    "0x0002": "Impassable leftward",
+    "0x0004": "Impassable rightward",
+    "0x0008": "Impassable upward",
+    "0x0010": "Star flag - display above normal characters",
+    "0x0020": "Ladder",
+    "0x0040": "Bush",
+    "0x0080": "Counter (table edge)",
+    "0x0100": "Damage floor",
+    "0x0200": "Impassable by boat",
+    "0x0400": "Impassable by ship",
+    "0x0800": "Airship cannot land",
+    "0xF000": "Terrain tag (4 bits, values 0-15)"
+  },
+  "commonFlagValues": {
+    "passageAllDirs": 1551,
+    "passageNormal": 1536,
+    "passageLadder": 1568,
+    "passageBush": 1664,
+    "passageDamage": 1663,
+    "impassable": 15,
+    "starAbove": 1551
   }
 }

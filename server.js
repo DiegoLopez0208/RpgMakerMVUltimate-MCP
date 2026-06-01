@@ -196,7 +196,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'The actor ID to retrieve' }
+        id: { type: ['number', 'string'], description: 'The actor ID to retrieve' }
       },
       required: ['id']
     }
@@ -209,13 +209,13 @@ const TOOL_DEFINITIONS = [
       properties: {
         name: { type: 'string', description: 'Actor name' },
         nickname: { type: 'string', description: 'Actor nickname' },
-        classId: { type: 'number', description: 'Class ID' },
-        initialLevel: { type: 'number', description: 'Starting level (default 1)' },
-        maxLevel: { type: 'number', description: 'Maximum level (default 99)' },
+        classId: { type: ['number', 'string'], description: 'Class ID' },
+        initialLevel: { type: ['number', 'string'], description: 'Starting level (default 1)' },
+        maxLevel: { type: ['number', 'string'], description: 'Maximum level (default 99)' },
         characterName: { type: 'string', description: 'Character sprite filename' },
-        characterIndex: { type: 'number', description: 'Character sprite index (0-7)' },
+        characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' },
         faceName: { type: 'string', description: 'Face graphic filename' },
-        faceIndex: { type: 'number', description: 'Face graphic index (0-7)' },
+        faceIndex: { type: ['number', 'string'], description: 'Face graphic index (0-7)' },
           battlerName: { type: 'string', description: 'Battler sprite filename' },
           profile: { type: 'string', description: 'Actor profile text' },
           traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
@@ -231,7 +231,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'The actor ID to update' },
+        id: { type: ['number', 'string'], description: 'The actor ID to update' },
         fields: { type: 'object', description: 'Object containing actor fields to update' }
       },
       required: ['id', 'fields']
@@ -294,15 +294,15 @@ const TOOL_DEFINITIONS = [
       properties: {
         name: { type: 'string', description: 'Item name' },
         description: { type: 'string', description: 'Item description' },
-        price: { type: 'number', description: 'Shop price' },
+        price: { type: ['number', 'string'], description: 'Shop price' },
         consumable: { type: 'boolean', description: 'Whether the item is consumed on use (default true)' },
-        scope: { type: 'number', description: 'Target scope: 1=single enemy, 7=all allies, 11=user' },
-        occasion: { type: 'number', description: 'When usable: 0=always, 1=battle, 2=menu, 3=never' },
-        animationId: { type: 'number', description: 'Animation ID when used' },
+        scope: { type: ['number', 'string'], description: 'Target scope: 1=single enemy, 7=all allies, 11=user' },
+        occasion: { type: ['number', 'string'], description: 'When usable: 0=always, 1=battle, 2=menu, 3=never' },
+        animationId: { type: ['number', 'string'], description: 'Animation ID when used' },
           effects: { type: 'array', description: 'Array of effect objects {code, dataId, value1, value2}' },
           note: { type: 'string', description: 'Note field for plugins' },
-          iconIndex: { type: 'number', description: 'Icon index' },
-          itypeId: { type: 'number', description: 'Item type ID' },
+          iconIndex: { type: ['number', 'string'], description: 'Icon index' },
+          itypeId: { type: ['number', 'string'], description: 'Item type ID' },
           traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' }
           },
           required: ['name']
@@ -316,18 +316,18 @@ const TOOL_DEFINITIONS = [
       properties: {
         name: { type: 'string', description: 'Weapon name' },
         description: { type: 'string', description: 'Weapon description' },
-        wtypeId: { type: 'number', description: 'Weapon type ID' },
-        price: { type: 'number', description: 'Shop price' },
+        wtypeId: { type: ['number', 'string'], description: 'Weapon type ID' },
+        price: { type: ['number', 'string'], description: 'Shop price' },
         params: {
           type: 'array',
           description: 'Parameter bonuses [mhp, mmp, atk, def, mat, mdf, agi, luk]',
-          items: { type: 'number' }
+          items: { type: ['number', 'string'] }
         },
           traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
           note: { type: 'string', description: 'Note field' },
-          iconIndex: { type: 'number', description: 'Icon index' },
-          etypeId: { type: 'number', description: 'Equip type ID' },
-          animationId: { type: 'number', description: 'Animation ID' }
+          iconIndex: { type: ['number', 'string'], description: 'Icon index' },
+          etypeId: { type: ['number', 'string'], description: 'Equip type ID' },
+          animationId: { type: ['number', 'string'], description: 'Animation ID' }
           },
           required: ['name']
           }
@@ -340,17 +340,17 @@ const TOOL_DEFINITIONS = [
       properties: {
         name: { type: 'string', description: 'Armor name' },
         description: { type: 'string', description: 'Armor description' },
-        atypeId: { type: 'number', description: 'Armor type ID' },
-        price: { type: 'number', description: 'Shop price' },
+        atypeId: { type: ['number', 'string'], description: 'Armor type ID' },
+        price: { type: ['number', 'string'], description: 'Shop price' },
         params: {
           type: 'array',
           description: 'Parameter bonuses [mhp, mmp, atk, def, mat, mdf, agi, luk]',
-          items: { type: 'number' }
+          items: { type: ['number', 'string'] }
         },
         traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
-          etypeId: { type: 'number', description: 'Equip type: 2=shield, 3=head, 4=body, 5=accessory' },
+          etypeId: { type: ['number', 'string'], description: 'Equip type: 2=shield, 3=head, 4=body, 5=accessory' },
           note: { type: 'string', description: 'Note field' },
-          iconIndex: { type: 'number', description: 'Icon index' }
+          iconIndex: { type: ['number', 'string'], description: 'Icon index' }
           },
           required: ['name']
           }
@@ -361,7 +361,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'The item/weapon/armor ID to update' },
+        id: { type: ['number', 'string'], description: 'The item/weapon/armor ID to update' },
         type: { type: 'string', description: 'Type: "item", "weapon", or "armor"', enum: ['item', 'weapon', 'armor'] },
         fields: { type: 'object', description: 'Fields to update' }
       },
@@ -388,7 +388,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'The skill ID' }
+        id: { type: ['number', 'string'], description: 'The skill ID' }
       },
       required: ['id']
     }
@@ -410,36 +410,36 @@ const TOOL_DEFINITIONS = [
       properties: {
         name: { type: 'string', description: 'Skill name' },
         description: { type: 'string', description: 'Skill description' },
-        mpCost: { type: 'number', description: 'MP cost' },
-        tpCost: { type: 'number', description: 'TP cost' },
-        scope: { type: 'number', description: 'Target scope: 1=single enemy, 2=all enemies, 7=all allies, 11=user' },
-        occasion: { type: 'number', description: 'When usable: 0=always, 1=battle, 2=menu, 3=never' },
-        animationId: { type: 'number', description: 'Animation ID' },
+        mpCost: { type: ['number', 'string'], description: 'MP cost' },
+        tpCost: { type: ['number', 'string'], description: 'TP cost' },
+        scope: { type: ['number', 'string'], description: 'Target scope: 1=single enemy, 2=all enemies, 7=all allies, 11=user' },
+        occasion: { type: ['number', 'string'], description: 'When usable: 0=always, 1=battle, 2=menu, 3=never' },
+        animationId: { type: ['number', 'string'], description: 'Animation ID' },
         damage: {
           type: 'object',
           description: 'Damage configuration: {type, elementId, formula, variance, critical}',
           properties: {
-            type: { type: 'number', description: '0=none, 1=HP damage, 2=MP damage, 3=HP recover, 4=MP recover, 5=MP drain' },
-            elementId: { type: 'number', description: 'Element: 0=none, 2=fire, 3=ice, 4=thunder, etc.' },
+            type: { type: ['number', 'string'], description: '0=none, 1=HP damage, 2=MP damage, 3=HP recover, 4=MP recover, 5=MP drain' },
+            elementId: { type: ['number', 'string'], description: 'Element: 0=none, 2=fire, 3=ice, 4=thunder, etc.' },
             formula: { type: 'string', description: 'Damage formula (e.g. "a.mat * 4 - b.mdf * 2")' },
-            variance: { type: 'number', description: 'Variance percentage (0-100, default 20)' },
+            variance: { type: ['number', 'string'], description: 'Variance percentage (0-100, default 20)' },
             critical: { type: 'boolean', description: 'Can critical hit (default false)' }
           }
         },
           effects: { type: 'array', description: 'Array of effect objects {code, dataId, value1, value2}' },
           note: { type: 'string', description: 'Note field' },
-          iconIndex: { type: 'number', description: 'Icon index' },
-          stypeId: { type: 'number', description: 'Skill type ID' },
-          hitType: { type: 'number', description: 'Hit type: 0=certain, 1=physical, 2=magical' },
-          speed: { type: 'number', description: 'Speed correction' },
-          successRate: { type: 'number', description: 'Success rate (default 100)' },
-          repeats: { type: 'number', description: 'Number of repeats (default 1)' },
-          tpGain: { type: 'number', description: 'TP gained (default 0)' },
+          iconIndex: { type: ['number', 'string'], description: 'Icon index' },
+          stypeId: { type: ['number', 'string'], description: 'Skill type ID' },
+          hitType: { type: ['number', 'string'], description: 'Hit type: 0=certain, 1=physical, 2=magical' },
+          speed: { type: ['number', 'string'], description: 'Speed correction' },
+          successRate: { type: ['number', 'string'], description: 'Success rate (default 100)' },
+          repeats: { type: ['number', 'string'], description: 'Number of repeats (default 1)' },
+          tpGain: { type: ['number', 'string'], description: 'TP gained (default 0)' },
           message1: { type: 'string', description: 'Message line 1 when used' },
           message2: { type: 'string', description: 'Message line 2 when used' },
-          requiredWtypeId1: { type: 'number', description: 'Required weapon type ID 1' },
-          requiredWtypeId2: { type: 'number', description: 'Required weapon type ID 2' },
-          messageType: { type: 'number', description: 'Message type' },
+          requiredWtypeId1: { type: ['number', 'string'], description: 'Required weapon type ID 1' },
+          requiredWtypeId2: { type: ['number', 'string'], description: 'Required weapon type ID 2' },
+          messageType: { type: ['number', 'string'], description: 'Message type' },
           traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' }
           },
           required: ['name']
@@ -452,11 +452,11 @@ const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Skill name' },
-        mpCost: { type: 'number', description: 'MP cost' },
-        scope: { type: 'number', description: 'Target scope: 1=single enemy, 2=all enemies' },
+        mpCost: { type: ['number', 'string'], description: 'MP cost' },
+        scope: { type: ['number', 'string'], description: 'Target scope: 1=single enemy, 2=all enemies' },
         formula: { type: 'string', description: 'Damage formula (e.g. "a.mat * 4 - b.mdf * 2")' },
-        element: { type: 'number', description: 'Element ID: 0=none, 2=fire, 3=ice, 4=thunder (default 0)' },
-        animationId: { type: 'number', description: 'Animation ID (default 1)' }
+        element: { type: ['number', 'string'], description: 'Element ID: 0=none, 2=fire, 3=ice, 4=thunder (default 0)' },
+        animationId: { type: ['number', 'string'], description: 'Animation ID (default 1)' }
       },
       required: ['name', 'mpCost', 'scope', 'formula']
     }
@@ -468,10 +468,10 @@ const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Skill name' },
-        mpCost: { type: 'number', description: 'MP cost' },
-        scope: { type: 'number', description: 'Target scope: 7=all allies, 11=user' },
+        mpCost: { type: ['number', 'string'], description: 'MP cost' },
+        scope: { type: ['number', 'string'], description: 'Target scope: 7=all allies, 11=user' },
         formula: { type: 'string', description: 'Healing formula (e.g. "a.mat * 3 + 100")' },
-        animationId: { type: 'number', description: 'Animation ID (default 47)' }
+        animationId: { type: ['number', 'string'], description: 'Animation ID (default 47)' }
       },
       required: ['name', 'mpCost', 'scope', 'formula']
     }
@@ -483,10 +483,10 @@ const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Skill name' },
-        mpCost: { type: 'number', description: 'MP cost' },
-        scope: { type: 'number', description: 'Target scope: 7=all allies, 11=user' },
-        paramId: { type: 'number', description: 'Parameter to buff: 0=MaxHP, 1=MaxMP, 2=ATK, 3=DEF, 4=MAT, 5=MDF, 6=AGI, 7=LUK' },
-        turns: { type: 'number', description: 'Number of turns the buff lasts' }
+        mpCost: { type: ['number', 'string'], description: 'MP cost' },
+        scope: { type: ['number', 'string'], description: 'Target scope: 7=all allies, 11=user' },
+        paramId: { type: ['number', 'string'], description: 'Parameter to buff: 0=MaxHP, 1=MaxMP, 2=ATK, 3=DEF, 4=MAT, 5=MDF, 6=AGI, 7=LUK' },
+        turns: { type: ['number', 'string'], description: 'Number of turns the buff lasts' }
       },
       required: ['name', 'mpCost', 'scope', 'paramId', 'turns']
     }
@@ -498,10 +498,10 @@ const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Skill name' },
-        mpCost: { type: 'number', description: 'MP cost' },
-        scope: { type: 'number', description: 'Target scope: 1=single enemy, 2=all enemies' },
-        stateId: { type: 'number', description: 'State ID: 4=poison, 5=blind, 6=silence, 8=confusion, 9=sleep' },
-        chance: { type: 'number', description: 'Success chance (0.0 to 1.0)' }
+        mpCost: { type: ['number', 'string'], description: 'MP cost' },
+        scope: { type: ['number', 'string'], description: 'Target scope: 1=single enemy, 2=all enemies' },
+        stateId: { type: ['number', 'string'], description: 'State ID: 4=poison, 5=blind, 6=silence, 8=confusion, 9=sleep' },
+        chance: { type: ['number', 'string'], description: 'Success chance (0.0 to 1.0)' }
       },
       required: ['name', 'mpCost', 'scope', 'stateId', 'chance']
     }
@@ -512,7 +512,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'The skill ID to update' },
+        id: { type: ['number', 'string'], description: 'The skill ID to update' },
         fields: { type: 'object', description: 'Fields to update' }
       },
       required: ['id', 'fields']
@@ -546,7 +546,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID (e.g. 1 for Map001.json)' }
+        mapId: { type: ['number', 'string'], description: 'The map ID (e.g. 1 for Map001.json)' }
       },
       required: ['mapId']
     }
@@ -557,7 +557,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' }
+        mapId: { type: ['number', 'string'], description: 'The map ID' }
       },
       required: ['mapId']
     }
@@ -568,8 +568,8 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' },
-        eventId: { type: 'number', description: 'The event ID' }
+        mapId: { type: ['number', 'string'], description: 'The map ID' },
+        eventId: { type: ['number', 'string'], description: 'The event ID' }
       },
       required: ['mapId', 'eventId']
     }
@@ -581,9 +581,9 @@ const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Map name as shown in the editor' },
-        width: { type: 'number', description: 'Map width in tiles (default 17)' },
-        height: { type: 'number', description: 'Map height in tiles (default 13)' },
-        tilesetId: { type: 'number', description: 'Tileset ID (default 1)' },
+        width: { type: ['number', 'string'], description: 'Map width in tiles (default 17)' },
+        height: { type: ['number', 'string'], description: 'Map height in tiles (default 13)' },
+        tilesetId: { type: ['number', 'string'], description: 'Tileset ID (default 1)' },
         bgmName: { type: 'string', description: 'BGM filename to autoplay' },
         displayName: { type: 'string', description: 'Display name shown to the player' },
         note: { type: 'string', description: 'Note field for plugin metadata' },
@@ -602,9 +602,9 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' },
-        layer: { type: 'number', description: 'Layer index (0-5): 0-1=ground, 2-3=upper, 4=shadow, 5=region' },
-        tileId: { type: 'number', description: 'Tile ID to fill with (0=clear)' }
+        mapId: { type: ['number', 'string'], description: 'The map ID' },
+        layer: { type: ['number', 'string'], description: 'Layer index (0-5): 0-1=ground, 2-3=upper, 4=shadow, 5=region' },
+        tileId: { type: ['number', 'string'], description: 'Tile ID to fill with (0=clear)' }
       },
       required: ['mapId', 'layer', 'tileId']
     }
@@ -615,24 +615,120 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' },
-        x: { type: 'number', description: 'X position on the map' },
-        y: { type: 'number', description: 'Y position on the map' },
+        mapId: { type: ['number', 'string'], description: 'The map ID' },
+        x: { type: ['number', 'string'], description: 'X position on the map' },
+        y: { type: ['number', 'string'], description: 'Y position on the map' },
         name: { type: 'string', description: 'Event name' },
-        trigger: { type: 'number', description: 'Trigger: 0=action button, 1=player touch, 2=event touch, 3=autorun, 4=parallel' },
+        trigger: { type: ['number', 'string'], description: 'Trigger: 0=action button, 1=player touch, 2=event touch, 3=autorun, 4=parallel' },
         pages: { type: 'array', description: 'Array of event page objects (optional)' }
       },
       required: ['mapId', 'x', 'y', 'name']
     }
-  },
-  {
-    name: 'update_map_event',
+},
+{
+  name: 'generate_map_v3',
+  description: 'Generate a new map using the V3 procedural generator with Perlin noise, BSP dungeon, cellular automata caves. Supports 21 themes: forest, town, village, castle, dungeon, cave, beach, desert, swamp, ruins, interior, snow, harbor, volcano, sewer, fortress, magic_forest, magic_interior, space_interior, space_exterior, world. Generates events automatically (NPCs, chests, bosses, transfers). Returns mapId and seed used.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Map name for MapInfos' },
+      displayName: { type: 'string', description: 'Display name shown to player' },
+      width: { type: ['number', 'string'], description: 'Map width in tiles (default 30)' },
+      height: { type: ['number', 'string'], description: 'Map height in tiles (default 25)' },
+      tilesetId: { type: ['number', 'string'], description: 'Tileset ID (1=Overworld,2=Outside,3=Inside,4=Dungeon,5=SF Outside,6=SF Inside,7=Magic Exterior,8=Space Interior)' },
+      theme: { type: 'string', description: 'Theme: forest, town, village, castle, dungeon, cave, beach, desert, swamp, ruins, interior, snow, harbor, volcano, sewer, fortress, magic_forest, magic_interior, space_interior, space_exterior, world' },
+      seed: { type: ['number', 'string'], description: 'Random seed (omit for random). Same seed = same map.' },
+      addEvents: { type: 'boolean', description: 'Generate events automatically (default true)' },
+      parentId: { type: ['number', 'string'], description: 'Parent folder ID in map tree (0=root)' }
+    },
+    required: ['theme']
+  }
+},
+{
+  name: 'generate_map_batch',
+  description: 'Generate multiple maps in a single call. Each entry specifies theme, size, tilesetId, name. Returns all mapIds for interconnection.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      batch: {
+        type: 'array',
+        description: 'Array of map specs: [{key, name, theme, width, height, tilesetId, seed, parentId}]',
+        items: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', description: 'Reference key for connect_maps later' },
+            name: { type: 'string', description: 'Map name' },
+            theme: { type: 'string', description: 'Theme name' },
+            width: { type: ['number', 'string'] },
+            height: { type: ['number', 'string'] },
+            tilesetId: { type: ['number', 'string'] },
+            seed: { type: ['number', 'string'] },
+            parentId: { type: ['number', 'string'] }
+          }
+        }
+      }
+    },
+    required: ['batch']
+  }
+},
+{
+  name: 'connect_maps',
+  description: 'Create bidirectional transfer events between two maps. Player touch events at specified positions.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      mapIdA: { type: ['number', 'string'], description: 'First map ID' },
+      mapIdB: { type: ['number', 'string'], description: 'Second map ID' },
+      posA: { type: 'object', description: 'Position on map A: {x, y, trigger}', properties: { x: { type: ['number', 'string'] }, y: { type: ['number', 'string'] }, trigger: { type: ['number', 'string'] } } },
+      posB: { type: 'object', description: 'Position on map B: {x, y, trigger}', properties: { x: { type: ['number', 'string'] }, y: { type: ['number', 'string'] }, trigger: { type: ['number', 'string'] } } }
+    },
+    required: ['mapIdA', 'mapIdB', 'posA', 'posB']
+  }
+},
+{
+  name: 'populate_map_events',
+  description: 'Add multiple events of a type (npc, chest, boss) to an existing map at random positions.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      mapId: { type: ['number', 'string'], description: 'Map ID' },
+      eventType: { type: 'string', description: 'Event type: npc, chest, boss' },
+      count: { type: ['number', 'string'], description: 'Number of events to add (default 3)' },
+      opts: { type: 'object', description: 'Options: {name, troopId, x, y}' }
+    },
+    required: ['mapId', 'eventType']
+  }
+},
+{
+  name: 'set_map_display_names',
+  description: 'Set display names for multiple maps at once. Display name is shown to the player during gameplay.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      names: { type: 'array', description: 'Array of {mapId, name} objects', items: { type: 'object', properties: { mapId: { type: ['number', 'string'] }, name: { type: 'string' } } } }
+    },
+    required: ['names']
+  }
+},
+{
+  name: 'organize_map_tree',
+  description: 'Organize maps into folders by setting parentId. Creates a hierarchy in the RPG Maker editor map tree.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      folders: { type: 'array', description: 'Array of {mapId, parentId} objects. parentId=0 means root level.', items: { type: 'object', properties: { mapId: { type: ['number', 'string'] }, parentId: { type: ['number', 'string'] } } } }
+    },
+    required: ['folders']
+  }
+},
+{
+  name: 'update_map_event',
     description: 'Update an existing map event\'s properties (partial update).',
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' },
-        eventId: { type: 'number', description: 'The event ID to update' },
+        mapId: { type: ['number', 'string'], description: 'The map ID' },
+        eventId: { type: ['number', 'string'], description: 'The event ID to update' },
         fields: { type: 'object', description: 'Fields to update (e.g. name, x, y, pages)' }
       },
       required: ['mapId', 'eventId', 'fields']
@@ -644,21 +740,21 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' },
-        eventId: { type: 'number', description: 'The event ID' },
-        pageIndex: { type: 'number', description: 'Page index (0-based)' },
+        mapId: { type: ['number', 'string'], description: 'The map ID' },
+        eventId: { type: ['number', 'string'], description: 'The event ID (number or numeric string)' },
+        pageIndex: { type: ['number', 'string'], description: 'Page index (0-based)' },
         command: {
           type: 'object',
           description: 'The event command object: {code, indent, parameters}',
           properties: {
-            code: { type: 'number', description: 'MV event command code' },
-            indent: { type: 'number', description: 'Indent level (default 0)' },
+            code: { type: ['number', 'string'], description: 'MV event command code' },
+            indent: { type: ['number', 'string'], description: 'Indent level (default 0)' },
             parameters: { type: 'array', description: 'Command parameters' }
           },
           required: ['code', 'parameters']
         }
       },
-      required: ['mapId', 'eventId', 'pageIndex', 'command']
+      required: ['mapId', 'eventId', 'command']
     }
   },
   {
@@ -667,9 +763,9 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' },
-        x: { type: 'number', description: 'X position' },
-        y: { type: 'number', description: 'Y position' },
+        mapId: { type: ['number', 'string'], description: 'The map ID' },
+        x: { type: ['number', 'string'], description: 'X position' },
+        y: { type: ['number', 'string'], description: 'Y position' },
         name: { type: 'string', description: 'NPC name' },
         dialogues: {
           type: 'array',
@@ -677,7 +773,7 @@ const TOOL_DEFINITIONS = [
           items: { type: 'string' }
         },
         characterName: { type: 'string', description: 'Character sprite filename' },
-        characterIndex: { type: 'number', description: 'Character sprite index (0-7)' }
+        characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' }
       },
       required: ['mapId', 'x', 'y', 'name', 'dialogues']
     }
@@ -688,9 +784,9 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' },
-        x: { type: 'number', description: 'X position' },
-        y: { type: 'number', description: 'Y position' },
+        mapId: { type: ['number', 'string'], description: 'The map ID' },
+        x: { type: ['number', 'string'], description: 'X position' },
+        y: { type: ['number', 'string'], description: 'Y position' },
         items: {
           type: 'array',
           description: 'Array of items to give: {type: "item"|"weapon"|"armor", id: number, amount: number}',
@@ -698,13 +794,13 @@ const TOOL_DEFINITIONS = [
             type: 'object',
             properties: {
               type: { type: 'string', description: '"item", "weapon", or "armor"' },
-              id: { type: 'number', description: 'Item/weapon/armor ID' },
-              amount: { type: 'number', description: 'Quantity (default 1)' }
+              id: { type: ['number', 'string'], description: 'Item/weapon/armor ID' },
+              amount: { type: ['number', 'string'], description: 'Quantity (default 1)' }
             }
           }
         },
         characterName: { type: 'string', description: 'Chest sprite filename (default "Chest")' },
-        characterIndex: { type: 'number', description: 'Chest sprite index (default 0)' }
+        characterIndex: { type: ['number', 'string'], description: 'Chest sprite index (default 0)' }
       },
       required: ['mapId', 'x', 'y', 'items']
     }
@@ -715,13 +811,13 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The current map ID' },
-        x: { type: 'number', description: 'X position on current map' },
-        y: { type: 'number', description: 'Y position on current map' },
-        destMapId: { type: 'number', description: 'Destination map ID' },
-        destX: { type: 'number', description: 'Destination X coordinate' },
-        destY: { type: 'number', description: 'Destination Y coordinate' },
-        trigger: { type: 'number', description: 'Trigger: 0=action button (doors), 1=player touch (walk-on, default)' }
+        mapId: { type: ['number', 'string'], description: 'The current map ID' },
+        x: { type: ['number', 'string'], description: 'X position on current map' },
+        y: { type: ['number', 'string'], description: 'Y position on current map' },
+        destMapId: { type: ['number', 'string'], description: 'Destination map ID' },
+        destX: { type: ['number', 'string'], description: 'Destination X coordinate' },
+        destY: { type: ['number', 'string'], description: 'Destination Y coordinate' },
+        trigger: { type: ['number', 'string'], description: 'Trigger: 0=action button (doors), 1=player touch (walk-on, default)' }
       },
       required: ['mapId', 'x', 'y', 'destMapId', 'destX', 'destY']
     }
@@ -732,7 +828,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'The map ID' },
+        mapId: { type: ['number', 'string'], description: 'The map ID' },
         query: { type: 'string', description: 'Search term' }
       },
       required: ['mapId', 'query']
@@ -773,7 +869,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'Switch ID (1-based)' },
+        id: { type: ['number', 'string'], description: 'Switch ID (1-based)' },
         name: { type: 'string', description: 'New name for the switch' }
       },
       required: ['id', 'name']
@@ -785,7 +881,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'Variable ID (1-based)' },
+        id: { type: ['number', 'string'], description: 'Variable ID (1-based)' },
         name: { type: 'string', description: 'New name for the variable' }
       },
       required: ['id', 'name']
@@ -817,9 +913,9 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        mapId: { type: 'number', description: 'Starting map ID' },
-        x: { type: 'number', description: 'Starting X coordinate' },
-        y: { type: 'number', description: 'Starting Y coordinate' }
+        mapId: { type: ['number', 'string'], description: 'Starting map ID' },
+        x: { type: ['number', 'string'], description: 'Starting X coordinate' },
+        y: { type: ['number', 'string'], description: 'Starting Y coordinate' }
       },
       required: ['mapId', 'x', 'y']
     }
@@ -834,7 +930,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'get_class',
   description: 'Get a single class by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'The class ID' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'The class ID' } }, required: ['id'] }
 },
 {
   name: 'create_class',
@@ -843,8 +939,8 @@ const TOOL_DEFINITIONS = [
     type: 'object',
     properties: {
       name: { type: 'string', description: 'Class name' },
-      params: { type: 'array', description: 'Base parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: 'number' } },
-      expParams: { type: 'array', description: 'EXP curve [base, inflation, correction, max level]', items: { type: 'number' } },
+      params: { type: 'array', description: 'Base parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: ['number', 'string'] } },
+      expParams: { type: 'array', description: 'EXP curve [base, inflation, correction, max level]', items: { type: ['number', 'string'] } },
       learnings: { type: 'array', description: 'Array of {level, skillId} learning entries' },
       traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
       note: { type: 'string', description: 'Note field' }
@@ -855,7 +951,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'update_class',
   description: 'Update an existing class (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Class ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Class ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
 },
 {
   name: 'search_classes',
@@ -865,7 +961,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'delete_class',
   description: 'Delete a class by ID (sets entry to null).',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Class ID to delete' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Class ID to delete' } }, required: ['id'] }
 },
 // ──────── ENEMY TOOLS ────────
 {
@@ -876,7 +972,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'get_enemy',
   description: 'Get a single enemy by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Enemy ID' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Enemy ID' } }, required: ['id'] }
 },
 {
   name: 'create_enemy',
@@ -886,10 +982,10 @@ const TOOL_DEFINITIONS = [
     properties: {
       name: { type: 'string', description: 'Enemy name' },
       battlerName: { type: 'string', description: 'Battler sprite filename' },
-      battlerHue: { type: 'number', description: 'Battler hue (0-360)' },
-      exp: { type: 'number', description: 'EXP given on defeat' },
-      gold: { type: 'number', description: 'Gold given on defeat' },
-      params: { type: 'array', description: 'Parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: 'number' } },
+      battlerHue: { type: ['number', 'string'], description: 'Battler hue (0-360)' },
+      exp: { type: ['number', 'string'], description: 'EXP given on defeat' },
+      gold: { type: ['number', 'string'], description: 'Gold given on defeat' },
+      params: { type: 'array', description: 'Parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: ['number', 'string'] } },
       dropItems: { type: 'array', description: 'Drop items array [{kind, dataId, denominator}]' },
       actions: { type: 'array', description: 'Action patterns [{skillId, conditionType, conditionParam1, conditionParam2, rating}]' },
       traits: { type: 'array', description: 'Trait objects {code, dataId, value}' }
@@ -905,10 +1001,10 @@ const TOOL_DEFINITIONS = [
     properties: {
       name: { type: 'string', description: 'Boss name' },
       battlerName: { type: 'string', description: 'Battler sprite filename' },
-      exp: { type: 'number', description: 'EXP given (default 500)' },
-      gold: { type: 'number', description: 'Gold given (default 200)' },
-      params: { type: 'array', description: 'Parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: 'number' } },
-      specialSkillId: { type: 'number', description: 'Special skill ID for boss attack pattern' },
+      exp: { type: ['number', 'string'], description: 'EXP given (default 500)' },
+      gold: { type: ['number', 'string'], description: 'Gold given (default 200)' },
+      params: { type: 'array', description: 'Parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: ['number', 'string'] } },
+      specialSkillId: { type: ['number', 'string'], description: 'Special skill ID for boss attack pattern' },
       actions: { type: 'array', description: 'Custom action patterns' }
     },
     required: ['name']
@@ -917,7 +1013,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'update_enemy',
   description: 'Update an existing enemy (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Enemy ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Enemy ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
 },
 {
   name: 'search_enemies',
@@ -927,7 +1023,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'delete_enemy',
   description: 'Delete an enemy by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Enemy ID to delete' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Enemy ID to delete' } }, required: ['id'] }
 },
 // ──────── STATE TOOLS ────────
 {
@@ -938,7 +1034,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'get_state',
   description: 'Get a single state by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'State ID' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'State ID' } }, required: ['id'] }
 },
 {
   name: 'create_state',
@@ -947,14 +1043,14 @@ const TOOL_DEFINITIONS = [
     type: 'object',
     properties: {
       name: { type: 'string', description: 'State name' },
-      iconIndex: { type: 'number', description: 'Icon index' },
-      restriction: { type: 'number', description: 'Restriction: 0=none, 1=attack enemy, 2=attack ally, 3=attack anyone, 4=cannot move' },
-      priority: { type: 'number', description: 'State priority (default 50)' },
+      iconIndex: { type: ['number', 'string'], description: 'Icon index' },
+      restriction: { type: ['number', 'string'], description: 'Restriction: 0=none, 1=attack enemy, 2=attack ally, 3=attack anyone, 4=cannot move' },
+      priority: { type: ['number', 'string'], description: 'State priority (default 50)' },
       removeAtBattleEnd: { type: 'boolean', description: 'Remove when battle ends (default false)' },
       removeByDamage: { type: 'boolean', description: 'Chance to remove when damaged (default false)' },
-      autoRemovalTiming: { type: 'number', description: 'Auto remove: 0=none, 1=action end, 2=turn end' },
-      minTurns: { type: 'number', description: 'Minimum turns (default 1)' },
-      maxTurns: { type: 'number', description: 'Maximum turns (default 5)' },
+      autoRemovalTiming: { type: ['number', 'string'], description: 'Auto remove: 0=none, 1=action end, 2=turn end' },
+      minTurns: { type: ['number', 'string'], description: 'Minimum turns (default 1)' },
+      maxTurns: { type: ['number', 'string'], description: 'Maximum turns (default 5)' },
       traits: { type: 'array', description: 'Trait objects {code, dataId, value}' },
       message1: { type: 'string', description: 'Message when applied' },
       message2: { type: 'string', description: 'Message when remaining' },
@@ -962,7 +1058,7 @@ const TOOL_DEFINITIONS = [
           message4: { type: 'string', description: 'Message on failure' },
           note: { type: 'string', description: 'Note field' },
           removeByRestriction: { type: 'boolean', description: 'Remove by restriction (default false)' },
-          stepsToRemove: { type: 'number', description: 'Steps to remove (default 100)' }
+          stepsToRemove: { type: ['number', 'string'], description: 'Steps to remove (default 100)' }
           },
           required: ['name']
           }
@@ -970,7 +1066,7 @@ const TOOL_DEFINITIONS = [
           {
           name: 'update_state',
   description: 'Update an existing state (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'State ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'State ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
 },
 {
   name: 'search_states',
@@ -980,7 +1076,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'delete_state',
   description: 'Delete a state by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'State ID to delete' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'State ID to delete' } }, required: ['id'] }
 },
 // ──────── TILESET TOOLS ────────
 {
@@ -991,12 +1087,12 @@ const TOOL_DEFINITIONS = [
 {
   name: 'get_tileset',
   description: 'Get a single tileset by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Tileset ID' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Tileset ID' } }, required: ['id'] }
 },
 {
   name: 'update_tileset',
   description: 'Update a tileset (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Tileset ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Tileset ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
 },
 
 // ──────── COMMON EVENT TOOLS ────────
@@ -1012,8 +1108,8 @@ const TOOL_DEFINITIONS = [
     type: 'object',
     properties: {
       name: { type: 'string', description: 'Common event name' },
-      trigger: { type: 'number', description: 'Trigger type: 0=none, 1=autorun, 2=parallel' },
-      switchId: { type: 'number', description: 'Switch ID that activates this event (required if trigger>0)' },
+      trigger: { type: ['number', 'string'], description: 'Trigger type: 0=none, 1=autorun, 2=parallel' },
+      switchId: { type: ['number', 'string'], description: 'Switch ID that activates this event (required if trigger>0)' },
           list: { type: 'array', description: 'Event command list' },
           note: { type: 'string', description: 'Note field' }
           },
@@ -1023,7 +1119,7 @@ const TOOL_DEFINITIONS = [
           {
           name: 'update_common_event',
   description: 'Update an existing common event (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Common event ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Common event ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
 },
 {
   name: 'add_common_event_command',
@@ -1031,7 +1127,7 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'number', description: 'Common event ID' },
+      id: { type: ['number', 'string'], description: 'Common event ID' },
       command: { type: 'object', description: 'Event command {code, indent, parameters}' }
     },
     required: ['id', 'command']
@@ -1046,7 +1142,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'get_troop',
   description: 'Get a single troop by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Troop ID' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Troop ID' } }, required: ['id'] }
 },
 {
   name: 'create_troop',
@@ -1066,8 +1162,8 @@ const TOOL_DEFINITIONS = [
             inputSchema: {
                 type: 'object',
                 properties: {
-                    troopId: { type: 'number', description: 'Troop ID' },
-                    enemyId: { type: 'number', description: 'Enemy ID to add' }
+                    troopId: { type: ['number', 'string'], description: 'Troop ID' },
+                    enemyId: { type: ['number', 'string'], description: 'Enemy ID to add' }
                 },
                 required: ['troopId', 'enemyId']
             }
@@ -1079,7 +1175,7 @@ const TOOL_DEFINITIONS = [
     type: 'object',
     properties: {
       name: { type: 'string', description: 'Troop name' },
-      enemyIds: { type: 'array', description: 'Array of enemy IDs to include', items: { type: 'number' } }
+      enemyIds: { type: 'array', description: 'Array of enemy IDs to include', items: { type: ['number', 'string'] } }
     },
     required: ['name', 'enemyIds']
   }
@@ -1093,13 +1189,13 @@ const TOOL_DEFINITIONS = [
 {
   name: 'get_animation',
   description: 'Get a single animation by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Animation ID' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Animation ID' } }, required: ['id'] }
 },
 // ──────── DELETE TOOLS (Actors/Items/Skills) ────────
 {
   name: 'delete_actor',
   description: 'Delete an actor by ID (sets entry to null in Actors.json).',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Actor ID to delete' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Actor ID to delete' } }, required: ['id'] }
 },
 {
   name: 'delete_item',
@@ -1107,7 +1203,7 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'number', description: 'Item ID to delete' },
+      id: { type: ['number', 'string'], description: 'Item ID to delete' },
       type: { type: 'string', description: 'Type: "item", "weapon", or "armor"', enum: ['item', 'weapon', 'armor'] }
     },
     required: ['id', 'type']
@@ -1116,7 +1212,7 @@ const TOOL_DEFINITIONS = [
 {
   name: 'delete_skill',
   description: 'Delete a skill by ID (sets entry to null in Skills.json).',
-  inputSchema: { type: 'object', properties: { id: { type: 'number', description: 'Skill ID to delete' } }, required: ['id'] }
+  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Skill ID to delete' } }, required: ['id'] }
 },
 // ──────── NEW MAP HELPER TOOLS ────────
 {
@@ -1125,8 +1221,8 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      mapId: { type: 'number', description: 'Map ID' },
-      eventId: { type: 'number', description: 'Event ID to delete' }
+      mapId: { type: ['number', 'string'], description: 'Map ID' },
+      eventId: { type: ['number', 'string'], description: 'Event ID to delete' }
     },
     required: ['mapId', 'eventId']
   }
@@ -1137,7 +1233,7 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      sourceMapId: { type: 'number', description: 'Source map ID to duplicate' },
+      sourceMapId: { type: ['number', 'string'], description: 'Source map ID to duplicate' },
       name: { type: 'string', description: 'Name for the new map' },
       displayName: { type: 'string', description: 'Display name shown to player' }
     },
@@ -1150,13 +1246,13 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      mapId: { type: 'number', description: 'Map ID' },
-      x: { type: 'number', description: 'X position' },
-      y: { type: 'number', description: 'Y position' },
+      mapId: { type: ['number', 'string'], description: 'Map ID' },
+      x: { type: ['number', 'string'], description: 'X position' },
+      y: { type: ['number', 'string'], description: 'Y position' },
       name: { type: 'string', description: 'Event name' },
       goods: { type: 'array', description: 'Array of [type, itemId, priceType, price]. type: 0=item, 1=weapon, 2=armor. priceType: 0=standard, 1=custom', items: { type: 'array' } },
       characterName: { type: 'string', description: 'Character sprite filename' },
-      characterIndex: { type: 'number', description: 'Character sprite index (0-7)' }
+      characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' }
     },
     required: ['mapId', 'x', 'y', 'name', 'goods']
   }
@@ -1167,13 +1263,13 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      mapId: { type: 'number', description: 'Map ID' },
-      x: { type: 'number', description: 'X position' },
-      y: { type: 'number', description: 'Y position' },
+      mapId: { type: ['number', 'string'], description: 'Map ID' },
+      x: { type: ['number', 'string'], description: 'X position' },
+      y: { type: ['number', 'string'], description: 'Y position' },
       name: { type: 'string', description: 'Event name' },
-      cost: { type: 'number', description: 'Cost to stay at the inn (default 50)' },
+      cost: { type: ['number', 'string'], description: 'Cost to stay at the inn (default 50)' },
       characterName: { type: 'string', description: 'Character sprite filename' },
-      characterIndex: { type: 'number', description: 'Character sprite index (0-7)' }
+      characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' }
     },
     required: ['mapId', 'x', 'y', 'name']
   }
@@ -1184,13 +1280,13 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      mapId: { type: 'number', description: 'Map ID' },
-      x: { type: 'number', description: 'X position' },
-      y: { type: 'number', description: 'Y position' },
+      mapId: { type: ['number', 'string'], description: 'Map ID' },
+      x: { type: ['number', 'string'], description: 'X position' },
+      y: { type: ['number', 'string'], description: 'Y position' },
       name: { type: 'string', description: 'Event name' },
-      troopId: { type: 'number', description: 'Troop ID for the boss battle' },
+      troopId: { type: ['number', 'string'], description: 'Troop ID for the boss battle' },
       characterName: { type: 'string', description: 'Character sprite filename' },
-      characterIndex: { type: 'number', description: 'Character sprite index (0-7)' }
+      characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' }
     },
     required: ['mapId', 'x', 'y', 'name', 'troopId']
   }
@@ -1201,12 +1297,12 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      mapId: { type: 'number', description: 'Map ID' },
-      switchX: { type: 'number', description: 'Switch X position' },
-      switchY: { type: 'number', description: 'Switch Y position' },
-      doorX: { type: 'number', description: 'Door X position' },
-      doorY: { type: 'number', description: 'Door Y position' },
-      gameSwitchId: { type: 'number', description: 'Game switch ID to activate' },
+      mapId: { type: ['number', 'string'], description: 'Map ID' },
+      switchX: { type: ['number', 'string'], description: 'Switch X position' },
+      switchY: { type: ['number', 'string'], description: 'Switch Y position' },
+      doorX: { type: ['number', 'string'], description: 'Door X position' },
+      doorY: { type: ['number', 'string'], description: 'Door Y position' },
+      gameSwitchId: { type: ['number', 'string'], description: 'Game switch ID to activate' },
       switchName: { type: 'string', description: 'Switch event name (default "Switch")' },
       doorName: { type: 'string', description: 'Door event name (default "Door")' }
     },
@@ -1230,7 +1326,7 @@ const TOOL_DEFINITIONS = [
   inputSchema: {
     type: 'object',
     properties: {
-      mapId: { type: 'number', description: 'Map ID to validate' }
+      mapId: { type: ['number', 'string'], description: 'Map ID to validate' }
     },
     required: ['mapId']
   }
@@ -1285,7 +1381,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        tilesetId: { type: 'number', description: 'The tileset ID to scan' }
+        tilesetId: { type: ['number', 'string'], description: 'The tileset ID to scan' }
       },
       required: ['tilesetId']
     }
@@ -1299,7 +1395,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         image_path: { type: 'string', description: 'Relative path to the image within the project (e.g. "img/tilesets/Outside.png" or "img/characters/Actor1.png")' },
         prompt: { type: 'string', description: 'Custom analysis prompt (optional). Default: RPG Maker specific analysis in Spanish.' },
-        resize_max: { type: 'number', description: 'Max width in pixels to resize the image before sending (default: 1024, saves tokens)' }
+        resize_max: { type: ['number', 'string'], description: 'Max width in pixels to resize the image before sending (default: 1024, saves tokens)' }
       },
       required: ['image_path']
     }
@@ -1310,8 +1406,8 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        map_id: { type: 'number', description: 'Map ID to render' },
-        layer: { type: 'number', description: 'Tile layer to render (0=ground, 2=upper, default: 0)' },
+        map_id: { type: ['number', 'string'], description: 'Map ID to render' },
+        layer: { type: ['number', 'string'], description: 'Tile layer to render (0=ground, 2=upper, default: 0)' },
         show_events: { type: 'boolean', description: 'Show event positions (default: true)' },
         show_regions: { type: 'boolean', description: 'Show region IDs (default: false)' }
       },
@@ -1404,10 +1500,22 @@ async function handleToolCall(name, args) {
       return await mapTools.createChest(p, args.mapId, args.x, args.y, args.items, args.characterName, args.characterIndex);
     case 'create_teleport_event':
       return await mapTools.createTeleportEvent(p, args.mapId, args.x, args.y, args.destMapId, args.destX, args.destY, args.trigger);
-    case 'search_map_events':
-      return await mapTools.searchMapEvents(p, args.mapId, args.query);
+case 'search_map_events':
+        return await mapTools.searchMapEvents(p, args.mapId, args.query);
+      case 'generate_map_v3':
+        return await mapTools.createMapV3(p, args);
+      case 'generate_map_batch':
+        return await mapTools.createMapBatch(p, args.batch);
+      case 'connect_maps':
+        return await mapTools.connectMaps(p, args.mapIdA, args.mapIdB, args.posA, args.posB);
+      case 'populate_map_events':
+        return await mapTools.populateMapEvents(p, args.mapId, args.eventType, args.count, args.opts);
+      case 'set_map_display_names':
+        return await mapTools.setMapDisplayNames(p, args.names);
+      case 'organize_map_tree':
+        return await mapTools.organizeMapTree(p, args.folders);
 
-    // ── System Tools ──
+      // ── System Tools ──
     case 'get_system':
       return await systemTools.getSystem(p);
     case 'get_switches':

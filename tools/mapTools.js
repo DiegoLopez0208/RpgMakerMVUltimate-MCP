@@ -5,6 +5,7 @@ const { readJson, writeJson, getDataPath, getMapPath, nextId } = require('../uti
 const { cmd } = require('../utils/commandBuilder');
 const { generateTileLayout } = require('../utils/mapGenerator');
 const { generateTileLayoutV2 } = require('../utils/mapGeneratorV2');
+const { generateTileLayoutV3, THEMES: V3_THEMES } = require('../utils/mapGeneratorV3');
 const { getTileIdsForTileset } = require('./assetTools');
 
 /**
@@ -23,7 +24,8 @@ async function getMapInfos(projectPath) {
  * @param {number} mapId - The map ID (e.g. 1 for Map001.json)
  */
 async function getMap(projectPath, mapId) {
-  const mapPath = getMapPath(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  const mapPath = getMapPath(projectPath, numMapId);
   return await readJsonDirect(mapPath);
 }
 
@@ -45,9 +47,11 @@ async function getMapEvents(projectPath, mapId) {
  * @param {number} eventId - The event ID
  */
 async function getMapEvent(projectPath, mapId, eventId) {
-  const map = await getMap(projectPath, mapId);
-  if (map.events && eventId >= 0 && eventId < map.events.length) {
-    return map.events[eventId];
+  var numMapId = toNum(mapId, 'mapId');
+  var numEventId = toNum(eventId, 'eventId');
+  const map = await getMap(projectPath, numMapId);
+  if (map.events && numEventId >= 0 && numEventId < map.events.length) {
+    return map.events[numEventId];
   }
   return null;
 }
@@ -74,93 +78,240 @@ async function getNextMapId(projectPath) {
  * @param {object} params - Map creation parameters
  */
 async function createMap(projectPath, params) {
-  const width = params.width || 17;
-  const height = params.height || 13;
-  const tilesetId = params.tilesetId || 1;
-  const displayName = params.displayName || '';
-  const bgmName = params.bgmName || '';
-  const note = params.note || '';
-  const name = params.name || '';
-  const theme = params.theme || '';
+    const width = params.width || 17;
+    const height = params.height || 13;
+    const tilesetId = params.tilesetId || 1;
+    const displayName = params.displayName || '';
+    const bgmName = params.bgmName || '';
+    const note = params.note || '';
+    const name = params.name || '';
+    const theme = params.theme || '';
 
-  const mapId = await getNextMapId(projectPath);
+    const mapId = await getNextMapId(projectPath);
 
-  var tileResult;
-  if (theme) {
-    try {
-      var tilesetConfig = await getTileIdsForTileset(projectPath, tilesetId);
+    var tileResult;
+    if (theme) {
+        try {
+            var tilesetConfig = await getTileIdsForTileset(projectPath, tilesetId);
             var hasTiles = tilesetConfig && tilesetConfig.availableTiles && (
                 (tilesetConfig.availableTiles.ground && tilesetConfig.availableTiles.ground.length > 0) ||
                 (tilesetConfig.availableTiles.water && tilesetConfig.availableTiles.water.length > 0) ||
                 (tilesetConfig.availableTiles.decoration && tilesetConfig.availableTiles.decoration.length > 0)
             );
-      if (hasTiles) {
-        tileResult = generateTileLayoutV2(width, height, theme, tilesetConfig);
-      } else {
-        tileResult = generateTileLayout(width, height, theme);
-      }
-    } catch (_) {
-      tileResult = generateTileLayout(width, height, theme);
+            if (hasTiles) {
+                tileResult = generateTileLayoutV2(width, height, theme, tilesetConfig);
+            } else {
+                tileResult = generateTileLayout(width, height, theme);
+            }
+        } catch (_) {
+            tileResult = generateTileLayout(width, height, theme);
+        }
+    } else {
+        tileResult = { data: new Array(width * height * 6).fill(0) };
     }
-  } else {
-    tileResult = { data: new Array(width * height * 6).fill(0) };
-  }
 
-  // Build the complete RPG Maker MV map object
-  var map = {
-    autoplayBgm: bgmName ? true : false,
-    autoplayBgs: false,
-    battleback1Name: '',
-    battleback2Name: '',
-    bgm: { name: bgmName, pan: 0, pitch: 100, volume: 90 },
-    bgs: { name: '', pan: 0, pitch: 100, volume: 90 },
-    disableDashing: false,
-    displayName: displayName,
-    encounterList: [],
-    encounterStep: 30,
-    height: height,
-    width: width,
-    parallaxLoopX: false,
-    parallaxLoopY: false,
-    parallaxName: '',
-    parallaxShow: true,
-    parallaxSx: 0,
-    parallaxSy: 0,
-    scrollType: 0,
-    specifyBattleback: false,
-    tilesetId: tilesetId,
-    data: tileResult.data,
-    events: [null]
-  };
+    var map = {
+        autoplayBgm: bgmName ? true : false,
+        autoplayBgs: false,
+        battleback1Name: '', battleback2Name: '',
+        bgm: { name: bgmName, pan: 0, pitch: 100, volume: 90 },
+        bgs: { name: '', pan: 0, pitch: 100, volume: 90 },
+        disableDashing: false,
+        displayName: displayName,
+        encounterList: [], encounterStep: 30,
+        height: height, width: width,
+        parallaxLoopX: false, parallaxLoopY: false,
+        parallaxName: '', parallaxShow: true,
+        parallaxSx: 0, parallaxSy: 0,
+        scrollType: 0, specifyBattleback: false,
+        tilesetId: tilesetId,
+        data: tileResult.data,
+        events: [null]
+    };
 
-  if (note) map.note = note;
+    if (note) map.note = note;
 
-  // Write the map file
-  const mapPath = getMapPath(projectPath, mapId);
-  await writeJsonDirect(mapPath, map);
+    const mapPath = getMapPath(projectPath, mapId);
+    await writeJsonDirect(mapPath, map);
 
-  // Update MapInfos.json to register the new map
+    const mapInfos = await readJson(projectPath, 'MapInfos.json');
+    while (mapInfos.length <= mapId) mapInfos.push(null);
+
+    const maxOrder = mapInfos.reduce(function(max, info) {
+        return info && info.order && info.order > max ? info.order : max;
+    }, 0);
+
+    mapInfos[mapId] = {
+        id: mapId, expanded: false,
+        name: name || 'MAP' + String(mapId).padStart(3, '0'),
+        order: maxOrder + 1, parentId: 0,
+        scrollX: Math.floor(width * 32 * 0.8),
+        scrollY: Math.floor(height * 32 * 0.8)
+    };
+
+    await writeJson(projectPath, 'MapInfos.json', mapInfos);
+    return { mapId: mapId, map: map };
+}
+
+async function createMapV3(projectPath, params) {
+    const width = params.width || 30;
+    const height = params.height || 25;
+    const tilesetId = params.tilesetId || 1;
+    const displayName = params.displayName || '';
+    const bgmName = params.bgmName || '';
+    const note = params.note || '';
+    const name = params.name || '';
+    const theme = params.theme || 'forest';
+    const seed = params.seed;
+
+    var v3opts = {
+        seed: seed,
+        addEvents: params.addEvents !== false,
+        transferPoints: params.transferPoints || []
+    };
+
+    var tileResult = generateTileLayoutV3(width, height, theme, v3opts);
+
+    var map = {
+        autoplayBgm: bgmName ? true : false,
+        autoplayBgs: false,
+        battleback1Name: '', battleback2Name: '',
+        bgm: { name: bgmName, pan: 0, pitch: 100, volume: 90 },
+        bgs: { name: '', pan: 0, pitch: 100, volume: 90 },
+        disableDashing: false,
+        displayName: displayName,
+        encounterList: [], encounterStep: 30,
+        height: height, width: width,
+        parallaxLoopX: false, parallaxLoopY: false,
+        parallaxName: '', parallaxShow: true,
+        parallaxSx: 0, parallaxSy: 0,
+        scrollType: 0, specifyBattleback: false,
+        tilesetId: tilesetId,
+        data: tileResult.data,
+        events: tileResult.events
+    };
+
+    if (note) map.note = note;
+
+    const mapId = await getNextMapId(projectPath);
+    const mapPath = getMapPath(projectPath, mapId);
+    await writeJsonDirect(mapPath, map);
+
+    const mapInfos = await readJson(projectPath, 'MapInfos.json');
+    while (mapInfos.length <= mapId) mapInfos.push(null);
+
+    const maxOrder = mapInfos.reduce(function(max, info) {
+        return info && info.order && info.order > max ? info.order : max;
+    }, 0);
+
+    mapInfos[mapId] = {
+        id: mapId, expanded: false,
+        name: name || 'MAP' + String(mapId).padStart(3, '0'),
+        order: maxOrder + 1, parentId: params.parentId || 0,
+        scrollX: Math.floor(width * 32 * 0.8),
+        scrollY: Math.floor(height * 32 * 0.8)
+    };
+
+    await writeJson(projectPath, 'MapInfos.json', mapInfos);
+    return { mapId: mapId, seed: tileResult.seed, theme: theme };
+}
+
+async function createMapBatch(projectPath, batchSpec) {
+    var results = [];
+    var mapIds = {};
+    for (var i = 0; i < batchSpec.length; i++) {
+        var spec = batchSpec[i];
+        var params = {
+            width: spec.width || 30,
+            height: spec.height || 25,
+            tilesetId: spec.tilesetId || 2,
+            displayName: spec.displayName || spec.name || '',
+            name: spec.name || '',
+            theme: spec.theme || 'forest',
+            seed: spec.seed,
+            addEvents: spec.addEvents !== false,
+            parentId: spec.parentId || 0,
+            note: spec.note || ''
+        };
+        var result = await createMapV3(projectPath, params);
+        mapIds[spec.key || spec.name] = result.mapId;
+        results.push({ key: spec.key || spec.name, mapId: result.mapId, seed: result.seed, theme: result.theme });
+    }
+    return { maps: results, mapIds: mapIds };
+}
+
+async function connectMaps(projectPath, mapIdA, mapIdB, posA, posB) {
+  var numMapIdA = toNum(mapIdA, 'mapIdA');
+  var numMapIdB = toNum(mapIdB, 'mapIdB');
+  var mapA = await getMap(projectPath, numMapIdA);
+  var mapB = await getMap(projectPath, numMapIdB);
+  var newIdA = nextId(mapA.events);
+  var evA = makeTransferEvent(newIdA, posA.x, posA.y, numMapIdB, posB.x, posB.y, posA.trigger || 1);
+  while (mapA.events.length <= newIdA) mapA.events.push(null);
+  mapA.events[newIdA] = evA;
+  await writeJsonDirect(getMapPath(projectPath, numMapIdA), mapA);
+
+  var newIdB = nextId(mapB.events);
+  var evB = makeTransferEvent(newIdB, posB.x, posB.y, numMapIdA, posA.x, posA.y, posB.trigger || 1);
+  while (mapB.events.length <= newIdB) mapB.events.push(null);
+  mapB.events[newIdB] = evB;
+  await writeJsonDirect(getMapPath(projectPath, numMapIdB), mapB);
+
+  return { eventA: evA, eventB: evB };
+}
+
+async function populateMapEvents(projectPath, mapId, eventType, count, opts) {
+  var numMapId = toNum(mapId, 'mapId');
+  const map = await getMap(projectPath, numMapId);
+  opts = opts || {};
+  var numCount = toNum(count || 3, 'count');
+  var added = [];
+  for (var i = 0; i < numCount; i++) {
+        var x = opts.x || Math.floor(Math.random() * (map.width - 4)) + 2;
+        var y = opts.y || Math.floor(Math.random() * (map.height - 4)) + 2;
+        var newId = nextId(map.events);
+        var ev;
+        if (eventType === 'npc') ev = makeNpcEvent(newId, x, y, opts.name || 'NPC');
+        else if (eventType === 'chest') ev = makeChestEvent(newId, x, y);
+        else if (eventType === 'boss') ev = makeBossEvent(newId, x, y, opts.troopId || 1);
+        else ev = makeNpcEvent(newId, x, y, eventType || 'Event');
+        while (map.events.length <= newId) map.events.push(null);
+        map.events[newId] = ev;
+        added.push(ev);
+    }
+  await writeJsonDirect(getMapPath(projectPath, numMapId), map);
+  return { added: added, mapId: numMapId };
+}
+
+async function setMapDisplayNames(projectPath, nameMap) {
   const mapInfos = await readJson(projectPath, 'MapInfos.json');
-  while (mapInfos.length <= mapId) {
-    mapInfos.push(null);
+  var updated = [];
+  for (var i = 0; i < nameMap.length; i++) {
+    var entry = nameMap[i];
+    var id = toNum(entry.mapId, 'mapId in names[' + i + ']');
+    if (id < mapInfos.length && mapInfos[id]) {
+      mapInfos[id].name = entry.name;
+      updated.push({ mapId: id, name: entry.name });
+    }
   }
-
-  const maxOrder = mapInfos.reduce(function(max, info) {
-    return info && info.order && info.order > max ? info.order : max;
-  }, 0);
-
-  mapInfos[mapId] = {
-    id: mapId,
-    expanded: false,
-    name: name || 'MAP' + String(mapId).padStart(3, '0'),
-    order: maxOrder + 1,
-    parentId: 0,
-    scrollX: Math.floor(width * 32 * 0.8),
-    scrollY: Math.floor(height * 32 * 0.8)
-  };
-
   await writeJson(projectPath, 'MapInfos.json', mapInfos);
-  return { mapId: mapId, map: map };
+  return { updated: updated };
+}
+
+async function organizeMapTree(projectPath, folderMap) {
+  const mapInfos = await readJson(projectPath, 'MapInfos.json');
+  var updated = [];
+  for (var i = 0; i < folderMap.length; i++) {
+    var entry = folderMap[i];
+    var id = toNum(entry.mapId, 'mapId in folders[' + i + ']');
+    var pid = toNum(entry.parentId || 0, 'parentId in folders[' + i + ']');
+    if (id < mapInfos.length && mapInfos[id]) {
+      mapInfos[id].parentId = pid;
+      updated.push({ mapId: id, parentId: pid });
+    }
+  }
+  await writeJson(projectPath, 'MapInfos.json', mapInfos);
+  return { updated: updated };
 }
 
 /**
@@ -171,23 +322,25 @@ async function createMap(projectPath, params) {
  * @param {number} tileId - Tile ID to fill the layer with
  */
 async function fillMapLayer(projectPath, mapId, layer, tileId) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  var numLayer = toNum(layer, 'layer');
+  var numTileId = toNum(tileId, 'tileId');
+  const map = await getMap(projectPath, numMapId);
 
-  if (layer < 0 || layer > 5) {
+  if (numLayer < 0 || numLayer > 5) {
     throw new Error('Layer must be between 0 and 5');
   }
 
-  // Fill the specified layer entirely with the given tile ID
   for (var y = 0; y < map.height; y++) {
     for (var x = 0; x < map.width; x++) {
-      var index = (layer * map.height + y) * map.width + x;
-      map.data[index] = tileId;
+      var index = (numLayer * map.height + y) * map.width + x;
+      map.data[index] = numTileId;
     }
   }
 
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
-  return { mapId: mapId, layer: layer, tileId: tileId, filled: map.width * map.height };
+  return { mapId: numMapId, layer: numLayer, tileId: numTileId, filled: map.width * map.height };
 }
 
 /**
@@ -202,25 +355,45 @@ async function fillMapLayer(projectPath, mapId, layer, tileId) {
  * @param {Array} pages - Array of event page objects (optional, creates default page if omitted)
  */
 async function createMapEvent(projectPath, mapId, x, y, name, trigger, pages) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  const map = await getMap(projectPath, numMapId);
 
-  // Find next available event ID
   const newId = nextId(map.events);
+  var triggerVal = toNum(trigger !== undefined ? trigger : 0, 'trigger');
 
-  var defaultPage = createDefaultEventPage(trigger || 0);
+  if (pages && pages.length > 0) {
+    // Apply trigger to pages that don't have one set
+    for (var i = 0; i < pages.length; i++) {
+      if (pages[i].trigger === undefined) pages[i].trigger = triggerVal;
+      if (!pages[i].list || pages[i].list.length === 0) {
+        pages[i].list = [{ code: 0, indent: 0, parameters: [] }];
+      }
+      // Ensure terminator
+      var last = pages[i].list[pages[i].list.length - 1];
+      if (!last || last.code !== 0) {
+        pages[i].list.push({ code: 0, indent: 0, parameters: [] });
+      }
+      // Fill missing conditions
+      if (!pages[i].conditions) pages[i].conditions = createDefaultConditions();
+      if (!pages[i].image) pages[i].image = { characterIndex: 0, characterName: '', direction: 2, pattern: 1, tileId: 0 };
+    }
+  } else {
+    pages = [createDefaultEventPage(triggerVal)];
+  }
+
   var event = {
     id: newId,
     name: name || 'EV' + newId,
     note: '',
     x: x,
     y: y,
-    pages: pages || [defaultPage]
+    pages: pages
   };
 
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
 
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return event;
 }
@@ -233,17 +406,19 @@ async function createMapEvent(projectPath, mapId, x, y, name, trigger, pages) {
  * @param {object} fields - Fields to update
  */
 async function updateMapEvent(projectPath, mapId, eventId, fields) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  var numEventId = toNum(eventId, 'eventId');
+  const map = await getMap(projectPath, numMapId);
 
-  if (!map.events[eventId]) {
-    throw new Error('Event ' + eventId + ' not found on map ' + mapId);
+  if (!map.events[numEventId]) {
+    throw new Error('Event ' + numEventId + ' not found on map ' + numMapId + '. Available: ' + map.events.map(function(e, i) { return e ? i + ':' + e.name : null; }).filter(Boolean).join(', '));
   }
 
-  map.events[eventId] = Object.assign({}, map.events[eventId], fields);
+  map.events[numEventId] = Object.assign({}, map.events[numEventId], fields);
 
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
-  return map.events[eventId];
+  return map.events[numEventId];
 }
 
 /**
@@ -256,25 +431,28 @@ async function updateMapEvent(projectPath, mapId, eventId, fields) {
  * @param {object} command - The event command {code, indent, parameters}
  */
 async function addEventCommand(projectPath, mapId, eventId, pageIndex, command) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  var numEventId = toNum(eventId, 'eventId');
+  var numPageIndex = toNum(pageIndex !== undefined ? pageIndex : 0, 'pageIndex');
+  const map = await getMap(projectPath, numMapId);
 
-  if (!map.events[eventId]) {
-    throw new Error('Event ' + eventId + ' not found on map ' + mapId);
+  if (!map.events[numEventId]) {
+    throw new Error('Event ' + numEventId + ' not found on map ' + numMapId + '. Available: ' + map.events.map(function(e, i) { return e ? i + ':' + e.name : null; }).filter(Boolean).join(', '));
   }
 
-  var event = map.events[eventId];
-  if (!event.pages[pageIndex]) {
-    throw new Error('Page ' + pageIndex + ' not found on event ' + eventId);
+  var event = map.events[numEventId];
+  if (!event.pages[numPageIndex]) {
+    throw new Error('Page ' + numPageIndex + ' not found on event ' + numEventId + ' (has ' + event.pages.length + ' pages)');
   }
 
-  var commandList = event.pages[pageIndex].list;
+  var commandList = event.pages[numPageIndex].list;
 
   // Insert before the last command (code 0 = End of Event Processing)
   commandList.splice(commandList.length - 1, 0, command);
 
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
-  return event;
+  return { eventId: numEventId, pageIndex: numPageIndex, command: command, totalCommands: commandList.length };
 }
 
 /**
@@ -293,7 +471,8 @@ async function addEventCommand(projectPath, mapId, eventId, pageIndex, command) 
  * @param {number} characterIndex - Character sprite index (0-7)
  */
 async function createNpc(projectPath, mapId, x, y, name, dialogues, characterName, characterIndex) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  const map = await getMap(projectPath, numMapId);
   const newId = nextId(map.events);
 
   characterName = characterName || '';
@@ -380,7 +559,7 @@ async function createNpc(projectPath, mapId, x, y, name, dialogues, characterNam
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
 
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return event;
 }
@@ -400,7 +579,8 @@ async function createNpc(projectPath, mapId, x, y, name, dialogues, characterNam
  * @param {number} characterIndex - Chest sprite index
  */
 async function createChest(projectPath, mapId, x, y, items, characterName, characterIndex) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  const map = await getMap(projectPath, numMapId);
   const newId = nextId(map.events);
 
   characterName = characterName || 'Chest';
@@ -502,7 +682,7 @@ async function createChest(projectPath, mapId, x, y, items, characterName, chara
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
 
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return event;
 }
@@ -520,16 +700,16 @@ async function createChest(projectPath, mapId, x, y, items, characterName, chara
  * @param {number} trigger - Trigger type (1=player touch for walk-on teleports, 0=action button for doors)
  */
 async function createTeleportEvent(projectPath, mapId, x, y, destMapId, destX, destY, trigger) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  var numDestMapId = toNum(destMapId, 'destMapId');
+  const map = await getMap(projectPath, numMapId);
   const newId = nextId(map.events);
 
-  // Build command list: Transfer Player (code 201)
-  var teleportCmds = cmd.teleport(destMapId, destX, destY, 0, 0);
+  var teleportCmds = cmd.teleport(numDestMapId, destX, destY, 0, 0);
   var pageList = teleportCmds.slice();
   pageList.push({ code: 0, indent: 0, parameters: [] });
 
-  // For teleport, we typically want player touch (1) or action button (0)
-  var eventTrigger = trigger !== undefined ? trigger : 1;
+  var eventTrigger = trigger !== undefined ? toNum(trigger, 'trigger') : 1;
 
   var page = {
     conditions: createDefaultConditions(),
@@ -555,7 +735,7 @@ async function createTeleportEvent(projectPath, mapId, x, y, destMapId, destX, d
 
   var event = {
     id: newId,
-    name: 'Teleport to Map' + destMapId,
+    name: 'Teleport to Map' + numDestMapId,
     note: '',
     x: x,
     y: y,
@@ -565,7 +745,7 @@ async function createTeleportEvent(projectPath, mapId, x, y, destMapId, destX, d
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
 
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return event;
 }
@@ -582,6 +762,15 @@ async function searchMapEvents(projectPath, mapId, query) {
   return events.filter(function(e) {
     return e !== null && e.name.toLowerCase().includes(lowerQuery);
   });
+}
+
+// ─── Safe ID Casting Helper ───
+
+function toNum(val, name) {
+  if (val === undefined || val === null) return undefined;
+  var n = typeof val === 'number' ? val : parseInt(val, 10);
+  if (isNaN(n)) throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected number or numeric string');
+  return n;
 }
 
 // ─── Internal Helper Functions ───
@@ -663,17 +852,20 @@ async function writeJsonDirect(filePath, data) {
 }
 
 async function deleteMapEvent(projectPath, mapId, eventId) {
-  const map = await getMap(projectPath, mapId);
-  if (!map.events[eventId]) throw new Error('Event ' + eventId + ' not found on map ' + mapId);
-  var deleted = map.events[eventId];
-  map.events[eventId] = null;
-  const mapPath = getMapPath(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  var numEventId = toNum(eventId, 'eventId');
+  const map = await getMap(projectPath, numMapId);
+  if (!map.events[numEventId]) throw new Error('Event ' + numEventId + ' not found on map ' + numMapId);
+  var deleted = map.events[numEventId];
+  map.events[numEventId] = null;
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return { deleted: deleted };
 }
 
 async function duplicateMap(projectPath, sourceMapId, params) {
-  const sourceMap = await getMap(projectPath, sourceMapId);
+  var numSourceMapId = toNum(sourceMapId, 'sourceMapId');
+  const sourceMap = await getMap(projectPath, numSourceMapId);
   const newMapId = await getNextMapId(projectPath);
   var newMap = JSON.parse(JSON.stringify(sourceMap));
   if (params && params.width) newMap.width = params.width;
@@ -687,7 +879,7 @@ async function duplicateMap(projectPath, sourceMapId, params) {
   const maxOrder = mapInfos.reduce(function(max, info) {
     return info && info.order && info.order > max ? info.order : max;
   }, 0);
-  var name = (params && params.name) || ('Copy of Map' + sourceMapId);
+  var name = (params && params.name) || ('Copy of Map' + numSourceMapId);
   mapInfos[newMapId] = {
     id: newMapId, expanded: false, name: name,
     order: maxOrder + 1, parentId: 0,
@@ -699,7 +891,8 @@ async function duplicateMap(projectPath, sourceMapId, params) {
 }
 
 async function createShop(projectPath, mapId, x, y, name, itemIds, weaponIds, armorIds, characterName, characterIndex) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  const map = await getMap(projectPath, numMapId);
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
@@ -725,24 +918,26 @@ async function createShop(projectPath, mapId, x, y, name, itemIds, weaponIds, ar
   var event = { id: newId, name: name || 'Shop', note: '', x: x, y: y, pages: [page1] };
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return event;
 }
 
 async function createInn(projectPath, mapId, x, y, name, cost, characterName, characterIndex) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  var numCost = toNum(cost || 50, 'cost');
+  const map = await getMap(projectPath, numMapId);
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
   cost = cost || 50;
   var page1List = [
-    { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
-    { code: 401, indent: 0, parameters: ['Rest here for ' + cost + ' gold?'] },
-    { code: 102, indent: 0, parameters: [['Yes', 'No'], 1] },
-    { code: 402, indent: 0, parameters: [0, 'Yes'] },
-        { code: 111, indent: 1, parameters: [11, '$gameParty.gold() >= ' + cost] },
-    { code: 125, indent: 2, parameters: [1, 0, cost] },
+  { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
+  { code: 401, indent: 0, parameters: ['Rest here for ' + numCost + ' gold?'] },
+  { code: 102, indent: 0, parameters: [['Yes', 'No'], 1] },
+  { code: 402, indent: 0, parameters: [0, 'Yes'] },
+  { code: 111, indent: 1, parameters: [11, '$gameParty.gold() >= ' + numCost] },
+  { code: 125, indent: 2, parameters: [1, 0, numCost] },
     { code: 314, indent: 2, parameters: [0, 0] },
     { code: 101, indent: 2, parameters: ['', 0, 0, 2] },
     { code: 401, indent: 2, parameters: ['You feel refreshed!'] },
@@ -767,18 +962,20 @@ async function createInn(projectPath, mapId, x, y, name, cost, characterName, ch
   var event = { id: newId, name: name || 'Inn', note: '', x: x, y: y, pages: [page1] };
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return event;
 }
 
 async function createBossEvent(projectPath, mapId, x, y, name, troopId, characterName, characterIndex) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  var numTroopId = toNum(troopId, 'troopId');
+  const map = await getMap(projectPath, numMapId);
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
-    var page1List = [
-        { code: 301, indent: 0, parameters: [0, troopId, 0, 1] },
+  var page1List = [
+  { code: 301, indent: 0, parameters: [0, numTroopId, 0, 1] },
         { code: 601, indent: 0, parameters: [] },
         { code: 123, indent: 1, parameters: ['A', 1] },
         { code: 0, indent: 1, parameters: [] },
@@ -808,16 +1005,18 @@ async function createBossEvent(projectPath, mapId, x, y, name, troopId, characte
   var event = { id: newId, name: name || 'Boss', note: '', x: x, y: y, pages: [page1, page2] };
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return event;
 }
 
 async function createPuzzleSwitch(projectPath, mapId, x, y, switchId, doorX, doorY, switchCharacterName) {
-  const map = await getMap(projectPath, mapId);
+  var numMapId = toNum(mapId, 'mapId');
+  var numSwitchId = toNum(switchId, 'switchId');
+  const map = await getMap(projectPath, numMapId);
   const switchId2 = nextId(map.events);
   var switchPage1List = [
-    { code: 121, indent: 0, parameters: [switchId, switchId, 0] },
+  { code: 121, indent: 0, parameters: [numSwitchId, numSwitchId, 0] },
     { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
     { code: 401, indent: 0, parameters: ['Switch activated!'] },
     { code: 123, indent: 0, parameters: ['A', 0] },
@@ -856,7 +1055,7 @@ async function createPuzzleSwitch(projectPath, mapId, x, y, switchId, doorX, doo
     moveSpeed: 2, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: false
   };
   var doorPage2 = {
-    conditions: Object.assign({}, createDefaultConditions(), { switch1Id: switchId, switch1Valid: true }),
+    conditions: Object.assign({}, createDefaultConditions(), { switch1Id: numSwitchId, switch1Valid: true }),
     directionFix: true,
     image: { characterIndex: 0, characterName: '', direction: 2, pattern: 1, tileId: 0 },
         list: [
@@ -881,14 +1080,16 @@ async function createPuzzleSwitch(projectPath, mapId, x, y, switchId, doorX, doo
   var doorEvent = { id: doorId, name: 'Door', note: '', x: doorX, y: doorY, pages: [doorPage1, doorPage2, doorPage3] };
   while (map.events.length <= doorId) map.events.push(null);
   map.events[doorId] = doorEvent;
-  const mapPath = getMapPath(projectPath, mapId);
+  const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return { switchEvent: switchEvent, doorEvent: doorEvent };
 }
 
 module.exports = {
-  getMapInfos, getMap, getMapEvents, getMapEvent, getNextMapId,
-  createMap, fillMapLayer, createMapEvent, updateMapEvent, addEventCommand,
-  createNpc, createChest, createTeleportEvent, searchMapEvents,
-  deleteMapEvent, duplicateMap, createShop, createInn, createBossEvent, createPuzzleSwitch
+    getMapInfos, getMap, getMapEvents, getMapEvent, getNextMapId,
+    createMap, createMapV3, createMapBatch, connectMaps, populateMapEvents,
+    fillMapLayer, createMapEvent, updateMapEvent, addEventCommand,
+    createNpc, createChest, createTeleportEvent, searchMapEvents,
+    deleteMapEvent, duplicateMap, createShop, createInn, createBossEvent, createPuzzleSwitch,
+    setMapDisplayNames, organizeMapTree
 };

@@ -1,3 +1,17 @@
+// ─── LAYER WARNING ─────────────────────────────────────────────────────
+// RPG Maker MV map data has 6 layers (z=0 through z=5):
+//   Layer 0: Lower tile 1 (ground: A1 water, A2 grass/dirt, A5 static)
+//   Layer 1: Lower tile 2 (ground details: A2 paths, A5 details)
+//   Layer 2: Upper tile 1 (walls/roofs: A3 roofs, A4 walls, B-E decorations)
+//   Layer 3: Upper tile 2 (extra decorations: B-E overlay tiles)
+//   Layer 4: SHADOW BITS — NOT a tile ID! Bitmask 0-15 (bit0=TL, bit1=TR, bit2=BL, bit3=BR)
+//   Layer 5: REGION ID — NOT a tile ID! Integer 1-255 for gameplay regions
+//
+// IMPORTANT: Layers 0-3 accept ANY tile ID (A1 through E).
+// Layers 4-5 are SPECIAL PURPOSE — writing tile IDs here causes visual artifacts!
+// The addShadowBits() and addRegionId() functions below correctly handle layers 4-5.
+// ──────────────────────────────────────────────────────────────────────
+
 function setTile(data, width, height, x, y, layer, tileId) {
   if (x >= 0 && x < width && y >= 0 && y < height && layer >= 0 && layer < 6) {
     data[(layer * height + y) * width + x] = tileId;
