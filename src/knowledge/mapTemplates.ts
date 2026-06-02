@@ -1,6 +1,7 @@
-// @ts-nocheck
-import fs from "fs";
 import path from "path";
+import { readFile, access } from 'fs/promises';
+import type { MapData } from "../types/rpgmaker.js";
+
 export interface MapTemplate {
   id: number;
   name: string;
@@ -20,24 +21,30 @@ export function getTemplatesDir(): string {
   }
   return _mapsDir;
 }
-export function loadIndex(): MapTemplate[] {
+export async function loadIndex(): Promise<MapTemplate[]> {
   if (_index) return _index;
   var idxPath = path.join(__dirname, "..", "..", "knowledge", "map-templates.json");
-  if (fs.existsSync(idxPath)) {
-    _index = JSON.parse(fs.readFileSync(idxPath, "utf8"));
-  } else { _index = []; }
+  try {
+    await access(idxPath);
+    _index = JSON.parse(await readFile(idxPath, "utf8")) as MapTemplate[];
+  } catch { _index = []; }
   return _index;
 }
-export function search(category?: string, theme?: string): MapTemplate[] {
-  return loadIndex().filter(function(t) {
+export async function search(category?: string, theme?: string): Promise<MapTemplate[]> {
+  var idx = await loadIndex();
+  return idx.filter(function(t) {
     if (category && t.category !== category) return false;
     if (theme && t.theme !== theme) return false;
     return true;
   });
 }
-export function loadMapData(templateId: number): any {
+export async function loadMapData(templateId: number): Promise<MapData | null> {
   var fn = "Map" + String(templateId).padStart(3, "0") + ".json";
   var fp = path.join(getTemplatesDir(), fn);
-  if (!fs.existsSync(fp)) return null;
-  return JSON.parse(fs.readFileSync(fp, "utf8"));
+  try {
+    await access(fp);
+    return JSON.parse(await readFile(fp, "utf8")) as MapData;
+  } catch {
+    return null;
+  }
 }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readFile, writeFile, copyFile } from 'fs/promises';
 import path from 'path';
 
@@ -6,7 +5,7 @@ import path from 'path';
  * Get the full path to a data file in the RPG Maker MV project.
  * All data files live under {projectPath}/data/
  */
-function getDataPath(projectPath, filename) {
+function getDataPath(projectPath: string, filename: string) {
   return path.join(projectPath, 'data', filename);
 }
 
@@ -14,7 +13,7 @@ function getDataPath(projectPath, filename) {
  * Get the full path to a map file.
  * Map files are named Map001.json, Map002.json, etc.
  */
-function getMapPath(projectPath, mapId) {
+function getMapPath(projectPath: string, mapId: number) {
   const filename = `Map${String(mapId).padStart(3, '0')}.json`;
   return getDataPath(projectPath, filename);
 }
@@ -25,10 +24,10 @@ function getMapPath(projectPath, mapId) {
  * @param {string} filename - The filename within data/ (e.g. "Actors.json")
  * @returns {Promise<any>} Parsed JSON content
  */
-async function readJson(projectPath, filename) {
+async function readJson(projectPath: string, filename: string) {
     const filePath = getDataPath(projectPath, filename);
     const content = await readFile(filePath, 'utf-8');
-    return JSON.parse(content.replace(/^\uFEFF/, ''));
+    return JSON.parse(content.replace(/^\uFEFF/, '')) as unknown;
 }
 
 /**
@@ -38,7 +37,7 @@ async function readJson(projectPath, filename) {
  * @param {string} filename - The filename within data/ (e.g. "Actors.json")
  * @param {any} data - The data to serialize and write
  */
-async function writeJson(projectPath, filename, data) {
+async function writeJson(projectPath: string, filename: string, data: unknown) {
   const filePath = getDataPath(projectPath, filename);
   const backupPath = filePath + '.bak';
 
@@ -61,7 +60,7 @@ async function writeJson(projectPath, filename, data) {
  * @param {any[]} json - The parsed JSON array
  * @returns {any[]} The array with null at index 0 guaranteed
  */
-function ensureArray(json) {
+function ensureArray(json: unknown): unknown[] {
   if (!Array.isArray(json)) return [null];
   if (json.length === 0) return [null];
   if (json[0] === null) return json;
@@ -75,11 +74,11 @@ function ensureArray(json) {
  * @param {any[]} array - The data array (e.g. from Actors.json)
  * @returns {number} The next available ID
  */
-function nextId(array) {
+function nextId(array: unknown[]): number {
   let max = 0;
   for (let i = 0; i < array.length; i++) {
-    if (array[i] && array[i].id && array[i].id > max) {
-      max = array[i].id;
+    if (array[i] && (array[i] as Record<string, unknown>).id && ((array[i] as Record<string, unknown>).id as number) > max) {
+      max = (array[i] as Record<string, unknown>).id as number;
     }
   }
   return max + 1;
@@ -91,7 +90,7 @@ function nextId(array) {
  * @param {string} projectPath - The project root path to validate
  * @returns {Promise<boolean>} True if valid project path
  */
-async function validateProjectPath(projectPath) {
+async function validateProjectPath(projectPath: string): Promise<boolean> {
   try {
     const systemPath = getDataPath(projectPath, 'System.json');
     await readFile(systemPath, 'utf-8');

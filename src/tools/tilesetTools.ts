@@ -1,25 +1,35 @@
-// @ts-nocheck
-import { readJson, writeJson } from '../utils/fileHandler.js';
+import { createCrud } from "../utils/crudHelper.js";
+import type { TilesetParams, RpgMakerDbEntry } from "../types/rpgmaker.js";
 
-async function getTilesets(projectPath) {
-  const data = await readJson(projectPath, 'Tilesets.json');
-  return data.filter(function(e) { return e !== null; });
+interface Tileset extends RpgMakerDbEntry {
+  mode: number;
+  tilesetNames: string[];
+  flags: number[];
 }
 
-async function getTileset(projectPath, id) {
-  const data = await readJson(projectPath, 'Tilesets.json');
-  if (id > 0 && id < data.length && data[id]) return data[id];
-  return null;
+function tilesetFactory(id: number): Tileset {
+  return {
+    id,
+    name: "",
+    note: "",
+    mode: 0,
+    tilesetNames: [],
+    flags: [],
+  };
 }
 
-async function updateTileset(projectPath, id, fields) {
-  const data = await readJson(projectPath, 'Tilesets.json');
-  if (!data[id]) throw new Error('Tileset ' + id + ' not found');
-  data[id] = Object.assign({}, data[id], fields);
-  await writeJson(projectPath, 'Tilesets.json', data);
-  return data[id];
+const tilesetsCrud = createCrud<Tileset>("Tilesets.json", tilesetFactory);
+
+async function getTilesets(projectPath: string) {
+  return tilesetsCrud.getAll(projectPath);
 }
 
-export { getTilesets };
-export { getTileset };
-export { updateTileset };
+async function getTileset(projectPath: string, id: number) {
+  return tilesetsCrud.getById(projectPath, id);
+}
+
+async function updateTileset(projectPath: string, id: number, fields: Partial<TilesetParams>) {
+  return tilesetsCrud.update(projectPath, id, fields);
+}
+
+export { getTilesets, getTileset, updateTileset };

@@ -1,74 +1,79 @@
-// @ts-nocheck
-import { readJson, writeJson, nextId } from '../utils/fileHandler.js';
+import { createCrud } from "../utils/crudHelper.js";
+import type { StateParams, RpgMakerDbEntry } from "../types/rpgmaker.js";
 
-async function getStates(projectPath) {
-  const data = await readJson(projectPath, 'States.json');
-  return data.filter(function(e) { return e !== null; });
+interface State extends RpgMakerDbEntry {
+  iconIndex: number;
+  restriction: number;
+  priority: number;
+  removeAtBattleEnd: boolean;
+  removeByDamage: boolean;
+  removeByRestriction: boolean;
+  autoRemovalTiming: number;
+  minTurns: number;
+  maxTurns: number;
+  stepsToRemove: number;
+  message1: string;
+  message2: string;
+  message3: string;
+  message4: string;
+  motion: number;
+  overlay: number;
+  traits: unknown[];
 }
 
-async function getState(projectPath, id) {
-  const data = await readJson(projectPath, 'States.json');
-  if (id > 0 && id < data.length && data[id]) return data[id];
-  return null;
-}
-
-async function createState(projectPath, params) {
-  const data = await readJson(projectPath, 'States.json');
-  const newId = nextId(data);
-  var state = {
-    id: newId,
-    name: params.name || '',
-    iconIndex: params.iconIndex || 0,
-    restriction: params.restriction !== undefined ? params.restriction : 0,
-    priority: params.priority !== undefined ? params.priority : 50,
-    removeAtBattleEnd: params.removeAtBattleEnd || false,
-    removeByDamage: params.removeByDamage || false,
-    removeByRestriction: params.removeByRestriction || false,
-    autoRemovalTiming: params.autoRemovalTiming !== undefined ? params.autoRemovalTiming : 0,
-    minTurns: params.minTurns !== undefined ? params.minTurns : 1,
-    maxTurns: params.maxTurns !== undefined ? params.maxTurns : 5,
-    stepsToRemove: params.stepsToRemove !== undefined ? params.stepsToRemove : 100,
-    message1: params.message1 || '',
-    message2: params.message2 || '',
-    message3: params.message3 || '',
-    message4: params.message4 || '',
-    traits: params.traits || [],
-    note: params.note || ''
+function stateFactory(id: number): State {
+  return {
+    id,
+    name: "",
+    note: "",
+    iconIndex: 0,
+    restriction: 0,
+    priority: 50,
+    removeAtBattleEnd: false,
+    removeByDamage: false,
+    removeByRestriction: false,
+    autoRemovalTiming: 0,
+    minTurns: 1,
+    maxTurns: 5,
+    stepsToRemove: 100,
+    message1: "",
+    message2: "",
+    message3: "",
+    message4: "",
+    motion: 0,
+    overlay: 0,
+    traits: [],
   };
-  while (data.length <= newId) data.push(null);
-  data[newId] = state;
-  await writeJson(projectPath, 'States.json', data);
-  return state;
 }
 
-async function updateState(projectPath, id, fields) {
-  const data = await readJson(projectPath, 'States.json');
-  if (!data[id]) throw new Error('State ' + id + ' not found');
-  data[id] = Object.assign({}, data[id], fields);
-  await writeJson(projectPath, 'States.json', data);
-  return data[id];
+const statesCrud = createCrud<State>("States.json", stateFactory);
+
+async function getStates(projectPath: string) {
+  return statesCrud.getAll(projectPath);
 }
 
-async function searchStates(projectPath, query) {
-  const data = await readJson(projectPath, 'States.json');
-  var q = query.toLowerCase();
-  return data.filter(function(e) {
-    return e && (e.name.toLowerCase().includes(q));
-  });
+async function getState(projectPath: string, id: number) {
+  return statesCrud.getById(projectPath, id);
 }
 
-async function deleteState(projectPath, id) {
-  const data = await readJson(projectPath, 'States.json');
-  if (!data[id]) throw new Error('State ' + id + ' not found');
-  var deleted = data[id];
-  data[id] = null;
-  await writeJson(projectPath, 'States.json', data);
-  return { deleted: deleted };
+async function createState(projectPath: string, params: StateParams) {
+  return statesCrud.create(projectPath, (id) => ({
+    ...stateFactory(id),
+    ...params,
+  }));
 }
 
-export { getStates };
-export { getState };
-export { createState };
-export { updateState };
-export { searchStates };
-export { deleteState };
+async function updateState(projectPath: string, id: number, fields: Partial<StateParams>) {
+  return statesCrud.update(projectPath, id, fields);
+}
+
+async function searchStates(projectPath: string, query: string) {
+  return statesCrud.search(projectPath, query, ["name"]);
+}
+
+async function deleteState(projectPath: string, id: number) {
+  const deleted = await statesCrud.delete(projectPath, id);
+  return { deleted };
+}
+
+export { getStates, getState, createState, updateState, searchStates, deleteState };

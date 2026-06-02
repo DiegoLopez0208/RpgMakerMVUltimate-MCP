@@ -1,63 +1,53 @@
-// @ts-nocheck
-import { readJson, writeJson, nextId } from '../utils/fileHandler.js';
+import { createCrud } from "../utils/crudHelper.js";
+import type { ClassParams, RpgMakerDbEntry } from "../types/rpgmaker.js";
 
-async function getClasses(projectPath) {
-  const data = await readJson(projectPath, 'Classes.json');
-  return data.filter(function(e) { return e !== null; });
+interface Class extends RpgMakerDbEntry {
+  params: number[][];
+  expParams: number[];
+  learnings: { level: number; skillId: number; note: string }[];
+  traits: unknown[];
 }
 
-async function getClass(projectPath, id) {
-  const data = await readJson(projectPath, 'Classes.json');
-  if (id > 0 && id < data.length && data[id]) return data[id];
-  return null;
-}
-
-async function createClass(projectPath, params) {
-  const data = await readJson(projectPath, 'Classes.json');
-  const newId = nextId(data);
-  var cls = {
-    id: newId,
-    name: params.name || '',
-    note: params.note || '',
-    params: params.params || [500, 30, 30, 30, 30, 30, 30, 30],
-    expParams: params.expParams || [30, 20, 10, 90],
-    traits: params.traits || [],
-    learnings: params.learnings || []
+function classFactory(id: number): Class {
+  return {
+    id,
+    name: "",
+    params: [[500, 30, 30, 30, 30, 30, 30, 30]],
+    expParams: [30, 20, 10, 90],
+    learnings: [],
+    traits: [],
+    note: "",
   };
-  while (data.length <= newId) data.push(null);
-  data[newId] = cls;
-  await writeJson(projectPath, 'Classes.json', data);
-  return cls;
 }
 
-async function updateClass(projectPath, id, fields) {
-  const data = await readJson(projectPath, 'Classes.json');
-  if (!data[id]) throw new Error('Class ' + id + ' not found');
-  data[id] = Object.assign({}, data[id], fields);
-  await writeJson(projectPath, 'Classes.json', data);
-  return data[id];
+const classesCrud = createCrud<Class>("Classes.json", classFactory);
+
+async function getClasses(projectPath: string) {
+  return classesCrud.getAll(projectPath);
 }
 
-async function searchClasses(projectPath, query) {
-  const data = await readJson(projectPath, 'Classes.json');
-  var q = query.toLowerCase();
-  return data.filter(function(e) {
-    return e && (e.name.toLowerCase().includes(q));
-  });
+async function getClass(projectPath: string, id: number) {
+  return classesCrud.getById(projectPath, id);
 }
 
-async function deleteClass(projectPath, id) {
-  const data = await readJson(projectPath, 'Classes.json');
-  if (!data[id]) throw new Error('Class ' + id + ' not found');
-  var deleted = data[id];
-  data[id] = null;
-  await writeJson(projectPath, 'Classes.json', data);
-  return { deleted: deleted };
+async function createClass(projectPath: string, params: ClassParams) {
+  return classesCrud.create(projectPath, (id) => ({
+    ...classFactory(id),
+    ...params,
+  }));
 }
 
-export { getClasses };
-export { getClass };
-export { createClass };
-export { updateClass };
-export { searchClasses };
-export { deleteClass };
+async function updateClass(projectPath: string, id: number, fields: Partial<ClassParams>) {
+  return classesCrud.update(projectPath, id, fields);
+}
+
+async function searchClasses(projectPath: string, query: string) {
+  return classesCrud.search(projectPath, query, ["name"]);
+}
+
+async function deleteClass(projectPath: string, id: number) {
+  const deleted = await classesCrud.delete(projectPath, id);
+  return { deleted };
+}
+
+export { getClasses, getClass, createClass, updateClass, searchClasses, deleteClass };

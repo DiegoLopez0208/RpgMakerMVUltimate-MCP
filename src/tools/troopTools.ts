@@ -1,59 +1,66 @@
-// @ts-nocheck
-import { readJson, writeJson, nextId } from '../utils/fileHandler.js';
+import { createCrud } from "../utils/crudHelper.js";
+import type { TroopParams, RpgMakerDbEntry } from "../types/rpgmaker.js";
 
-async function getTroops(projectPath) {
-  const data = await readJson(projectPath, 'Troops.json');
-  return data.filter(function(e) { return e !== null; });
+interface Troop extends RpgMakerDbEntry {
+  members: { enemyId: number; x: number; y: number; hidden: boolean }[];
+  pages: unknown[];
 }
 
-async function getTroop(projectPath, id) {
-  const data = await readJson(projectPath, 'Troops.json');
-  if (id > 0 && id < data.length && data[id]) return data[id];
-  return null;
-}
-
-async function createTroop(projectPath, params) {
-  const data = await readJson(projectPath, 'Troops.json');
-  const newId = nextId(data);
-  var troop = {
-    id: newId,
-    name: params.name || '',
-    members: params.members || [],
-    pages: params.pages || [{
-      conditions: { actorHp: 50, actorId: 1, actorValid: false, enemyHp: 50, enemyIndex: 0, enemyValid: false, switchId: 1, switchValid: false, turnA: 0, turnB: 0, turnEnding: false, turnValid: false },
-      list: [{ code: 0, indent: 0, parameters: [] }],
-      span: 0
-    }],
-    note: params.note || ''
+function troopFactory(id: number): Troop {
+  return {
+    id,
+    name: "",
+    note: "",
+    members: [],
+    pages: [
+      {
+        conditions: { actorHp: 50, actorId: 1, actorValid: false, enemyHp: 50, enemyIndex: 0, enemyValid: false, switchId: 1, switchValid: false, turnA: 0, turnB: 0, turnEnding: false, turnValid: false },
+        list: [{ code: 0, indent: 0, parameters: [] }],
+        span: 0,
+      },
+    ],
   };
-  while (data.length <= newId) data.push(null);
-  data[newId] = troop;
-  await writeJson(projectPath, 'Troops.json', data);
-  return troop;
 }
 
-async function addEnemyToTroop(projectPath, troopId, enemyId) {
-  const data = await readJson(projectPath, 'Troops.json');
-  if (!data[troopId]) throw new Error('Troop ' + troopId + ' not found');
-  data[troopId].members.push({ enemyId: enemyId, x: 200 + data[troopId].members.length * 80, y: 200 + Math.floor(Math.random() * 60), hidden: false });
-  await writeJson(projectPath, 'Troops.json', data);
-  return data[troopId];
+const troopsCrud = createCrud<Troop>("Troops.json", troopFactory);
+
+async function getTroops(projectPath: string) {
+  return troopsCrud.getAll(projectPath);
 }
 
-async function createRandomEncounterTroop(projectPath, params) {
-  var enemyIds = params.enemyIds || [];
-  var members = enemyIds.map(function(eid, i) {
-    return { enemyId: eid, x: 200 + i * 80, y: 200 + Math.floor(Math.random() * 60), hidden: false };
-  });
-  return await createTroop(projectPath, {
-    name: params.name || 'Troop',
-    members: members,
-    note: params.note || ''
-  });
+async function getTroop(projectPath: string, id: number) {
+  return troopsCrud.getById(projectPath, id);
 }
 
-export { getTroops };
-export { getTroop };
-export { createTroop };
-export { addEnemyToTroop };
-export { createRandomEncounterTroop };
+async function createTroop(projectPath: string, params: TroopParams) {
+  return troopsCrud.create(projectPath, (id) => ({
+    ...troopFactory(id),
+    members: params.members || [],
+    name: params.name || "",
+    note: params.note || "",
+    pages: params.pages !== undefined ? params.pages : troopFactory(0).pages,
+  }));
+}
+
+async function addEnemyToTroop(projectPath: string, troopId: number, enemyId: number) {
+  const troop = await troopsCrud.getById(projectPath, troopId);
+  if (!troop) throw new Error("Troop " + troopId + " not found");
+  const members = [
+    ...troop.members,
+    { enemyId, x: 200 + troop.members.length * 80, y: 200 + Math.floor(Math.random() * 60), hidden: false },
+  ];
+  return troopsCrud.update(projectPath, troopId, { members });
+}
+
+async function createRandomEncounterTroop(projectPath: string, params: { name?: string; enemyIds?: number[]; note?: string }) {
+  const enemyIds = params.enemyIds || [];
+  const members = enemyIds.map((eid: number, i: number) => ({
+    enemyId: eid,
+    x: 200 + i * 80,
+    y: 200 + Math.floor(Math.random() * 60),
+    hidden: false,
+  }));
+  return createTroop(projectPath, { name: params.name || "Troop", members, note: params.note || "" });
+}
+
+export { getTroops, getTroop, createTroop, addEnemyToTroop, createRandomEncounterTroop };

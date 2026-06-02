@@ -1,16 +1,19 @@
-// @ts-nocheck
-import { readJson, writeJson } from '../utils/fileHandler.js';
+import { createCrud } from "../utils/crudHelper.js";
+import type { RpgMakerDbEntry } from "../types/rpgmaker.js";
 
-async function getAnimations(projectPath) {
-  const data = await readJson(projectPath, 'Animations.json');
-  return data.filter(function(e) { return e !== null; });
+type Animation = RpgMakerDbEntry;
+
+const animationsCrud = createCrud<Animation>("Animations.json", (id) => ({
+  id,
+  name: "",
+}));
+
+async function getAnimations(projectPath: string) {
+  return animationsCrud.getAll(projectPath);
 }
 
-async function getAnimation(projectPath, id) {
-  const data = await readJson(projectPath, 'Animations.json');
-  if (id > 0 && id < data.length && data[id]) return data[id];
-  return null;
+async function getAnimation(projectPath: string, id: number) {
+  return animationsCrud.getById(projectPath, id);
 }
 
-export { getAnimations };
-export { getAnimation };
+export { getAnimations, getAnimation };

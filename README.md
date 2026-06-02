@@ -1,27 +1,30 @@
 # RPG Maker MV Ultimate MCP Server
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides **79+ tools** for actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, **AI vision analysis**, **offline ASCII map rendering**, and **knowledge-driven map generation**.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides **102 tools** for actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, **AI vision analysis**, **offline ASCII map rendering**, and **knowledge-driven map generation**.
 
 ## Features
 
-- **79+ MCP tools** covering every aspect of RPG Maker MV project data
-- **Vision AI analysis** — `analyze_screenshot` sends project images to NVIDIA Llama 3.2 90B Vision via proxy for detailed AI descriptions (tilesets, sprites, map screenshots)
+- **102 MCP tools** covering every aspect of RPG Maker MV project data
+- **TypeScript ESM** — fully typed codebase with strict compilation, zero `@ts-nocheck`
+- **Vision AI analysis** — `analyze_screenshot` sends project images to any OpenAI-compatible vision API (OpenAI, Ollama, LocalAI, NVIDIA, etc.) for AI descriptions
 - **Offline ASCII map rendering** — `render_map_ascii` generates ASCII maps with event markers and region IDs, no API needed
-- **Knowledge-driven map generation (V2)** with 11 themes, shadow/region layers, and tileset-aware tile selection
+- **Knowledge-driven map generation** with 21 themes, procedural generation (Perlin noise, BSP, cellular automata), and 106 template maps
+- **Template-based map generation** — generates maps from ProjectR reference templates
 - **Asset scanning** — indexes your project's img/ folder and Tilesets.json to build categorized tile inventories
 - **7 static knowledge files** — tile IDs, passage flags, event commands, enums, trait/effect codes, database schemas, image paths
-- **High-level event builders** — NPC with dialogue, chest, teleport, shop, inn, boss battle, puzzle switch
+- **High-level event builders** — NPC with dialogue, chest, teleport, shop, inn, boss battle, puzzle switch, transfer
 - **Map validation** — detects invalid tile IDs, broken event commands, null references
-- **CommonJS, no TypeScript** — pure Node.js, zero build step
+- **21 procedural themes** — forest, town, village, castle, dungeon, cave, beach, desert, swamp, ruins, interior, snow, harbor, volcano, sewer, fortress, magic_forest, magic_interior, space_interior, space_exterior, world
 
 ## Quick Start
 
 ```bash
 npm install
-RPGMAKER_PROJECT_PATH=/path/to/your/project node server.js
+npm run build
+RPGMAKER_PROJECT_PATH=/path/to/your/project npm start
 ```
 
-### With Claude Desktop / opencode
+### With Claude Desktop / opencode / any MCP client
 
 Add to your MCP config:
 
@@ -30,17 +33,14 @@ Add to your MCP config:
   "mcpServers": {
     "rpgmaker-mv": {
       "command": "node",
-      "args": ["/path/to/RpgMakerMVUltimate-MCP/server.js"],
+      "args": ["/path/to/RpgMakerMVUltimate-MCP/dist/index.js"],
       "env": {
-        "RPGMAKER_PROJECT_PATH": "/path/to/your/project",
-        "PROXY_VISION_URL": "http://127.0.0.1:9999"
+        "RPGMAKER_PROJECT_PATH": "/path/to/your/project"
       }
     }
   }
 }
 ```
-
-> **Vision AI**: Set `PROXY_VISION_URL` to your [nvidia-glm-proxy](https://github.com/DiegoLopez0208/nvidia-glm-proxy) instance to enable `analyze_screenshot`. Without it, only `render_map_ascii` (offline) is available.
 
 ## Tool Categories
 
@@ -53,7 +53,7 @@ Add to your MCP config:
 | **Enemy** | 7 | CRUD, boss builder, search, delete |
 | **State** | 6 | CRUD, search, delete |
 | **Map** | 15 | CRUD, fill layer, events, search, delete, duplicate |
-| **Event Helpers** | 6 | NPC, chest, teleport, shop, inn, boss, puzzle switch |
+| **Event Helpers** | 8 | NPC, chest, teleport, shop, inn, boss, puzzle switch, transfer |
 | **Tileset** | 3 | Get, update |
 | **Common Event** | 4 | CRUD, add command |
 | **Troop** | 5 | CRUD, add enemy, random encounter builder |
@@ -61,14 +61,27 @@ Add to your MCP config:
 | **System** | 8 | Switches, variables, game title, starting position |
 | **Project** | 4 | Summary, context, validate map, set path |
 | **Asset** | 2 | Scan project assets, get tile IDs for tileset |
-| **Vision AI** | 2 | AI screenshot analysis (Llama 3.2 90B Vision), ASCII map render |
+| **Vision AI** | 2 | AI screenshot analysis (OpenAI-compatible), ASCII map render |
 | **Image** | 2 | Tileset dimension analysis, screenshot quadrant analysis |
 
 ## Vision AI
 
-### analyze_screenshot
+The `analyze_screenshot` tool sends project images to an OpenAI-compatible vision API for AI-powered analysis. Works with any endpoint that supports the `/v1/chat/completions` API format.
 
-Sends a project image to NVIDIA Llama 3.2 90B Vision via the nvidia-glm-proxy for AI-powered analysis. Works with tilesets, character sprites, map screenshots, battlers, faces, etc.
+**Supported backends**: OpenAI, Ollama, LocalAI, NVIDIA NIM, vLLM, LiteLLM, or any OpenAI-compatible proxy.
+
+### Configuration
+
+Set these environment variables to enable vision analysis:
+
+| Variable | Default | Description |
+|---|---|---|
+| `VISION_API_URL` | `http://127.0.0.1:9999` | Base URL of the vision API |
+| `VISION_API_KEY` | `sk-proxy` | API key / bearer token |
+| `VISION_MODEL` | `meta/llama-3.2-90b-vision-instruct` | Model name to use |
+| `VISION_API_PATH` | `/v1/chat/completions` | API endpoint path |
+
+### Usage
 
 ```json
 {
@@ -81,7 +94,28 @@ Sends a project image to NVIDIA Llama 3.2 90B Vision via the nvidia-glm-proxy fo
 }
 ```
 
-**Requirements**: [nvidia-glm-proxy](https://github.com/DiegoLopez0208/nvidia-glm-proxy) v1.1.0+ running with `VISION_MODEL=meta/llama-3.2-90b-vision-instruct`.
+Works with: tilesets, character sprites, map screenshots, battlers, faces, etc.
+
+### OpenAI Example
+
+```bash
+VISION_API_URL=https://api.openai.com \
+VISION_API_KEY=sk-... \
+VISION_MODEL=gpt-4o \
+npm start
+```
+
+### Ollama Example
+
+```bash
+VISION_API_URL=http://localhost:11434 \
+VISION_MODEL=llava \
+npm start
+```
+
+### Without Vision AI
+
+Set no `VISION_API_URL` or leave it unset. All other 100 tools work offline. `render_map_ascii` provides visual map inspection without any API.
 
 ### render_map_ascii
 
@@ -101,9 +135,9 @@ Generates an ASCII representation of a map. No API required — works offline.
 
 Output uses tileset flag-based characters: `.` empty, `~` water, `#` wall, `H` ladder, `"` bush, `,` terrain, `T` tree, `D` decoration, `A` autotile. Event positions shown as first-letter markers.
 
-## Map Generation V2
+## Map Generation
 
-The enhanced map generator produces coherent, beautiful maps using your project's actual tilesets:
+The unified map generator produces coherent, beautiful maps using your project's actual tilesets:
 
 ```json
 {
@@ -119,9 +153,23 @@ The enhanced map generator produces coherent, beautiful maps using your project'
 }
 ```
 
-### Supported Themes
+### Themes
 
-`forest` `dungeon` `town` `castle` `cave` `village` `swamp` `desert` `ruins` `interior` `beach`
+`forest` `town` `village` `castle` `dungeon` `cave` `beach` `desert` `swamp` `ruins` `interior` `snow` `harbor` `volcano` `sewer` `fortress` `magic_forest` `magic_interior` `space_interior` `space_exterior` `world`
+
+### Template-Based Generation
+
+Generate maps from 106 ProjectR reference templates:
+
+```json
+{
+  "tool": "create_map",
+  "arguments": {
+    "templateId": 1,
+    "displayName": "Custom Forest"
+  }
+}
+```
 
 ### How It Works
 
@@ -129,6 +177,7 @@ The enhanced map generator produces coherent, beautiful maps using your project'
 2. Categories tiles into: ground, water, wallSide, wallTop, roof, decoration
 3. Generates a 6-layer map: z=0,1 (ground), z=2,3 (upper), z=4 (shadow bits), z=5 (region ID)
 4. Falls back to hardcoded RTP IDs if tileset scan fails (backward compatible)
+5. Procedural generators use Perlin noise, BSP tree partitioning, and cellular automata
 
 ### Asset Scanning
 
@@ -154,39 +203,55 @@ Static JSON files in `knowledge/` provide technical reference data extracted fro
 
 See [knowledge/README.md](knowledge/README.md) for details.
 
-## Project Structure
+## Development
+
+```bash
+npm install
+npm run build          # tsc compile
+npm start              # run built server
+npm run dev            # tsx watch mode for development
+```
+
+### Project Structure
 
 ```
-server.js                   # MCP server entry point (77+ tool definitions + dispatch)
-tools/
-  actorTools.js             # Actor CRUD
-  itemTools.js              # Item/Weapon/Armor CRUD
-  skillTools.js             # Skill CRUD + simplified builders
-  classTools.js             # Class CRUD
-  enemyTools.js             # Enemy CRUD + boss builder
-  stateTools.js             # State CRUD
-  mapTools.js               # Map CRUD + V2 generator integration
-  tilesetTools.js           # Tileset get/update
-  systemTools.js            # System switches/variables/title
-  commonEventTools.js       # Common event CRUD
-  troopTools.js             # Troop CRUD + encounter builder
-  animationTools.js         # Animation get
-  projectTools.js           # Project summary + path switch
-  assetTools.js             # Asset scanning + tile ID categorization
-utils/
-  fileHandler.js            # readJson/writeJson/nextId/getMapPath
-  commandBuilder.js         # Event command factory (30+ commands)
-  mapGenerator.js           # V1 basic generator (5 themes, 8 hardcoded IDs)
-  mapGeneratorV2.js         # V2 knowledge-driven generator (11 themes, tileset-aware)
-  logger.js                 # Logging utility
+src/
+  server.ts              # MCP server entry point (tool dispatch + handlers)
+  index.ts               # Re-export entry
+  types/
+    rpgmaker.ts           # Shared TypeScript interfaces for all MV data structures
+  tools/
+    actorTools.ts         # Actor CRUD
+    animationTools.ts     # Animation get
+    assetTools.ts         # Asset scanning + tile ID categorization
+    classTools.ts         # Class CRUD
+    commonEventTools.ts   # Common event CRUD
+    enemyTools.ts         # Enemy CRUD + boss builder
+    itemTools.ts          # Item/Weapon/Armor CRUD
+    mapTools.ts           # Map CRUD + event builders + generation integration
+    projectTools.ts       # Project summary + path switch
+    skillTools.ts         # Skill CRUD + simplified builders
+    stateTools.ts         # State CRUD
+    systemTools.ts        # System switches/variables/title
+    tilesetTools.ts       # Tileset get/update
+    troopTools.ts         # Troop CRUD + encounter builder
+  utils/
+    fileHandler.ts        # readJson/writeJson/nextId/getMapPath
+    commandBuilder.ts     # Event command factory (35+ commands)
+    mapGenerator.ts       # Unified generator (Perlin, BSP, cellular, 21 themes)
+    logger.ts             # Logging utility
+  knowledge/
+    mapTemplates.ts       # Template index loading + search
 knowledge/
-  tile-ids.json             # Tile ID ranges and formulas
-  passage-flags.json        # Passage flag bits and values
-  event-commands.json       # Event command reference
-  enums.json                # Enum value reference
-  trait-effect-codes.json   # Trait and effect codes
-  database-schemas.json     # MV data type schemas
-  image-paths.json          # Image path conventions
+  maps/                   # 106 ProjectR reference map JSONs
+  map-templates.json      # Template index
+  tile-ids.json           # Tile ID ranges and formulas
+  passage-flags.json      # Passage flag bits
+  event-commands.json     # Event command reference
+  enums.json              # Enum value reference
+  trait-effect-codes.json # Trait and effect codes
+  database-schemas.json   # MV data type schemas
+  image-paths.json        # Image path conventions
 ```
 
 ## License

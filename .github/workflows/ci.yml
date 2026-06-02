@@ -18,14 +18,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      - run: npm install
-      - name: Verify modules load
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - run: npm audit --audit-level=high || true
+      - name: Verify server starts
         run: |
-          node -e "require('./server.js'); console.log('server.js loads OK')" || true
-          node -e "require('./tools/assetTools'); require('./utils/mapGeneratorV2'); require('./tools/mapTools'); console.log('All modules OK')"
-      - name: Lint check
-        run: |
-          npx eslint server.js tools/ utils/ --ignore-pattern node_modules || true
+          timeout 5 node dist/index.js < /dev/null 2>&1 | head -1 || true
 
   release:
     needs: test
@@ -37,7 +37,10 @@ jobs:
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
-      - run: npm install
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,11 +1,11 @@
-// @ts-nocheck
 import { readdirSync } from 'fs';
 import { readFile, writeFile, copyFile } from 'fs/promises';
 import { readJson, writeJson, getDataPath, getMapPath, nextId } from '../utils/fileHandler.js';
 import { cmd } from '../utils/commandBuilder.js';
+import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
 
-import { generateTileLayoutV3, THEMES as V3_THEMES } from '../utils/mapGenerator.js';
+import { generateTileLayoutV3, THEMES as V3_THEMES, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 
 /**
@@ -13,7 +13,7 @@ import { getTileIdsForTileset } from './assetTools.js';
  * Reads MapInfos.json which contains the map tree structure
  * with names, order, and parent IDs.
  */
-async function getMapInfos(projectPath) {
+async function getMapInfos(projectPath: string) {
   return await readJson(projectPath, 'MapInfos.json');
 }
 
@@ -23,7 +23,7 @@ async function getMapInfos(projectPath) {
  * @param {string} projectPath - The project root path
  * @param {number} mapId - The map ID (e.g. 1 for Map001.json)
  */
-async function getMap(projectPath, mapId) {
+async function getMap(projectPath: string, mapId: number) {
   var numMapId = toNum(mapId, 'mapId');
   const mapPath = getMapPath(projectPath, numMapId);
   return await readJsonDirect(mapPath);
@@ -35,37 +35,27 @@ async function getMap(projectPath, mapId) {
  * @param {string} projectPath - The project root path
  * @param {number} mapId - The map ID
  */
-async function getMapEvents(projectPath, mapId) {
+async function getMapEvents(projectPath: string, mapId: number) {
   const map = await getMap(projectPath, mapId);
-  return map.events || [];
+  return (map as RpgMakerMap).events || [];
 }
 
-/**
- * Get a specific event from a map by event ID.
- * @param {string} projectPath - The project root path
- * @param {number} mapId - The map ID
- * @param {number} eventId - The event ID
- */
-async function getMapEvent(projectPath, mapId, eventId) {
+async function getMapEvent(projectPath: string, mapId: number, eventId: number) {
   var numMapId = toNum(mapId, 'mapId');
   var numEventId = toNum(eventId, 'eventId');
-  const map = await getMap(projectPath, numMapId);
-  if (map.events && numEventId >= 0 && numEventId < map.events.length) {
-    return map.events[numEventId];
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
+  if (map.events && numEventId! >= 0 && numEventId! < map.events.length) {
+    return map.events[numEventId!];
   }
   return null;
 }
 
-/**
- * Find the next available map ID by scanning existing map files.
- * Map files are named Map001.json, Map002.json, etc.
- */
-async function getNextMapId(projectPath) {
+async function getNextMapId(projectPath: string) {
   const dataDir = getDataPath(projectPath, '');
   const files = readdirSync(dataDir);
   const mapIds = files
     .filter(function(f) { return /^Map(\d{3})\.json$/.test(f) && f !== 'MapInfos.json'; })
-    .map(function(f) { return parseInt(f.match(/^Map(\d{3})\.json$/)[1], 10); });
+    .map(function(f: string) { var m = f.match(/^Map(\d{3})\.json$/); return parseInt(m![1], 10); });
   if (mapIds.length === 0) return 1;
   return Math.max.apply(null, mapIds) + 1;
 }
@@ -77,7 +67,7 @@ async function getNextMapId(projectPath) {
  * @param {string} projectPath - The project root path
  * @param {object} params - Map creation parameters
  */
-async function createMap(projectPath, params) {
+async function createMap(projectPath: string, params: CreateMapParams | CreateMapV3Params) {
     const width = params.width || 17;
     const height = params.height || 13;
     const tilesetId = params.tilesetId || 1;
@@ -99,18 +89,18 @@ async function createMap(projectPath, params) {
                 (tilesetConfig.availableTiles.decoration && tilesetConfig.availableTiles.decoration.length > 0)
             );
             if (hasTiles) {
-                tileResult = generateTileLayoutV2(width, height, theme, tilesetConfig);
+                tileResult = generateTileLayoutV3(width, height, theme, tilesetConfig);
             } else {
-                tileResult = generateTileLayout(width, height, theme);
+                tileResult = generateTileLayoutV3(width, height, theme);
             }
         } catch (_) {
-            tileResult = generateTileLayout(width, height, theme);
+            tileResult = generateTileLayoutV3(width, height, theme);
         }
     } else {
         tileResult = { data: new Array(width * height * 6).fill(0) };
     }
 
-    var map = {
+    var map: RpgMakerMap = {
         autoplayBgm: bgmName ? true : false,
         autoplayBgs: false,
         battleback1Name: '', battleback2Name: '',
@@ -120,6 +110,7 @@ async function createMap(projectPath, params) {
         displayName: displayName,
         encounterList: [], encounterStep: 30,
         height: height, width: width,
+        note: note,
         parallaxLoopX: false, parallaxLoopY: false,
         parallaxName: '', parallaxShow: true,
         parallaxSx: 0, parallaxSy: 0,
@@ -129,16 +120,14 @@ async function createMap(projectPath, params) {
         events: [null]
     };
 
-    if (note) map.note = note;
-
     const mapPath = getMapPath(projectPath, mapId);
     await writeJsonDirect(mapPath, map);
 
-    const mapInfos = await readJson(projectPath, 'MapInfos.json');
+    const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
     while (mapInfos.length <= mapId) mapInfos.push(null);
 
-    const maxOrder = mapInfos.reduce(function(max, info) {
-        return info && info.order && info.order > max ? info.order : max;
+    const maxOrder = (mapInfos as unknown[]).reduce(function(max: number, info: unknown) {
+        return info && (info as Record<string, number>).order && (info as Record<string, number>).order > max ? (info as Record<string, number>).order : max;
     }, 0);
 
     mapInfos[mapId] = {
@@ -153,7 +142,7 @@ async function createMap(projectPath, params) {
     return { mapId: mapId, map: map };
 }
 
-async function createMapV3(projectPath, params) {
+async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     const width = params.width || 30;
     const height = params.height || 25;
     const tilesetId = params.tilesetId || 1;
@@ -172,7 +161,7 @@ async function createMapV3(projectPath, params) {
 
     var tileResult = generateTileLayoutV3(width, height, theme, v3opts);
 
-    var map = {
+    var map: RpgMakerMap = {
         autoplayBgm: bgmName ? true : false,
         autoplayBgs: false,
         battleback1Name: '', battleback2Name: '',
@@ -182,6 +171,7 @@ async function createMapV3(projectPath, params) {
         displayName: displayName,
         encounterList: [], encounterStep: 30,
         height: height, width: width,
+        note: note,
         parallaxLoopX: false, parallaxLoopY: false,
         parallaxName: '', parallaxShow: true,
         parallaxSx: 0, parallaxSy: 0,
@@ -191,23 +181,21 @@ async function createMapV3(projectPath, params) {
         events: tileResult.events
     };
 
-    if (note) map.note = note;
-
     const mapId = await getNextMapId(projectPath);
     const mapPath = getMapPath(projectPath, mapId);
     await writeJsonDirect(mapPath, map);
 
-    const mapInfos = await readJson(projectPath, 'MapInfos.json');
+    const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
     while (mapInfos.length <= mapId) mapInfos.push(null);
 
-    const maxOrder = mapInfos.reduce(function(max, info) {
-        return info && info.order && info.order > max ? info.order : max;
+    const maxOrder2 = (mapInfos as unknown[]).reduce(function(max: number, info: unknown) {
+        return info && (info as Record<string, number>).order && (info as Record<string, number>).order > max ? (info as Record<string, number>).order : max;
     }, 0);
 
     mapInfos[mapId] = {
         id: mapId, expanded: false,
         name: name || 'MAP' + String(mapId).padStart(3, '0'),
-        order: maxOrder + 1, parentId: params.parentId || 0,
+        order: maxOrder2 + 1, parentId: params.parentId || 0,
         scrollX: Math.floor(width * 32 * 0.8),
         scrollY: Math.floor(height * 32 * 0.8)
     };
@@ -216,35 +204,35 @@ async function createMapV3(projectPath, params) {
     return { mapId: mapId, seed: tileResult.seed, theme: theme };
 }
 
-async function createMapBatch(projectPath, batchSpec) {
-    var results = [];
-    var mapIds = {};
+async function createMapBatch(projectPath: string, batchSpec: unknown[]) {
+    var results: unknown[] = [];
+    var mapIds: Record<string, number> = {};
     for (var i = 0; i < batchSpec.length; i++) {
-        var spec = batchSpec[i];
-        var params = {
-            width: spec.width || 30,
-            height: spec.height || 25,
-            tilesetId: spec.tilesetId || 2,
-            displayName: spec.displayName || spec.name || '',
-            name: spec.name || '',
-            theme: spec.theme || 'forest',
-            seed: spec.seed,
+        var spec = batchSpec[i] as Record<string, unknown>;
+        var params: CreateMapV3Params = {
+            width: (spec.width as number) || 30,
+            height: (spec.height as number) || 25,
+            tilesetId: (spec.tilesetId as number) || 2,
+            displayName: (spec.displayName as string) || (spec.name as string) || '',
+            name: (spec.name as string) || '',
+            theme: (spec.theme as string) || 'forest',
+            seed: spec.seed as number,
             addEvents: spec.addEvents !== false,
-            parentId: spec.parentId || 0,
-            note: spec.note || ''
+            parentId: (spec.parentId as number) || 0,
+            note: (spec.note as string) || ''
         };
         var result = await createMapV3(projectPath, params);
-        mapIds[spec.key || spec.name] = result.mapId;
+        mapIds[spec.key as string || spec.name as string] = result.mapId;
         results.push({ key: spec.key || spec.name, mapId: result.mapId, seed: result.seed, theme: result.theme });
     }
     return { maps: results, mapIds: mapIds };
 }
 
-async function connectMaps(projectPath, mapIdA, mapIdB, posA, posB) {
+async function connectMaps(projectPath: string, mapIdA: number, mapIdB: number, posA: Record<string, number>, posB: Record<string, number>) {
   var numMapIdA = toNum(mapIdA, 'mapIdA');
   var numMapIdB = toNum(mapIdB, 'mapIdB');
-  var mapA = await getMap(projectPath, numMapIdA);
-  var mapB = await getMap(projectPath, numMapIdB);
+  var mapA = await getMap(projectPath, numMapIdA) as RpgMakerMap;
+  var mapB = await getMap(projectPath, numMapIdB) as RpgMakerMap;
   var newIdA = nextId(mapA.events);
   var evA = makeTransferEvent(newIdA, posA.x, posA.y, numMapIdB, posB.x, posB.y, posA.trigger || 1);
   while (mapA.events.length <= newIdA) mapA.events.push(null);
@@ -260,20 +248,20 @@ async function connectMaps(projectPath, mapIdA, mapIdB, posA, posB) {
   return { eventA: evA, eventB: evB };
 }
 
-async function populateMapEvents(projectPath, mapId, eventType, count, opts) {
+async function populateMapEvents(projectPath: string, mapId: number, eventType: string, count: number, opts: Record<string, unknown>) {
   var numMapId = toNum(mapId, 'mapId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   opts = opts || {};
   var numCount = toNum(count || 3, 'count');
-  var added = [];
-  for (var i = 0; i < numCount; i++) {
-        var x = opts.x || Math.floor(Math.random() * (map.width - 4)) + 2;
-        var y = opts.y || Math.floor(Math.random() * (map.height - 4)) + 2;
+  var added: unknown[] = [];
+  for (var i = 0; i < numCount!; i++) {
+        var x = (opts.x as number) || Math.floor(Math.random() * (map.width - 4)) + 2;
+        var y = (opts.y as number) || Math.floor(Math.random() * (map.height - 4)) + 2;
         var newId = nextId(map.events);
         var ev;
-        if (eventType === 'npc') ev = makeNpcEvent(newId, x, y, opts.name || 'NPC');
+        if (eventType === 'npc') ev = makeNpcEvent(newId, x, y, (opts.name as string) || 'NPC');
         else if (eventType === 'chest') ev = makeChestEvent(newId, x, y);
-        else if (eventType === 'boss') ev = makeBossEvent(newId, x, y, opts.troopId || 1);
+        else if (eventType === 'boss') ev = makeBossEvent(newId, x, y, (opts.troopId as number) || 1);
         else ev = makeNpcEvent(newId, x, y, eventType || 'Event');
         while (map.events.length <= newId) map.events.push(null);
         map.events[newId] = ev;
@@ -283,14 +271,14 @@ async function populateMapEvents(projectPath, mapId, eventType, count, opts) {
   return { added: added, mapId: numMapId };
 }
 
-async function setMapDisplayNames(projectPath, nameMap) {
-  const mapInfos = await readJson(projectPath, 'MapInfos.json');
-  var updated = [];
+async function setMapDisplayNames(projectPath: string, nameMap: Record<string, unknown>[]) {
+  const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
+  var updated: unknown[] = [];
   for (var i = 0; i < nameMap.length; i++) {
     var entry = nameMap[i];
     var id = toNum(entry.mapId, 'mapId in names[' + i + ']');
-    if (id < mapInfos.length && mapInfos[id]) {
-      mapInfos[id].name = entry.name;
+    if (id! < mapInfos.length && mapInfos[id!]) {
+      (mapInfos[id!] as Record<string, string>).name = entry.name as string;
       updated.push({ mapId: id, name: entry.name });
     }
   }
@@ -298,15 +286,15 @@ async function setMapDisplayNames(projectPath, nameMap) {
   return { updated: updated };
 }
 
-async function organizeMapTree(projectPath, folderMap) {
-  const mapInfos = await readJson(projectPath, 'MapInfos.json');
-  var updated = [];
+async function organizeMapTree(projectPath: string, folderMap: Record<string, unknown>[]) {
+  const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
+  var updated: unknown[] = [];
   for (var i = 0; i < folderMap.length; i++) {
     var entry = folderMap[i];
     var id = toNum(entry.mapId, 'mapId in folders[' + i + ']');
     var pid = toNum(entry.parentId || 0, 'parentId in folders[' + i + ']');
-    if (id < mapInfos.length && mapInfos[id]) {
-      mapInfos[id].parentId = pid;
+    if (id! < mapInfos.length && mapInfos[id!]) {
+      (mapInfos[id!] as Record<string, number>).parentId = pid;
       updated.push({ mapId: id, parentId: pid });
     }
   }
@@ -321,19 +309,19 @@ async function organizeMapTree(projectPath, folderMap) {
  * @param {number} layer - Layer index (0-5)
  * @param {number} tileId - Tile ID to fill the layer with
  */
-async function fillMapLayer(projectPath, mapId, layer, tileId) {
+async function fillMapLayer(projectPath: string, mapId: number, layer: number, tileId: number) {
   var numMapId = toNum(mapId, 'mapId');
   var numLayer = toNum(layer, 'layer');
   var numTileId = toNum(tileId, 'tileId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
 
-  if (numLayer < 0 || numLayer > 5) {
+  if (numLayer! < 0 || numLayer! > 5) {
     throw new Error('Layer must be between 0 and 5');
   }
 
   for (var y = 0; y < map.height; y++) {
     for (var x = 0; x < map.width; x++) {
-      var index = (numLayer * map.height + y) * map.width + x;
+      var index = (numLayer! * map.height + y) * map.width + x;
       map.data[index] = numTileId;
     }
   }
@@ -354,9 +342,9 @@ async function fillMapLayer(projectPath, mapId, layer, tileId) {
  *                           2=event touch, 3=autorun, 4=parallel
  * @param {Array} pages - Array of event page objects (optional, creates default page if omitted)
  */
-async function createMapEvent(projectPath, mapId, x, y, name, trigger, pages) {
+async function createMapEvent(projectPath: string, mapId: number, x: number, y: number, name: string, trigger: number, pages: EventPage[]) {
   var numMapId = toNum(mapId, 'mapId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
 
   const newId = nextId(map.events);
   var triggerVal = toNum(trigger !== undefined ? trigger : 0, 'trigger');
@@ -405,49 +393,39 @@ async function createMapEvent(projectPath, mapId, x, y, name, trigger, pages) {
  * @param {number} eventId - The event ID to update
  * @param {object} fields - Fields to update
  */
-async function updateMapEvent(projectPath, mapId, eventId, fields) {
+async function updateMapEvent(projectPath: string, mapId: number, eventId: number, fields: Partial<MapEvent>) {
   var numMapId = toNum(mapId, 'mapId');
   var numEventId = toNum(eventId, 'eventId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
 
-  if (!map.events[numEventId]) {
-    throw new Error('Event ' + numEventId + ' not found on map ' + numMapId + '. Available: ' + map.events.map(function(e, i) { return e ? i + ':' + e.name : null; }).filter(Boolean).join(', '));
+  if (!map.events[numEventId!]) {
+    throw new Error('Event ' + numEventId + ' not found on map ' + numMapId + '. Available: ' + map.events.map(function(e: MapEvent | null, i: number) { return e ? i + ':' + e.name : null; }).filter(Boolean).join(', '));
   }
 
-  map.events[numEventId] = Object.assign({}, map.events[numEventId], fields);
+  map.events[numEventId!] = Object.assign({}, map.events[numEventId!], fields) as MapEvent;
 
   const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
-  return map.events[numEventId];
+  return map.events[numEventId!];
 }
 
-/**
- * Add an event command to a specific page of an event.
- * Commands are inserted before the last command (code 0 terminator).
- * @param {string} projectPath - The project root path
- * @param {number} mapId - The map ID
- * @param {number} eventId - The event ID
- * @param {number} pageIndex - Page index (0-based)
- * @param {object} command - The event command {code, indent, parameters}
- */
-async function addEventCommand(projectPath, mapId, eventId, pageIndex, command) {
+async function addEventCommand(projectPath: string, mapId: number, eventId: number, pageIndex: number, command: EventCommand) {
   var numMapId = toNum(mapId, 'mapId');
   var numEventId = toNum(eventId, 'eventId');
   var numPageIndex = toNum(pageIndex !== undefined ? pageIndex : 0, 'pageIndex');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
 
-  if (!map.events[numEventId]) {
-    throw new Error('Event ' + numEventId + ' not found on map ' + numMapId + '. Available: ' + map.events.map(function(e, i) { return e ? i + ':' + e.name : null; }).filter(Boolean).join(', '));
+  if (!map.events[numEventId!]) {
+    throw new Error('Event ' + numEventId + ' not found on map ' + numMapId + '. Available: ' + map.events.map(function(e: MapEvent | null, i: number) { return e ? i + ':' + e.name : null; }).filter(Boolean).join(', '));
   }
 
-  var event = map.events[numEventId];
-  if (!event.pages[numPageIndex]) {
-    throw new Error('Page ' + numPageIndex + ' not found on event ' + numEventId + ' (has ' + event.pages.length + ' pages)');
+  var event = map.events[numEventId!]!;
+  if (!event.pages[numPageIndex!]) {
+    throw new Error('Page ' + numPageIndex! + ' not found on event ' + numEventId + ' (has ' + event.pages.length + ' pages)');
   }
 
-  var commandList = event.pages[numPageIndex].list;
+  var commandList = event.pages[numPageIndex!].list;
 
-  // Insert before the last command (code 0 = End of Event Processing)
   commandList.splice(commandList.length - 1, 0, command);
 
   const mapPath = getMapPath(projectPath, numMapId);
@@ -470,16 +448,15 @@ async function addEventCommand(projectPath, mapId, eventId, pageIndex, command) 
  * @param {string} characterName - Character sprite filename
  * @param {number} characterIndex - Character sprite index (0-7)
  */
-async function createNpc(projectPath, mapId, x, y, name, dialogues, characterName, characterIndex) {
+async function createNpc(projectPath: string, mapId: number, x: number, y: number, name: string, dialogues: string[], characterName: string, characterIndex: number) {
   var numMapId = toNum(mapId, 'mapId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const newId = nextId(map.events);
 
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
 
-  // Build command list for Page 1: dialogue triggered by Action Button
-  var page1List = [];
+  var page1List: EventCommand[] = [];
   var dialogueLines = dialogues && dialogues.length > 0 ? dialogues : ['...'];
   for (var d = 0; d < dialogueLines.length; d++) {
     var msgCommands = cmd.message(dialogueLines[d], '', 0);
@@ -578,28 +555,27 @@ async function createNpc(projectPath, mapId, x, y, name, dialogues, characterNam
  * @param {string} characterName - Chest sprite filename
  * @param {number} characterIndex - Chest sprite index
  */
-async function createChest(projectPath, mapId, x, y, items, characterName, characterIndex) {
+async function createChest(projectPath: string, mapId: number, x: number, y: number, items: Record<string, unknown>[], characterName: string, characterIndex: number) {
   var numMapId = toNum(mapId, 'mapId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const newId = nextId(map.events);
 
   characterName = characterName || 'Chest';
   characterIndex = characterIndex || 0;
 
-  // Build Page 1 command list: open chest, give items, activate Self Switch A
-  var page1List = [];
+  var page1List: EventCommand[] = [];
 
   // Give each item/weapon/armor
   var itemEntries = items || [];
   for (var idx = 0; idx < itemEntries.length; idx++) {
     var item = itemEntries[idx];
-    var amount = item.amount || 1;
+    var amount = (item.amount as number) || 1;
     if (item.type === 'item') {
-      page1List.push.apply(page1List, cmd.giveItem(item.id, amount));
+      page1List.push.apply(page1List, cmd.giveItem(item.id as number, amount));
     } else if (item.type === 'weapon') {
-      page1List.push.apply(page1List, cmd.giveWeapon(item.id, amount));
+      page1List.push.apply(page1List, cmd.giveWeapon(item.id as number, amount));
     } else if (item.type === 'armor') {
-      page1List.push.apply(page1List, cmd.giveArmor(item.id, amount));
+      page1List.push.apply(page1List, cmd.giveArmor(item.id as number, amount));
     }
   }
 
@@ -699,10 +675,10 @@ async function createChest(projectPath, mapId, x, y, items, characterName, chara
  * @param {number} destY - Destination Y coordinate
  * @param {number} trigger - Trigger type (1=player touch for walk-on teleports, 0=action button for doors)
  */
-async function createTeleportEvent(projectPath, mapId, x, y, destMapId, destX, destY, trigger) {
+async function createTeleportEvent(projectPath: string, mapId: number, x: number, y: number, destMapId: number, destX: number, destY: number, trigger: number) {
   var numMapId = toNum(mapId, 'mapId');
   var numDestMapId = toNum(destMapId, 'destMapId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const newId = nextId(map.events);
 
   var teleportCmds = cmd.teleport(numDestMapId, destX, destY, 0, 0);
@@ -756,19 +732,17 @@ async function createTeleportEvent(projectPath, mapId, x, y, destMapId, destX, d
  * @param {number} mapId - The map ID
  * @param {string} query - Search term
  */
-async function searchMapEvents(projectPath, mapId, query) {
-  const events = await getMapEvents(projectPath, mapId);
+async function searchMapEvents(projectPath: string, mapId: number, query: string) {
+  const events = await getMapEvents(projectPath, mapId) as unknown[];
   const lowerQuery = query.toLowerCase();
-  return events.filter(function(e) {
-    return e !== null && e.name.toLowerCase().includes(lowerQuery);
+  return events.filter(function(e: unknown) {
+    return e !== null && (e as MapEvent).name.toLowerCase().includes(lowerQuery);
   });
 }
 
-// ─── Safe ID Casting Helper ───
-
-function toNum(val, name) {
-  if (val === undefined || val === null) return undefined;
-  var n = typeof val === 'number' ? val : parseInt(val, 10);
+function toNum(val: unknown, name: string): number {
+  if (val === undefined || val === null) throw new Error('Missing required parameter: ' + name);
+  var n = typeof val === 'number' ? val : parseInt(String(val), 10);
   if (isNaN(n)) throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected number or numeric string');
   return n;
 }
@@ -801,7 +775,7 @@ function createDefaultConditions() {
  * Create a default blank event page.
  * @param {number} trigger - Trigger type
  */
-function createDefaultEventPage(trigger) {
+function createDefaultEventPage(trigger: number): EventPage {
   return {
     conditions: createDefaultConditions(),
     directionFix: false,
@@ -825,20 +799,12 @@ function createDefaultEventPage(trigger) {
   };
 }
 
-/**
- * Read JSON from an absolute path (used for map files which use getMapPath).
- * Unlike readJson which takes a projectPath + filename, this takes the full path.
- */
-async function readJsonDirect(filePath) {
+async function readJsonDirect(filePath: string) {
     const content = await readFile(filePath, 'utf-8');
-    return JSON.parse(content.replace(/^\uFEFF/, ''));
+    return JSON.parse(content.replace(/^\uFEFF/, '')) as unknown;
 }
 
-/**
- * Write JSON to an absolute path with backup support.
- * Creates a .bak file before writing.
- */
-async function writeJsonDirect(filePath, data) {
+async function writeJsonDirect(filePath: string, data: unknown) {
   var backupPath = filePath + '.bak';
 
   try {
@@ -851,33 +817,33 @@ async function writeJsonDirect(filePath, data) {
   await writeFile(filePath, jsonString, 'utf-8');
 }
 
-async function deleteMapEvent(projectPath, mapId, eventId) {
+async function deleteMapEvent(projectPath: string, mapId: number, eventId: number) {
   var numMapId = toNum(mapId, 'mapId');
   var numEventId = toNum(eventId, 'eventId');
-  const map = await getMap(projectPath, numMapId);
-  if (!map.events[numEventId]) throw new Error('Event ' + numEventId + ' not found on map ' + numMapId);
-  var deleted = map.events[numEventId];
-  map.events[numEventId] = null;
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
+  if (!map.events[numEventId!]) throw new Error('Event ' + numEventId + ' not found on map ' + numMapId);
+  var deleted = map.events[numEventId!];
+  map.events[numEventId!] = null;
   const mapPath = getMapPath(projectPath, numMapId);
   await writeJsonDirect(mapPath, map);
   return { deleted: deleted };
 }
 
-async function duplicateMap(projectPath, sourceMapId, params) {
+async function duplicateMap(projectPath: string, sourceMapId: number, params: Record<string, unknown>) {
   var numSourceMapId = toNum(sourceMapId, 'sourceMapId');
-  const sourceMap = await getMap(projectPath, numSourceMapId);
+  const sourceMap = await getMap(projectPath, numSourceMapId) as RpgMakerMap;
   const newMapId = await getNextMapId(projectPath);
-  var newMap = JSON.parse(JSON.stringify(sourceMap));
-  if (params && params.width) newMap.width = params.width;
-  if (params && params.height) newMap.height = params.height;
-  if (params && params.displayName) newMap.displayName = params.displayName;
-  if (params && params.tilesetId) newMap.tilesetId = params.tilesetId;
+  var newMap = JSON.parse(JSON.stringify(sourceMap)) as RpgMakerMap;
+  if (params && params.width) newMap.width = params.width as number;
+  if (params && params.height) newMap.height = params.height as number;
+  if (params && params.displayName) newMap.displayName = params.displayName as string;
+  if (params && params.tilesetId) newMap.tilesetId = params.tilesetId as number;
   const mapPath = getMapPath(projectPath, newMapId);
   await writeJsonDirect(mapPath, newMap);
-  const mapInfos = await readJson(projectPath, 'MapInfos.json');
+  const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
   while (mapInfos.length <= newMapId) mapInfos.push(null);
-  const maxOrder = mapInfos.reduce(function(max, info) {
-    return info && info.order && info.order > max ? info.order : max;
+  const maxOrder = mapInfos.reduce(function(max: number, info: unknown) {
+    return info && (info as Record<string, number>).order && (info as Record<string, number>).order > max ? (info as Record<string, number>).order : max;
   }, 0);
   var name = (params && params.name) || ('Copy of Map' + numSourceMapId);
   mapInfos[newMapId] = {
@@ -890,15 +856,15 @@ async function duplicateMap(projectPath, sourceMapId, params) {
   return { mapId: newMapId, map: newMap };
 }
 
-async function createShop(projectPath, mapId, x, y, name, itemIds, weaponIds, armorIds, characterName, characterIndex) {
+async function createShop(projectPath: string, mapId: number, x: number, y: number, name: string, itemIds: number[], weaponIds: number[], armorIds: number[], characterName: string, characterIndex: number) {
   var numMapId = toNum(mapId, 'mapId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
-  var itemList = (itemIds || []).map(function(id) { return [0, id, 0, 0]; });
-  var weaponList = (weaponIds || []).map(function(id) { return [1, id, 0, 0]; });
-  var armorList = (armorIds || []).map(function(id) { return [2, id, 0, 0]; });
+  var itemList = (itemIds || []).map(function(id: number) { return [0, id, 0, 0]; });
+  var weaponList = (weaponIds || []).map(function(id: number) { return [1, id, 0, 0]; });
+  var armorList = (armorIds || []).map(function(id: number) { return [2, id, 0, 0]; });
   var goods = itemList.concat(weaponList).concat(armorList);
     if (goods.length === 0) goods = [[0, 1, 0, 0]];
     var pageList = [
@@ -923,15 +889,15 @@ async function createShop(projectPath, mapId, x, y, name, itemIds, weaponIds, ar
   return event;
 }
 
-async function createInn(projectPath, mapId, x, y, name, cost, characterName, characterIndex) {
+async function createInn(projectPath: string, mapId: number, x: number, y: number, name: string, cost: number, characterName: string, characterIndex: number) {
   var numMapId = toNum(mapId, 'mapId');
   var numCost = toNum(cost || 50, 'cost');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
   cost = cost || 50;
-  var page1List = [
+  var page1List: EventCommand[] = [
   { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
   { code: 401, indent: 0, parameters: ['Rest here for ' + numCost + ' gold?'] },
   { code: 102, indent: 0, parameters: [['Yes', 'No'], 1] },
@@ -967,14 +933,14 @@ async function createInn(projectPath, mapId, x, y, name, cost, characterName, ch
   return event;
 }
 
-async function createBossEvent(projectPath, mapId, x, y, name, troopId, characterName, characterIndex) {
+async function createBossEvent(projectPath: string, mapId: number, x: number, y: number, name: string, troopId: number, characterName: string, characterIndex: number) {
   var numMapId = toNum(mapId, 'mapId');
   var numTroopId = toNum(troopId, 'troopId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
-  var page1List = [
+  var page1List: EventCommand[] = [
   { code: 301, indent: 0, parameters: [0, numTroopId, 0, 1] },
         { code: 601, indent: 0, parameters: [] },
         { code: 123, indent: 1, parameters: ['A', 1] },
@@ -1010,10 +976,10 @@ async function createBossEvent(projectPath, mapId, x, y, name, troopId, characte
   return event;
 }
 
-async function createPuzzleSwitch(projectPath, mapId, x, y, switchId, doorX, doorY, switchCharacterName) {
+async function createPuzzleSwitch(projectPath: string, mapId: number, x: number, y: number, switchId: number, doorX: number, doorY: number, switchCharacterName: string) {
   var numMapId = toNum(mapId, 'mapId');
   var numSwitchId = toNum(switchId, 'switchId');
-  const map = await getMap(projectPath, numMapId);
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const switchId2 = nextId(map.events);
   var switchPage1List = [
   { code: 121, indent: 0, parameters: [numSwitchId, numSwitchId, 0] },

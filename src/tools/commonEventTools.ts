@@ -1,46 +1,46 @@
-// @ts-nocheck
-import { readJson, writeJson, nextId } from '../utils/fileHandler.js';
+import { createCrud } from "../utils/crudHelper.js";
+import type { CommonEventParams, EventCommand, RpgMakerDbEntry } from "../types/rpgmaker.js";
 
-async function getCommonEvents(projectPath) {
-  const data = await readJson(projectPath, 'CommonEvents.json');
-  return data.filter(function(e) { return e !== null; });
+interface CommonEvent extends RpgMakerDbEntry {
+  trigger: number;
+  switchId: number;
+  list: EventCommand[];
 }
 
-async function createCommonEvent(projectPath, params) {
-  const data = await readJson(projectPath, 'CommonEvents.json');
-  const newId = nextId(data);
-  var ev = {
-    id: newId,
-    name: params.name || '',
-    trigger: params.trigger || 0,
-    switchId: params.switchId || 0,
-    list: params.list || [{ code: 0, indent: 0, parameters: [] }],
-    note: params.note || ''
+function commonEventFactory(id: number): CommonEvent {
+  return {
+    id,
+    name: "",
+    note: "",
+    trigger: 0,
+    switchId: 0,
+    list: [{ code: 0, indent: 0, parameters: [] }],
   };
-  while (data.length <= newId) data.push(null);
-  data[newId] = ev;
-  await writeJson(projectPath, 'CommonEvents.json', data);
-  return ev;
 }
 
-async function updateCommonEvent(projectPath, id, fields) {
-  const data = await readJson(projectPath, 'CommonEvents.json');
-  if (!data[id]) throw new Error('Common Event ' + id + ' not found');
-  data[id] = Object.assign({}, data[id], fields);
-  await writeJson(projectPath, 'CommonEvents.json', data);
-  return data[id];
+const commonEventsCrud = createCrud<CommonEvent>("CommonEvents.json", commonEventFactory);
+
+async function getCommonEvents(projectPath: string) {
+  return commonEventsCrud.getAll(projectPath);
 }
 
-async function addCommonEventCommand(projectPath, id, command) {
-  const data = await readJson(projectPath, 'CommonEvents.json');
-  if (!data[id]) throw new Error('Common Event ' + id + ' not found');
-  var list = data[id].list;
+async function createCommonEvent(projectPath: string, params: CommonEventParams) {
+  return commonEventsCrud.create(projectPath, (id) => ({
+    ...commonEventFactory(id),
+    ...params,
+  }));
+}
+
+async function updateCommonEvent(projectPath: string, id: number, fields: Partial<CommonEventParams>) {
+  return commonEventsCrud.update(projectPath, id, fields);
+}
+
+async function addCommonEventCommand(projectPath: string, id: number, command: EventCommand) {
+  const ev = await commonEventsCrud.getById(projectPath, id);
+  if (!ev) throw new Error("Common Event " + id + " not found");
+  const list = [...ev.list];
   list.splice(list.length - 1, 0, command);
-  await writeJson(projectPath, 'CommonEvents.json', data);
-  return data[id];
+  return commonEventsCrud.update(projectPath, id, { list });
 }
 
-export { getCommonEvents };
-export { createCommonEvent };
-export { updateCommonEvent };
-export { addCommonEventCommand };
+export { getCommonEvents, createCommonEvent, updateCommonEvent, addCommonEventCommand };

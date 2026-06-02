@@ -1,29 +1,41 @@
-// @ts-nocheck
 import path from "path";
-import { readdirSync } from 'fs';
-import { readFile } from 'fs/promises';
+import { readdir, readFile } from 'fs/promises';
 import sharp from 'sharp';
 import { readJson } from '../utils/fileHandler.js';
+import type { SheetInfo } from '../types/rpgmaker.js';
 
 var TILE_SIZE = 48;
 var IMG_SUBDIRS = ['characters', 'faces', 'enemies', 'tilesets', 'parallaxes', 'battlebacks1', 'battlebacks2', 'animations'];
 
 var SHEET_KEYS = ['A1', 'A2', 'A3', 'A4', 'A5', 'B', 'C', 'D', 'E'];
 
-async function getImageMetadata(imagePath) {
+type AvailableTiles = { ground: any[]; water: any[]; wallSide: any[]; wallTop: any[]; roof: any[]; decoration: any[] };
+
+type TilesetResult = {
+  id: number;
+  name: string;
+  mode: number;
+  tilesetNames: string[];
+  flags: number[];
+  sheets: Record<string, SheetInfo | null>;
+  availableTiles: AvailableTiles;
+};
+
+async function getImageMetadata(imagePath: string) {
   try {
     var meta = await sharp(imagePath).metadata();
+    if (!meta.width || !meta.height) return null;
     return { width: meta.width, height: meta.height };
   } catch (_) {
     return null;
   }
 }
 
-function computeSheetInfo(sheetKey, filename, width, height) {
+function computeSheetInfo(sheetKey: string, filename: string, width: number, height: number): SheetInfo | null {
   if (!width || !height) return null;
   var cols = Math.floor(width / TILE_SIZE);
   var rows = Math.floor(height / TILE_SIZE);
-  var info = { filename: filename, width: width, height: height, cols: cols, rows: rows };
+  var info: SheetInfo = { filename: filename, width: width, height: height, cols: cols, rows: rows };
 
   if (sheetKey === 'A1') {
     var kinds = Math.floor(rows / 6) * 8;
@@ -63,8 +75,8 @@ function computeSheetInfo(sheetKey, filename, width, height) {
   return info;
 }
 
-function categorizeTiles(tilesetId, tilesetNames, sheets) {
-  var available = { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] };
+function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Record<string, SheetInfo | null>): AvailableTiles {
+  var available: AvailableTiles = { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] };
 
   if (!sheets) return available;
 
@@ -130,7 +142,7 @@ function categorizeTiles(tilesetId, tilesetNames, sheets) {
   }
 
   var beSheets = ['B', 'C', 'D', 'E'];
-  var beBase = { B: 0, C: 256, D: 512, E: 768 };
+  var beBase: Record<string, number> = { B: 0, C: 256, D: 512, E: 768 };
   for (var si = 0; si < beSheets.length; si++) {
     var key = beSheets[si];
     var sheet = sheets[key];
@@ -144,14 +156,14 @@ function categorizeTiles(tilesetId, tilesetNames, sheets) {
   return available;
 }
 
-async function scanProjectAssets(projectPath) {
-  var result = { tilesets: {}, images: {} };
+async function scanProjectAssets(projectPath: string): Promise<{ tilesets: Record<string, any>; images: Record<string, string[]> }> {
+  var result: { tilesets: Record<string, any>; images: Record<string, string[]> } = { tilesets: {}, images: {} };
 
   for (var di = 0; di < IMG_SUBDIRS.length; di++) {
     var subdir = IMG_SUBDIRS[di];
     var dirPath = path.join(projectPath, 'img', subdir);
     try {
-      var files = readdirSync(dirPath);
+      var files = await readdir(dirPath);
       result.images[subdir] = files
         .filter(function(f) { return /\.png$/i.test(f); })
         .map(function(f) { return f.replace(/\.png$/i, ''); })
@@ -161,18 +173,18 @@ async function scanProjectAssets(projectPath) {
     }
   }
 
-  var tilesetsData;
+  var tilesetsData: any[];
   try {
-    tilesetsData = await readJson(projectPath, 'Tilesets.json');
+    tilesetsData = await readJson(projectPath, 'Tilesets.json') as any[];
   } catch (_) {
     return result;
   }
 
   for (var i = 1; i < tilesetsData.length; i++) {
-    var ts = tilesetsData[i];
+    var ts: any = tilesetsData[i];
     if (!ts) continue;
 
-    var tsResult = {
+    var tsResult: TilesetResult = {
       id: ts.id,
       name: ts.name,
       mode: ts.mode || 0,
@@ -182,7 +194,7 @@ async function scanProjectAssets(projectPath) {
       availableTiles: { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] }
     };
 
-    var names = ts.tilesetNames || [];
+    var names: string[] = ts.tilesetNames || [];
     for (var si = 0; si < SHEET_KEYS.length && si < names.length; si++) {
       var sheetKey = SHEET_KEYS[si];
       var filename = names[si];
@@ -206,22 +218,22 @@ async function scanProjectAssets(projectPath) {
   return result;
 }
 
-async function getTileIdsForTileset(projectPath, tilesetId) {
-  var tilesetsData;
+async function getTileIdsForTileset(projectPath: string, tilesetId: number | string): Promise<{ availableTiles: AvailableTiles }> {
+  var tilesetsData: any[];
   try {
-    tilesetsData = await readJson(projectPath, 'Tilesets.json');
+    tilesetsData = await readJson(projectPath, 'Tilesets.json') as any[];
   } catch (_) {
-    return { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] };
+    return { availableTiles: { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] } };
   }
 
-  var id = parseInt(tilesetId, 10);
+  var id = parseInt(String(tilesetId), 10);
   if (id <= 0 || id >= tilesetsData.length || !tilesetsData[id]) {
-    return { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] };
+    return { availableTiles: { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] } };
   }
 
-  var ts = tilesetsData[id];
-  var names = ts.tilesetNames || [];
-  var sheets = {};
+  var ts: any = tilesetsData[id];
+  var names: string[] = ts.tilesetNames || [];
+  var sheets: Record<string, SheetInfo | null> = {};
 
   for (var si = 0; si < SHEET_KEYS.length && si < names.length; si++) {
     var sheetKey = SHEET_KEYS[si];

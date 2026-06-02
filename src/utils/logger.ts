@@ -1,13 +1,14 @@
-// @ts-nocheck
-const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+import type { LogLevel } from '../types/rpgmaker.js';
 
-var currentLevel = process.env.LOG_LEVEL || 'info';
+const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+
+var currentLevel = (process.env.LOG_LEVEL || 'info') as LogLevel;
 
 function timestamp() {
   return new Date().toISOString();
 }
 
-function log(level, message, data) {
+function log(level: LogLevel, message: string, data?: unknown) {
   if (LEVELS[level] < LEVELS[currentLevel]) return;
   var prefix = '[' + timestamp() + '] [' + level.toUpperCase() + ']';
   if (data !== undefined) {
@@ -17,8 +18,8 @@ function log(level, message, data) {
   }
 }
 
-export function debug(msg, data) { log('debug', msg, data); }
-export function info(msg, data) { log('info', msg, data); }
-export function warn(msg, data) { log('warn', msg, data); }
-export function error(msg, data) { log('error', msg, data); }
-export function setLevel(level) { currentLevel = level; }
+export function debug(msg: string, data?: unknown) { log('debug', msg, data); }
+export function info(msg: string, data?: unknown) { log('info', msg, data); }
+export function warn(msg: string, data?: unknown) { log('warn', msg, data); }
+export function error(msg: string, data?: unknown) { log('error', msg, data); }
+export function setLevel(level: LogLevel) { currentLevel = level; }

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-// @ts-nocheck
 import http from "http";
 
 
-import fs from "fs";
 import path from "path";
+import { readFile, access, readdir } from 'fs/promises';
 
 /**
  * server.js — RPG Maker MV MCP Server v3.0
@@ -24,11 +23,14 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import sharp from 'sharp';
 
 import { validateProjectPath } from './utils/fileHandler.js';
+import type { RpgMakerDbEntry, MapEvent, RpgMakerMap, VisionApiResponse, AsciiMapResult } from './types/rpgmaker.js';
 import * as logger from './utils/logger.js';
 import * as actorTools from './tools/actorTools.js';
 import * as itemTools from './tools/itemTools.js';
 import * as skillTools from './tools/skillTools.js';
 import * as mapTools from './tools/mapTools.js';
+import { resolveSafePath } from './utils/security.js';
+import { AnalyzeScreenshotSchema, CreateMapSchema, RenderMapAsciiSchema, CreateNpcSchema, CreateSkillSchema } from './utils/validation.js';
 import * as systemTools from './tools/systemTools.js';
 import * as classTools from './tools/classTools.js';
 import * as enemyTools from './tools/enemyTools.js';
@@ -44,47 +46,68 @@ const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
 
 // ─── Project Context & Validation Functions ───
 
-async function getProjectContext(projectPath) {
-      const dataDir = path.join(projectPath, 'data');
+async function getProjectContext(projectPath: string) {
+  const dataDir = path.join(projectPath, 'data');
   const imgDir = path.join(projectPath, 'img');
 
-  function readJsonSync(filename) {
+  async function readJson(filename: string) {
     const fp = path.join(dataDir, filename);
-    if (!fs.existsSync(fp)) return null;
-    const content = fs.readFileSync(fp, 'utf-8');
-    return JSON.parse(content.replace(/^\uFEFF/, ''));
+    try {
+      const content = await readFile(fp, 'utf-8');
+      return JSON.parse(content.replace(/^\uFEFF/, ''));
+    } catch {
+      return null;
+    }
   }
 
-  function listPngs(dir) {
+  async function listPngs(dir: string) {
     const fullDir = path.join(imgDir, dir);
-    if (!fs.existsSync(fullDir)) return [];
-    return fs.readdirSync(fullDir).filter(function(f) { return f.endsWith('.png'); }).map(function(f) { return f.replace('.png', ''); });
+    try {
+      await access(fullDir);
+      const files = await readdir(fullDir);
+      return files.filter(function(f) { return f.endsWith('.png'); }).map(function(f) { return f.replace('.png', ''); });
+    } catch {
+      return [];
+    }
   }
 
-  var system = readJsonSync('System.json') || {};
-  var mapInfos = readJsonSync('MapInfos.json') || [];
-  var actors = readJsonSync('Actors.json') || [];
-  var items = readJsonSync('Items.json') || [];
-  var weapons = readJsonSync('Weapons.json') || [];
-  var armors = readJsonSync('Armors.json') || [];
-  var skills = readJsonSync('Skills.json') || [];
-  var enemies = readJsonSync('Enemies.json') || [];
-  var troops = readJsonSync('Troops.json') || [];
-  var states = readJsonSync('States.json') || [];
-  var tilesets = readJsonSync('Tilesets.json') || [];
-  var commonEvents = readJsonSync('CommonEvents.json') || [];
+  const [
+    systemRaw, mapInfosRaw, actorsRaw, itemsRaw, weaponsRaw, armorsRaw,
+    skillsRaw, enemiesRaw, troopsRaw, statesRaw, tilesetsRaw, commonEventsRaw
+  ] = await Promise.all([
+    readJson('System.json'), readJson('MapInfos.json'), readJson('Actors.json'), readJson('Items.json'),
+    readJson('Weapons.json'), readJson('Armors.json'), readJson('Skills.json'), readJson('Enemies.json'),
+    readJson('Troops.json'), readJson('States.json'), readJson('Tilesets.json'), readJson('CommonEvents.json')
+  ]);
 
-  var maps = mapInfos.filter(function(m) { return m !== null; }).map(function(m) { return { id: m.id, name: m.name, parentId: m.parentId }; });
-  var actorList = actors.filter(function(a) { return a !== null; }).map(function(a) { return { id: a.id, name: a.name, classId: a.classId, initialLevel: a.initialLevel }; });
-  var itemList = items.filter(function(i) { return i !== null; }).map(function(i) { return { id: i.id, name: i.name, iconIndex: i.iconIndex, price: i.price, itypeId: i.itypeId }; });
-  var weaponList = weapons.filter(function(w) { return w !== null; }).map(function(w) { return { id: w.id, name: w.name, iconIndex: w.iconIndex, price: w.price, wtypeId: w.wtypeId }; });
-  var armorList = armors.filter(function(a) { return a !== null; }).map(function(a) { return { id: a.id, name: a.name, iconIndex: a.iconIndex, price: a.price, atypeId: a.atypeId }; });
-  var skillList = skills.filter(function(s) { return s !== null; }).map(function(s) { return { id: s.id, name: s.name, mpCost: s.mpCost, scope: s.scope, stypeId: s.stypeId }; });
-  var enemyList = enemies.filter(function(e) { return e !== null; }).map(function(e) { return { id: e.id, name: e.name, battlerName: e.battlerName }; });
-  var troopList = troops.filter(function(t) { return t !== null; }).map(function(t) { return { id: t.id, name: t.name, members: (t.members || []).map(function(m) { return { enemyId: m.enemyId, x: m.x, y: m.y }; }) }; });
-  var stateList = states.filter(function(s) { return s !== null; }).map(function(s) { return { id: s.id, name: s.name, iconIndex: s.iconIndex, restriction: s.restriction }; });
-  var tilesetList = tilesets.filter(function(t) { return t !== null; }).map(function(t) { return { id: t.id, name: t.name, mode: t.mode, tilesetNames: t.tilesetNames }; });
-  var ceList = commonEvents.filter(function(c) { return c !== null; }).map(function(c) { return { id: c.id, name: c.name, trigger: c.trigger, switchId: c.switchId }; });
+  var system = systemRaw || {};
+  var mapInfos = mapInfosRaw || [];
+  var actors = actorsRaw || [];
+  var items = itemsRaw || [];
+  var weapons = weaponsRaw || [];
+  var armors = armorsRaw || [];
+  var skills = skillsRaw || [];
+  var enemies = enemiesRaw || [];
+  var troops = troopsRaw || [];
+  var states = statesRaw || [];
+  var tilesets = tilesetsRaw || [];
+  var commonEvents = commonEventsRaw || [];
+
+  var maps = (mapInfos as unknown[]).filter(function(m: unknown) { return m !== null; }).map(function(m: unknown) { var r = m as RpgMakerDbEntry; return { id: r.id, name: r.name, parentId: (m as Record<string, unknown>).parentId }; });
+  var actorList = (actors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { var r = a as RpgMakerDbEntry; return { id: r.id, name: r.name, classId: (a as Record<string, unknown>).classId, initialLevel: (a as Record<string, unknown>).initialLevel }; });
+  var itemList = (items as unknown[]).filter(function(i: unknown) { return i !== null; }).map(function(i: unknown) { var r = i as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (i as Record<string, unknown>).iconIndex, price: (i as Record<string, unknown>).price, itypeId: (i as Record<string, unknown>).itypeId }; });
+  var weaponList = (weapons as unknown[]).filter(function(w: unknown) { return w !== null; }).map(function(w: unknown) { var r = w as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (w as Record<string, unknown>).iconIndex, price: (w as Record<string, unknown>).price, wtypeId: (w as Record<string, unknown>).wtypeId }; });
+  var armorList = (armors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { var r = a as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (a as Record<string, unknown>).iconIndex, price: (a as Record<string, unknown>).price, atypeId: (a as Record<string, unknown>).atypeId }; });
+  var skillList = (skills as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { var r = s as RpgMakerDbEntry; return { id: r.id, name: r.name, mpCost: (s as Record<string, unknown>).mpCost, scope: (s as Record<string, unknown>).scope, stypeId: (s as Record<string, unknown>).stypeId }; });
+  var enemyList = (enemies as unknown[]).filter(function(e: unknown) { return e !== null; }).map(function(e: unknown) { var r = e as RpgMakerDbEntry; return { id: r.id, name: r.name, battlerName: (e as Record<string, unknown>).battlerName }; });
+  var troopList = (troops as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { var r = t as RpgMakerDbEntry; return { id: r.id, name: r.name, members: ((t as Record<string, unknown>).members as unknown[] || []).map(function(m: unknown) { return { enemyId: (m as Record<string, number>).enemyId, x: (m as Record<string, number>).x, y: (m as Record<string, number>).y }; }) }; });
+  var stateList = (states as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { var r = s as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (s as Record<string, unknown>).iconIndex, restriction: (s as Record<string, unknown>).restriction }; });
+  var tilesetList = (tilesets as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { var r = t as RpgMakerDbEntry; return { id: r.id, name: r.name, mode: (t as Record<string, unknown>).mode, tilesetNames: (t as Record<string, unknown>).tilesetNames }; });
+  var ceList = (commonEvents as unknown[]).filter(function(c: unknown) { return c !== null; }).map(function(c: unknown) { var r = c as RpgMakerDbEntry; return { id: r.id, name: r.name, trigger: (c as Record<string, unknown>).trigger, switchId: (c as Record<string, unknown>).switchId }; });
+
+  const [characters, faces, enemySprites, battlers, pictures] = await Promise.all([
+    listPngs('characters'), listPngs('faces'), listPngs('enemies'), listPngs('battlers'), listPngs('pictures')
+  ]);
 
   return {
     gameTitle: system.gameTitle || 'Untitled',
@@ -106,17 +129,17 @@ async function getProjectContext(projectPath) {
     tilesets: tilesetList,
     commonEvents: ceList,
     sprites: {
-      characters: listPngs('characters'),
-      faces: listPngs('faces'),
-      enemies: listPngs('enemies'),
-      battlers: listPngs('battlers'),
-      pictures: listPngs('pictures')
+      characters: characters,
+      faces: faces,
+      enemies: enemySprites,
+      battlers: battlers,
+      pictures: pictures
     }
   };
 }
 
-async function validateMap(projectPath, mapId) {
-  const map = await mapTools.getMap(projectPath, mapId);
+async function validateMap(projectPath: string, mapId: number) {
+  const map = await mapTools.getMap(projectPath, mapId) as RpgMakerMap;
   var issues = [];
   var w = map.width;
   var h = map.height;
@@ -174,7 +197,7 @@ async function validateMap(projectPath, mapId) {
     mapName: map.displayName || '',
     width: w,
     height: h,
-    eventCount: events.filter(function(e) { return e !== null; }).length,
+    eventCount: (events as unknown[]).filter(function(e: unknown) { return e !== null; }).length,
     issueCount: issues.length,
     issues: issues
   };
@@ -1393,7 +1416,7 @@ const TOOL_DEFINITIONS = [
   // ──────── VISION AI TOOLS ────────
   {
     name: 'analyze_screenshot',
-    description: 'Analyze an image from the RPG Maker MV project using NVIDIA Llama 3.2 90B Vision AI. Can analyze: tilesets (tile categories, rows/cols), character sprites (directions, poses), map screenshots (terrain, events, layout), battlers, faces, etc. Returns a detailed textual description. Requires the nvidia-glm-proxy to be running with VISION_MODEL configured.',
+    description: 'Analyze an image from the RPG Maker MV project using an OpenAI-compatible Vision API. Can analyze: tilesets (tile categories, rows/cols), character sprites (directions, poses), map screenshots (terrain, events, layout), battlers, faces, etc. Returns a detailed textual description. Configure VISION_API_URL, VISION_API_KEY, and VISION_MODEL via environment variables. Works with any OpenAI-compatible vision endpoint (LocalAI, Ollama, NVIDIA, OpenAI, etc.).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1423,7 +1446,7 @@ const TOOL_DEFINITIONS = [
 // ─── Tool Execution Handler ───
 // Dispatches tool calls to the appropriate tool module function
 
-async function handleToolCall(name, args) {
+async function handleToolCall(name: string, args: Record<string, any>) {
   const p = projectTools.getProjectPath() || PROJECT_PATH;
 
   switch (name) {
@@ -1633,9 +1656,9 @@ case 'delete_map_event':
             case 'create_shop':
                 return await mapTools.createShop(
                     p, args.mapId, args.x, args.y, args.name,
-                    (args.goods || []).filter(function(g) { return g[0] === 0; }).map(function(g) { return g[1]; }),
-                    (args.goods || []).filter(function(g) { return g[0] === 1; }).map(function(g) { return g[1]; }),
-                    (args.goods || []).filter(function(g) { return g[0] === 2; }).map(function(g) { return g[1]; }),
+                    (args.goods || []).filter(function(g: number[]) { return g[0] === 0; }).map(function(g: number[]) { return g[1]; }),
+                    (args.goods || []).filter(function(g: number[]) { return g[0] === 1; }).map(function(g: number[]) { return g[1]; }),
+                    (args.goods || []).filter(function(g: number[]) { return g[0] === 2; }).map(function(g: number[]) { return g[1]; }),
                     args.characterName, args.characterIndex
                 );
             case 'create_inn':
@@ -1686,15 +1709,15 @@ case 'set_project_path':
  * Assumes standard RPG Maker MV 48x48 tile size.
  * @param {string} base64PNG - Base64-encoded PNG image
  */
-async function analyzeTilesetImage(base64PNG) {
+async function analyzeTilesetImage(base64PNG: string) {
   const buffer = Buffer.from(base64PNG, 'base64');
   const metadata = await sharp(buffer).metadata();
 
-  const imageWidth = metadata.width;
-  const imageHeight = metadata.height;
+  const imageWidth = metadata.width!;
+  const imageHeight = metadata.height!;
   const tileSize = 48; // Standard MV tile size
-  const cols = Math.floor(imageWidth / tileSize);
-  const rows = Math.floor(imageHeight / tileSize);
+  const cols = Math.floor(imageWidth! / tileSize);
+  const rows = Math.floor(imageHeight! / tileSize);
   const totalTiles = cols * rows;
 
   return {
@@ -1712,24 +1735,24 @@ async function analyzeTilesetImage(base64PNG) {
  * and returning the dominant color (average RGB) of each.
  * @param {string} base64PNG - Base64-encoded PNG screenshot
  */
-async function readScreenshot(base64PNG) {
+async function readScreenshot(base64PNG: string) {
   const buffer = Buffer.from(base64PNG, 'base64');
   const metadata = await sharp(buffer).metadata();
-  const imageWidth = metadata.width;
-  const imageHeight = metadata.height;
+  const imageWidth = metadata.width!;
+  const imageHeight = metadata.height!;
 
-  const halfW = Math.floor(imageWidth / 2);
-  const halfH = Math.floor(imageHeight / 2);
+  const halfW = Math.floor(imageWidth! / 2);
+  const halfH = Math.floor(imageHeight! / 2);
 
   // Extract each quadrant and compute average RGB
   const quadrants = [
     { name: 'top-left', x: 0, y: 0, w: halfW, h: halfH },
-    { name: 'top-right', x: halfW, y: 0, w: imageWidth - halfW, h: halfH },
-    { name: 'bottom-left', x: 0, y: halfH, w: halfW, h: imageHeight - halfH },
-    { name: 'bottom-right', x: halfW, y: halfH, w: imageWidth - halfW, h: imageHeight - halfH }
+    { name: 'top-right', x: halfW, y: 0, w: imageWidth! - halfW, h: halfH },
+    { name: 'bottom-left', x: 0, y: halfH, w: halfW, h: imageHeight! - halfH },
+    { name: 'bottom-right', x: halfW, y: halfH, w: imageWidth! - halfW, h: imageHeight! - halfH }
   ];
 
-  const results = {};
+  const results: Record<string, { r: number; g: number; b: number }> = {};
   for (var i = 0; i < quadrants.length; i++) {
     var q = quadrants[i];
     // Extract quadrant, resize to 1x1 to get average color, get raw pixel data
@@ -1755,7 +1778,8 @@ async function readScreenshot(base64PNG) {
 
 // ─── Vision AI Tool Implementations ───
 
-var PROXY_VISION_URL = process.env.PROXY_VISION_URL || 'http://127.0.0.1:9999';
+var VISION_API_URL: string = process.env.VISION_API_URL || 'http://127.0.0.1:9999';
+var VISION_API_PATH: string = process.env.VISION_API_PATH || '';
 
 var VISION_DEFAULT_PROMPT = [
   'Analiza esta imagen de un proyecto RPG Maker MV. Describe detalladamente:',
@@ -1767,10 +1791,12 @@ var VISION_DEFAULT_PROMPT = [
   '6. Problemas visuales potenciales (overlaps, gaps, inconsistencias de color, misaligned tiles)',
 ].join('\n');
 
-async function analyzeScreenshot(projectPath, imagePath, customPrompt, resizeMax) {
+async function analyzeScreenshot(projectPath: string, imagePath: string, customPrompt: string | undefined, resizeMax: number | undefined) {
       
-  var fullPath = path.join(projectPath, imagePath);
-  if (!fs.existsSync(fullPath)) {
+  var fullPath = resolveSafePath(projectPath, imagePath);
+  try {
+    await access(fullPath);
+  } catch {
     throw new Error('Image not found: ' + imagePath + ' (resolved: ' + fullPath + ')');
   }
 
@@ -1786,7 +1812,7 @@ async function analyzeScreenshot(projectPath, imagePath, customPrompt, resizeMax
   var dataUrl = 'data:image/jpeg;base64,' + base64Image;
 
   var requestBody = JSON.stringify({
-    model: 'meta/llama-3.2-90b-vision-instruct',
+    model: process.env.VISION_MODEL || 'meta/llama-3.2-90b-vision-instruct',
     messages: [
       {
         role: 'user',
@@ -1802,7 +1828,7 @@ async function analyzeScreenshot(projectPath, imagePath, customPrompt, resizeMax
   });
 
   return new Promise(function(resolve, reject) {
-    var parsedUrl = new URL(PROXY_VISION_URL + '/v1/chat/completions');
+    var parsedUrl = new URL(VISION_API_URL + VISION_API_PATH);
     var options = {
       hostname: parsedUrl.hostname,
       port: parsedUrl.port || 80,
@@ -1811,12 +1837,12 @@ async function analyzeScreenshot(projectPath, imagePath, customPrompt, resizeMax
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(requestBody),
-        'Authorization': 'Bearer sk-proxy'
+        'Authorization': 'Bearer ' + (process.env.VISION_API_KEY || 'sk-proxy')
       }
     };
 
     var req = http.request(options, function(res) {
-      var chunks = [];
+      var chunks: Uint8Array[] = [];
       res.on('data', function(chunk) { chunks.push(chunk); });
       res.on('end', function() {
         var body = Buffer.concat(chunks).toString('utf8');
@@ -1841,14 +1867,14 @@ async function analyzeScreenshot(projectPath, imagePath, customPrompt, resizeMax
               total: usage.total_tokens || 0
             }
           });
-        } catch (e) {
-          reject(new Error('Failed to parse vision API response: ' + e.message + ' | body: ' + body.slice(0, 500)));
+        } catch(e: unknown) {
+          reject(new Error('Failed to parse vision API response: ' + (e instanceof Error ? e.message : String(e)) + ' | body: ' + body.slice(0, 500)));
         }
       });
     });
 
     req.on('error', function(err) {
-      reject(new Error('Vision API request failed: ' + err.message + '. Is nvidia-glm-proxy running at ' + PROXY_VISION_URL + '?'));
+      reject(new Error('Vision API request failed: ' + err.message + '. Is nvidia-glm-proxy running at ' + VISION_API_URL + '?'));
     });
 
     req.setTimeout(120000, function() {
@@ -1860,9 +1886,9 @@ async function analyzeScreenshot(projectPath, imagePath, customPrompt, resizeMax
   });
 }
 
-async function renderMapAscii(projectPath, mapId, layer, showEvents, showRegions) {
+async function renderMapAscii(projectPath: string, mapId: number, layer: number, showEvents: boolean, showRegions: boolean) {
     
-  var map = await mapTools.getMap(projectPath, mapId);
+  var map = await mapTools.getMap(projectPath, mapId) as RpgMakerMap;
   var tileLayer = layer !== undefined ? layer : 0;
   var showEv = showEvents !== false;
   var showReg = showRegions === true;
@@ -1876,12 +1902,12 @@ async function renderMapAscii(projectPath, mapId, layer, showEvents, showRegions
 
   var tilesetList = [];
   try {
-    var tilesetContent = fs.readFileSync(path.join(projectPath, 'data', 'Tilesets.json'), 'utf-8');
+    var tilesetContent = await readFile(path.join(projectPath, 'data', 'Tilesets.json'), 'utf-8');
     tilesetList = JSON.parse(tilesetContent.replace(/^\uFEFF/, ''));
-  } catch (e) {}
+  } catch(e: unknown) {}
 
   var tileset = tilesetList[map.tilesetId] || null;
-  var tileCharMap = {};
+  var tileCharMap: Record<number, string> = {};
   tileCharMap[0] = '.';
 
   if (tileset && tileset.flags) {
@@ -1905,9 +1931,9 @@ async function renderMapAscii(projectPath, mapId, layer, showEvents, showRegions
   }
 
   var autotileChars = 'GTFDRBSCWMLKPAEINU';
-  function getTileChar(tileId) {
+  function getTileChar(tileId: number) {
     if (tileId === 0) return '.';
-    if (tileCharMap[tileId]) return tileCharMap[tileId];
+    if (tileCharMap[Number(tileId)]) return tileCharMap[Number(tileId)];
     if (tileId < 2048) {
       var kindIdx = Math.floor(tileId / 48);
       return autotileChars[kindIdx % autotileChars.length] || 'A';
@@ -1939,7 +1965,7 @@ async function renderMapAscii(projectPath, mapId, layer, showEvents, showRegions
       if (!ev) continue;
       if (ev.x < w && ev.y < h) {
         var marker = ev.name ? ev.name.charAt(0).toUpperCase() : 'E';
-        var rowChars = grid[ev.y].split('');
+        var rowChars: string[] = grid[ev.y].split('');
         rowChars[ev.x] = marker;
         grid[ev.y] = rowChars.join('');
         eventMarkers.push({ id: ev.id, name: ev.name, x: ev.x, y: ev.y, marker: marker });
@@ -1969,7 +1995,7 @@ async function renderMapAscii(projectPath, mapId, layer, showEvents, showRegions
     '  Uppercase letters on map = event markers (first char of name)'
   ];
 
-  var result = {
+  var result: AsciiMapResult = {
     mapId: mapId,
     mapName: map.displayName || '',
     width: w,
@@ -2020,6 +2046,29 @@ export async function main() {
     var args = request.params.arguments || {};
     logger.info('Tool call: ' + toolName);
 
+    var SCHEMA_MAP: Record<string, any> = {
+      analyze_screenshot: AnalyzeScreenshotSchema,
+      create_map: CreateMapSchema,
+      render_map_ascii: RenderMapAsciiSchema,
+      create_npc: CreateNpcSchema,
+      create_damage_skill: CreateSkillSchema,
+      create_healing_skill: CreateSkillSchema,
+      create_buff_skill: CreateSkillSchema,
+      create_state_skill: CreateSkillSchema,
+    };
+
+    var schema = SCHEMA_MAP[toolName];
+    if (schema) {
+      var parsed = schema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          content: [{ type: 'text', text: 'Validation error: ' + parsed.error.issues.map(function(i: any) { return i.path.join('.') + ': ' + i.message; }).join('; ') }],
+          isError: true
+        };
+      }
+      args = parsed.data;
+    }
+
     try {
       var currentPath = projectTools.getProjectPath();
       if (!currentPath) {
@@ -2065,8 +2114,8 @@ export async function main() {
 var transport = new StdioServerTransport();
 var originalSend = transport.send.bind(transport);
 transport.send = function(message) {
-  if (message.id !== undefined && message.id !== null && typeof message.id === 'number') {
-    message = Object.assign({}, message, { id: String(message.id) });
+  if ((message as any).id !== undefined && (message as any).id !== null && typeof (message as any).id === 'number') {
+    message = Object.assign({}, message, { id: String((message as any).id) });
   }
   return originalSend(message);
 };

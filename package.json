@@ -9,7 +9,10 @@
     "dev": "tsx src/index.ts",
     "clean": "rimraf dist",
     "prebuild": "rimraf dist",
-    "postbuild": "cp -r knowledge dist/knowledge"
+    "postbuild": "cp -r knowledge dist/knowledge",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
@@ -19,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^25.9.1",
     "rimraf": "^6.1.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
   }
 }

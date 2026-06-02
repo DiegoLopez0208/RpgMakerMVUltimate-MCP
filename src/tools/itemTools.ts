@@ -1,203 +1,176 @@
-// @ts-nocheck
-import { readJson, writeJson, nextId } from '../utils/fileHandler.js';
+import { createCrud } from "../utils/crudHelper.js";
+import type { ItemParams, WeaponParams, ArmorParams, ItemType, RpgMakerDbEntry } from "../types/rpgmaker.js";
+import { readJson } from "../utils/fileHandler.js";
 
-/**
- * Get all items from the RPG Maker MV project.
- * Reads Items.json and returns all non-null entries.
- */
-async function getItems(projectPath) {
-  const items = await readJson(projectPath, 'Items.json');
-  return items.filter(function(i) { return i !== null; });
+interface Item extends RpgMakerDbEntry {
+  description: string;
+  iconIndex: number;
+  itypeId: number;
+  price: number;
+  consumable: boolean;
+  scope: number;
+  occasion: number;
+  animationId: number;
+  effects: unknown[];
+  traits: unknown[];
 }
 
-/**
- * Get all weapons from the RPG Maker MV project.
- * Reads Weapons.json and returns all non-null entries.
- */
-async function getWeapons(projectPath) {
-  const weapons = await readJson(projectPath, 'Weapons.json');
-  return weapons.filter(function(w) { return w !== null; });
+interface Weapon extends RpgMakerDbEntry {
+  description: string;
+  iconIndex: number;
+  wtypeId: number;
+  price: number;
+  atk: number;
+  params: number[];
+  traits: unknown[];
+  etypeId: number;
+  animationId: number;
 }
 
-/**
- * Get all armors from the RPG Maker MV project.
- * Reads Armors.json and returns all non-null entries.
- */
-async function getArmors(projectPath) {
-  const armors = await readJson(projectPath, 'Armors.json');
-  return armors.filter(function(a) { return a !== null; });
+interface Armor extends RpgMakerDbEntry {
+  description: string;
+  iconIndex: number;
+  atypeId: number;
+  price: number;
+  def: number;
+  params: number[];
+  traits: unknown[];
+  etypeId: number;
 }
 
-/**
- * Get all skills from the RPG Maker MV project.
- * Reads Skills.json and returns all non-null entries.
- */
-async function getSkillsList(projectPath) {
-  const skills = await readJson(projectPath, 'Skills.json');
-  return skills.filter(function(s) { return s !== null; });
-}
-
-/**
- * Create a new item (consumable: potions, scrolls, etc.).
- * Generates a complete RPG Maker MV item object.
- * @param {string} projectPath - The project root path
- * @param {object} params - Item properties
- */
-async function createItem(projectPath, params) {
-  const items = await readJson(projectPath, 'Items.json');
-  const newId = nextId(items);
-
-  const newItem = {
-    id: newId,
-    name: params.name || '',
-    description: params.description || '',
-    iconIndex: params.iconIndex || 0,
-    itypeId: params.itypeId || 1,         // 1=normal item, 2=key item
-    price: params.price || 0,
-    consumable: params.consumable !== undefined ? params.consumable : true,
-    scope: params.scope || 7,             // 7=all allies, 11=user, 1=single enemy
-    occasion: params.occasion || 1,       // 0=always, 1=battle, 2=menu, 3=never
-    animationId: params.animationId || 0,
-    effects: params.effects || [],
-    traits: params.traits || [],
-    note: params.note || ''
+function itemFactory(id: number): Item {
+  return {
+    id,
+    name: "",
+    note: "",
+    description: "",
+    iconIndex: 0,
+    itypeId: 1,
+    price: 0,
+    consumable: true,
+    scope: 7,
+    occasion: 1,
+    animationId: 0,
+    effects: [],
+    traits: [],
   };
-
-  while (items.length <= newId) items.push(null);
-  items[newId] = newItem;
-
-  await writeJson(projectPath, 'Items.json', items);
-  return newItem;
 }
 
-/**
- * Create a new weapon.
- * Generates a complete RPG Maker MV weapon object.
- * params array order: [mhp, mmp, matk, mdef, mat, mdf, agi, luk]
- * @param {string} projectPath - The project root path
- * @param {object} params - Weapon properties
- */
-async function createWeapon(projectPath, params) {
-  const weapons = await readJson(projectPath, 'Weapons.json');
-  const newId = nextId(weapons);
-
-  const newWeapon = {
-    id: newId,
-    name: params.name || '',
-    description: params.description || '',
-    iconIndex: params.iconIndex || 0,
-    wtypeId: params.wtypeId || 1,         // Weapon type ID
-    price: params.price || 0,
-    params: params.params || [0, 0, 0, 0, 0, 0, 0, 0],
-    traits: params.traits || [],
-    etypeId: params.etypeId || 1,         // Equip type: 1=weapon
-    animationId: params.animationId || 1,
-    note: params.note || ''
+function weaponFactory(id: number): Weapon {
+  return {
+    id,
+    name: "",
+    note: "",
+    description: "",
+    iconIndex: 0,
+    wtypeId: 1,
+    price: 0,
+    atk: 0,
+    params: [0, 0, 0, 0, 0, 0, 0, 0],
+    traits: [],
+    etypeId: 1,
+    animationId: 1,
   };
-
-  while (weapons.length <= newId) weapons.push(null);
-  weapons[newId] = newWeapon;
-
-  await writeJson(projectPath, 'Weapons.json', weapons);
-  return newWeapon;
 }
 
-/**
- * Create a new armor.
- * Generates a complete RPG Maker MV armor object.
- * @param {string} projectPath - The project root path
- * @param {object} params - Armor properties
- */
-async function createArmor(projectPath, params) {
-  const armors = await readJson(projectPath, 'Armors.json');
-  const newId = nextId(armors);
-
-  const newArmor = {
-    id: newId,
-    name: params.name || '',
-    description: params.description || '',
-    iconIndex: params.iconIndex || 0,
-    atypeId: params.atypeId || 1,         // Armor type ID
-    price: params.price || 0,
-    params: params.params || [0, 0, 0, 0, 0, 0, 0, 0],
-    traits: params.traits || [],
-    etypeId: params.etypeId || 2,         // Equip type: 2=shield, 3=head, 4=body, 5=accessory
-    note: params.note || ''
+function armorFactory(id: number): Armor {
+  return {
+    id,
+    name: "",
+    note: "",
+    description: "",
+    iconIndex: 0,
+    atypeId: 1,
+    price: 0,
+    def: 0,
+    params: [0, 0, 0, 0, 0, 0, 0, 0],
+    traits: [],
+    etypeId: 2,
   };
-
-  while (armors.length <= newId) armors.push(null);
-  armors[newId] = newArmor;
-
-  await writeJson(projectPath, 'Armors.json', armors);
-  return newArmor;
 }
 
-/**
- * Update an existing item, weapon, or armor by ID (partial update).
- * @param {string} projectPath - The project root path
- * @param {number} id - The item/weapon/armor ID
- * @param {string} type - "item", "weapon", or "armor"
- * @param {object} fields - Fields to update
- */
-async function updateItem(projectPath, id, type, fields) {
-  var fileMap = { item: 'Items.json', weapon: 'Weapons.json', armor: 'Armors.json' };
-  var filename = fileMap[type];
-  if (!filename) throw new Error('Unknown item type: ' + type + '. Use "item", "weapon", or "armor".');
+const itemsCrud = createCrud<Item>("Items.json", itemFactory);
+const weaponsCrud = createCrud<Weapon>("Weapons.json", weaponFactory);
+const armorsCrud = createCrud<Armor>("Armors.json", armorFactory);
 
-  var items = await readJson(projectPath, filename);
+const fileMap: Record<ItemType, string> = { item: "Items.json", weapon: "Weapons.json", armor: "Armors.json" };
 
-  if (id < 0 || id >= items.length || items[id] === null) {
-    throw new Error(type + ' with ID ' + id + ' not found');
+async function getItems(projectPath: string) {
+  return itemsCrud.getAll(projectPath);
+}
+
+async function getWeapons(projectPath: string) {
+  return weaponsCrud.getAll(projectPath);
+}
+
+async function getArmors(projectPath: string) {
+  return armorsCrud.getAll(projectPath);
+}
+
+async function getSkillsList(projectPath: string) {
+  const skills = await readJson(projectPath, "Skills.json") as unknown[];
+  return skills.filter((s: unknown) => s !== null);
+}
+
+async function createItem(projectPath: string, params: ItemParams) {
+  return itemsCrud.create(projectPath, (id) => ({
+    ...itemFactory(id),
+    ...params,
+  }));
+}
+
+async function createWeapon(projectPath: string, params: WeaponParams) {
+  return weaponsCrud.create(projectPath, (id) => ({
+    ...weaponFactory(id),
+    ...params,
+  }));
+}
+
+async function createArmor(projectPath: string, params: ArmorParams) {
+  return armorsCrud.create(projectPath, (id) => ({
+    ...armorFactory(id),
+    ...params,
+  }));
+}
+
+async function updateItem(projectPath: string, id: number, type: ItemType, fields: Partial<ItemParams | WeaponParams | ArmorParams>) {
+  if (!fileMap[type]) throw new Error('Unknown item type: ' + type + '. Use "item", "weapon", or "armor".');
+
+  if (type === "weapon") {
+    return weaponsCrud.update(projectPath, id, fields as Partial<Weapon>);
   }
-
-  items[id] = Object.assign({}, items[id], fields);
-  await writeJson(projectPath, filename, items);
-  return items[id];
-}
-
-/**
- * Search items, weapons, or armors by name or description (case-insensitive).
- * @param {string} projectPath - The project root path
- * @param {string} query - Search term
- * @param {string} type - "item", "weapon", or "armor"
- */
-async function searchItems(projectPath, query, type) {
-  type = type || 'item';
-  var fileMap = { item: 'Items.json', weapon: 'Weapons.json', armor: 'Armors.json' };
-  var filename = fileMap[type];
-  if (!filename) throw new Error('Unknown item type: ' + type + '. Use "item", "weapon", or "armor".');
-
-  var items = await readJson(projectPath, filename);
-  var lowerQuery = query.toLowerCase();
-  return items.filter(function(i) {
-    return i !== null &&
-      (i.name.toLowerCase().includes(lowerQuery) ||
-       i.description.toLowerCase().includes(lowerQuery));
-  });
-}
-
-async function deleteItem(projectPath, id, type) {
-  type = type || 'item';
-  var fileMap = { item: 'Items.json', weapon: 'Weapons.json', armor: 'Armors.json' };
-  var filename = fileMap[type];
-  if (!filename) throw new Error('Unknown item type: ' + type);
-  var items = await readJson(projectPath, filename);
-  if (id < 0 || id >= items.length || items[id] === null) {
-    throw new Error(type + ' with ID ' + id + ' not found');
+  if (type === "armor") {
+    return armorsCrud.update(projectPath, id, fields as Partial<Armor>);
   }
-  var deleted = items[id];
-  items[id] = null;
-  await writeJson(projectPath, filename, items);
-  return { deleted: deleted };
+  return itemsCrud.update(projectPath, id, fields as Partial<Item>);
 }
 
-export { getItems };
-export { getWeapons };
-export { getArmors };
-export { getSkillsList };
-export { createItem };
-export { createWeapon };
-export { createArmor };
-export { updateItem };
-export { searchItems };
-export { deleteItem };
+async function searchItems(projectPath: string, query: string, type: ItemType) {
+  type = type || "item";
+  if (!fileMap[type]) throw new Error('Unknown item type: ' + type + '. Use "item", "weapon", or "armor".');
+
+  if (type === "weapon") {
+    return weaponsCrud.search(projectPath, query, ["name" as keyof Weapon, "description" as keyof Weapon]);
+  }
+  if (type === "armor") {
+    return armorsCrud.search(projectPath, query, ["name" as keyof Armor, "description" as keyof Armor]);
+  }
+  return itemsCrud.search(projectPath, query, ["name" as keyof Item, "description" as keyof Item]);
+}
+
+async function deleteItem(projectPath: string, id: number, type: ItemType) {
+  type = type || "item";
+  if (!fileMap[type]) throw new Error("Unknown item type: " + type);
+
+  let deleted: unknown;
+  if (type === "weapon") {
+    deleted = await weaponsCrud.delete(projectPath, id);
+  } else if (type === "armor") {
+    deleted = await armorsCrud.delete(projectPath, id);
+  } else {
+    deleted = await itemsCrud.delete(projectPath, id);
+  }
+  return { deleted };
+}
+
+export { getItems, getWeapons, getArmors, getSkillsList, createItem, createWeapon, createArmor, updateItem, searchItems, deleteItem };

@@ -1,6 +1,5 @@
-// @ts-nocheck
 /**
- * commandBuilder.js — RPG Maker MV Event Command Builder
+ * commandBuilder.ts — RPG Maker MV Event Command Builder
  *
  * CRITICAL MODULE: Provides the `cmd` object with functions that generate
  * valid RPG Maker MV event command objects {code, indent, parameters}.
@@ -12,20 +11,22 @@
  * Reference: https://rpgmaker.net/commands/RMMV/
  */
 
+import type { EventCommand, SelfSwitchKey } from '../types/rpgmaker.js';
+
 /**
  * Show Text — code 101 (header) + code 401 (text lines) + code 0 (terminator)
  * Displays a message box with the given text. If faceName is provided,
  * shows the specified face graphic.
- * @param {string} text - The message text (can contain \n for multiple lines)
- * @param {string} faceName - Face graphic filename (empty string for no face)
- * @param {number} faceIndex - Face index in the graphic (0-7)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param text - The message text (can contain \n for multiple lines)
+ * @param faceName - Face graphic filename (empty string for no face)
+ * @param faceIndex - Face index in the graphic (0-7)
+ * @returns EventCommand[]
  */
-function message(text, faceName, faceIndex) {
+function message(text: string, faceName: string, faceIndex: number): EventCommand[] {
   faceName = faceName || '';
   faceIndex = faceIndex || 0;
   const lines = text.split('\n');
-  const commands = [
+  const commands: EventCommand[] = [
     { code: 101, indent: 0, parameters: [faceName, faceIndex, 0, 2] }
   ];
   for (const line of lines) {
@@ -39,11 +40,11 @@ function message(text, faceName, faceIndex) {
  * Show Choices — code 102
  * Presents a choice dialog to the player. Each choice branch is
  * handled by code 402 (BranchChoice) followed by code 404 (EndChoices).
- * @param {string[]} options - Array of choice text strings
- * @param {number} cancelType - Cancel behavior (0=disallowed, 1-6=branch index, -1=cancel branch)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param options - Array of choice text strings
+ * @param cancelType - Cancel behavior (0=disallowed, 1-6=branch index, -1=cancel branch)
+ * @returns EventCommand[]
  */
-function choice(options, cancelType) {
+function choice(options: string[], cancelType: number): EventCommand[] {
   cancelType = cancelType !== undefined ? cancelType : -1;
   return [
     { code: 102, indent: 0, parameters: [options, cancelType] }
@@ -53,11 +54,11 @@ function choice(options, cancelType) {
 /**
  * Branch Choice — code 402
  * Marks the start of a choice branch. Must appear inside a Show Choices block.
- * @param {number} index - The choice index this branch handles
- * @param {string} label - The choice text label
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param index - The choice index this branch handles
+ * @param label - The choice text label
+ * @returns EventCommand[]
  */
-function branchChoice(index, label) {
+function branchChoice(index: number, label: string): EventCommand[] {
   return [
     { code: 402, indent: 0, parameters: [index, label] }
   ];
@@ -66,9 +67,9 @@ function branchChoice(index, label) {
 /**
  * End Choices — code 404
  * Marks the end of a Show Choices block.
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @returns EventCommand[]
  */
-function endChoices() {
+function endChoices(): EventCommand[] {
   return [
     { code: 404, indent: 0, parameters: [] }
   ];
@@ -78,11 +79,11 @@ function endChoices() {
  * Conditional Branch: Switch — code 111, type 0
  * Checks if a game switch is ON or OFF. Commands inside the branch
  * have indent+1. Follow with endConditional (code 412).
- * @param {number} switchId - The switch ID to check
- * @param {boolean} value - true = ON, false = OFF
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param switchId - The switch ID to check
+ * @param value - true = ON, false = OFF
+ * @returns EventCommand[]
  */
-function conditionalSwitch(switchId, value) {
+function conditionalSwitch(switchId: number, value: boolean): EventCommand[] {
   value = value !== undefined ? value : true;
   return [
     { code: 111, indent: 0, parameters: [0, switchId, value ? 0 : 1] }
@@ -92,11 +93,11 @@ function conditionalSwitch(switchId, value) {
 /**
  * Conditional Branch: Self Switch — code 111, type 2
  * Checks if a self switch (A/B/C/D) is ON or OFF.
- * @param {string} key - Self switch key: "A", "B", "C", or "D"
- * @param {boolean} value - true = ON, false = OFF
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param key - Self switch key: "A", "B", "C", or "D"
+ * @param value - true = ON, false = OFF
+ * @returns EventCommand[]
  */
-function conditionalSelfSwitch(key, value) {
+function conditionalSelfSwitch(key: SelfSwitchKey, value: boolean): EventCommand[] {
   value = value !== undefined ? value : true;
   return [
     { code: 111, indent: 0, parameters: [2, key, value ? 0 : 1] }
@@ -106,12 +107,12 @@ function conditionalSelfSwitch(key, value) {
 /**
  * Conditional Branch: Variable — code 111, type 1
  * Checks a game variable against a value using an operator.
- * @param {number} varId - The variable ID to check
- * @param {number} operator - Comparison: 0=eq, 1=ge, 2=le, 3=gt, 4=lt, 5=ne
- * @param {number} val - The value to compare against
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param varId - The variable ID to check
+ * @param operator - Comparison: 0=eq, 1=ge, 2=le, 3=gt, 4=lt, 5=ne
+ * @param val - The value to compare against
+ * @returns EventCommand[]
  */
-function conditionalVariable(varId, operator, val) {
+function conditionalVariable(varId: number, operator: number, val: number): EventCommand[] {
     return [
         { code: 111, indent: 0, parameters: [1, varId, operator, 0, val] }
     ];
@@ -120,9 +121,9 @@ function conditionalVariable(varId, operator, val) {
 /**
  * End Conditional — code 412
  * Marks the end of a Conditional Branch block.
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @returns EventCommand[]
  */
-function endConditional() {
+function endConditional(): EventCommand[] {
   return [
     { code: 412, indent: 0, parameters: [] }
   ];
@@ -131,11 +132,11 @@ function endConditional() {
 /**
  * Control Switches — code 121
  * Turns a game switch ON or OFF.
- * @param {number} id - The switch ID to control
- * @param {boolean} value - true = ON (0), false = OFF (1)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param id - The switch ID to control
+ * @param value - true = ON (0), false = OFF (1)
+ * @returns EventCommand[]
  */
-function switchControl(id, value) {
+function switchControl(id: number, value: boolean): EventCommand[] {
   value = value !== undefined ? value : true;
   return [
     { code: 121, indent: 0, parameters: [id, id, value ? 0 : 1] }
@@ -145,11 +146,11 @@ function switchControl(id, value) {
 /**
  * Control Self Switch — code 123
  * Turns a self switch (A/B/C/D) ON or OFF for the current event.
- * @param {string} key - Self switch key: "A", "B", "C", or "D"
- * @param {boolean} value - true = ON (0), false = OFF (1)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param key - Self switch key: "A", "B", "C", or "D"
+ * @param value - true = ON (0), false = OFF (1)
+ * @returns EventCommand[]
  */
-function selfSwitchControl(key, value) {
+function selfSwitchControl(key: SelfSwitchKey, value: boolean): EventCommand[] {
   value = value !== undefined ? value : true;
   return [
     { code: 123, indent: 0, parameters: [key, value ? 0 : 1] }
@@ -159,12 +160,12 @@ function selfSwitchControl(key, value) {
 /**
  * Control Variables — code 122
  * Performs an operation on a game variable.
- * @param {number} id - The variable ID
- * @param {number} opType - Operation: 0=set, 1=add, 2=sub, 3=mul, 4=div, 5=mod
- * @param {number} val - The operand value (used with operand type 0 = constant)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param id - The variable ID
+ * @param opType - Operation: 0=set, 1=add, 2=sub, 3=mul, 4=div, 5=mod
+ * @param val - The operand value (used with operand type 0 = constant)
+ * @returns EventCommand[]
  */
-function variableControl(id, opType, val) {
+function variableControl(id: number, opType: number, val: number): EventCommand[] {
   return [
     { code: 122, indent: 0, parameters: [id, id, opType, 0, val] }
   ];
@@ -173,11 +174,11 @@ function variableControl(id, opType, val) {
 /**
  * Change Items — code 126
  * Adds or removes an item from the party inventory.
- * @param {number} itemId - The item ID
- * @param {number} amount - Quantity (positive = add)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param itemId - The item ID
+ * @param amount - Quantity (positive = add)
+ * @returns EventCommand[]
  */
-function giveItem(itemId, amount) {
+function giveItem(itemId: number, amount: number): EventCommand[] {
   amount = amount || 1;
   return [
     { code: 126, indent: 0, parameters: [itemId, 0, 0, amount] }
@@ -187,11 +188,11 @@ function giveItem(itemId, amount) {
 /**
  * Change Weapons — code 127
  * Adds or removes a weapon from the party inventory.
- * @param {number} weaponId - The weapon ID
- * @param {number} amount - Quantity to add
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param weaponId - The weapon ID
+ * @param amount - Quantity to add
+ * @returns EventCommand[]
  */
-function giveWeapon(weaponId, amount) {
+function giveWeapon(weaponId: number, amount: number): EventCommand[] {
   amount = amount || 1;
   return [
     { code: 127, indent: 0, parameters: [weaponId, 0, 0, amount] }
@@ -201,11 +202,11 @@ function giveWeapon(weaponId, amount) {
 /**
  * Change Armors — code 128
  * Adds or removes an armor from the party inventory.
- * @param {number} armorId - The armor ID
- * @param {number} amount - Quantity to add
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param armorId - The armor ID
+ * @param amount - Quantity to add
+ * @returns EventCommand[]
  */
-function giveArmor(armorId, amount) {
+function giveArmor(armorId: number, amount: number): EventCommand[] {
   amount = amount || 1;
   return [
     { code: 128, indent: 0, parameters: [armorId, 0, 0, amount] }
@@ -215,10 +216,10 @@ function giveArmor(armorId, amount) {
 /**
  * Change Gold — code 125
  * Adds or subtracts gold from the party.
- * @param {number} amount - Amount of gold (positive to add)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param amount - Amount of gold (positive to add)
+ * @returns EventCommand[]
  */
-function giveMoney(amount) {
+function giveMoney(amount: number): EventCommand[] {
   return [
     { code: 125, indent: 0, parameters: [0, 0, amount] }
   ];
@@ -227,14 +228,14 @@ function giveMoney(amount) {
 /**
  * Transfer Player — code 201
  * Teleports the player to a new map position.
- * @param {number} mapId - Destination map ID
- * @param {number} x - Destination X coordinate
- * @param {number} y - Destination Y coordinate
- * @param {number} direction - Direction after transfer (0=retain, 2=down, 4=left, 6=right, 8=up)
- * @param {number} fadeType - Fade type (0=black, 1=white, 2=none)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param mapId - Destination map ID
+ * @param x - Destination X coordinate
+ * @param y - Destination Y coordinate
+ * @param direction - Direction after transfer (0=retain, 2=down, 4=left, 6=right, 8=up)
+ * @param fadeType - Fade type (0=black, 1=white, 2=none)
+ * @returns EventCommand[]
  */
-function teleport(mapId, x, y, direction, fadeType) {
+function teleport(mapId: number, x: number, y: number, direction: number, fadeType: number): EventCommand[] {
   direction = direction || 0;
   fadeType = fadeType || 0;
   return [
@@ -245,11 +246,11 @@ function teleport(mapId, x, y, direction, fadeType) {
 /**
  * Show Animation — code 212
  * Plays an animation on a character or event.
- * @param {number} eventId - Event ID (0 = player, -1 = this event)
- * @param {number} animId - Animation ID from the database
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param eventId - Event ID (0 = player, -1 = this event)
+ * @param animId - Animation ID from the database
+ * @returns EventCommand[]
  */
-function showAnimation(eventId, animId) {
+function showAnimation(eventId: number, animId: number): EventCommand[] {
   return [
     { code: 212, indent: 0, parameters: [eventId, animId] }
   ];
@@ -258,13 +259,13 @@ function showAnimation(eventId, animId) {
 /**
  * Play BGM — code 241
  * Plays a background music track.
- * @param {string} name - BGM filename
- * @param {number} volume - Volume (0-100)
- * @param {number} pitch - Pitch (50-200)
- * @param {number} pan - Pan (-100 to 100)
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param name - BGM filename
+ * @param volume - Volume (0-100)
+ * @param pitch - Pitch (50-200)
+ * @param pan - Pan (-100 to 100)
+ * @returns EventCommand[]
  */
-function playBGM(name, volume, pitch, pan) {
+function playBGM(name: string, volume: number, pitch: number, pan: number): EventCommand[] {
   volume = volume !== undefined ? volume : 90;
   pitch = pitch !== undefined ? pitch : 100;
   pan = pan || 0;
@@ -276,10 +277,10 @@ function playBGM(name, volume, pitch, pan) {
 /**
  * Fadeout BGM — code 242
  * Fades out the currently playing BGM over the specified duration.
- * @param {number} duration - Fade duration in seconds
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param duration - Fade duration in seconds
+ * @returns EventCommand[]
  */
-function fadeBGM(duration) {
+function fadeBGM(duration: number): EventCommand[] {
   duration = duration !== undefined ? duration : 1;
   return [
     { code: 242, indent: 0, parameters: [duration] }
@@ -289,10 +290,10 @@ function fadeBGM(duration) {
 /**
  * Wait — code 230
  * Pauses event execution for the specified number of frames (60 frames = 1 second).
- * @param {number} frames - Number of frames to wait
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param frames - Number of frames to wait
+ * @returns EventCommand[]
  */
-function wait(frames) {
+function wait(frames: number): EventCommand[] {
   return [
     { code: 230, indent: 0, parameters: [frames] }
   ];
@@ -301,10 +302,10 @@ function wait(frames) {
 /**
  * Label — code 118
  * Marks a position in the event command list for use with Jump to Label.
- * @param {string} name - Label name
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param name - Label name
+ * @returns EventCommand[]
  */
-function label(name) {
+function label(name: string): EventCommand[] {
   return [
     { code: 118, indent: 0, parameters: [name] }
   ];
@@ -313,10 +314,10 @@ function label(name) {
 /**
  * Jump to Label — code 119
  * Jumps execution to the specified label in the event command list.
- * @param {string} name - Label name to jump to
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param name - Label name to jump to
+ * @returns EventCommand[]
  */
-function jumpToLabel(name) {
+function jumpToLabel(name: string): EventCommand[] {
   return [
     { code: 119, indent: 0, parameters: [name] }
   ];
@@ -326,9 +327,9 @@ function jumpToLabel(name) {
  * Erase Event — code 214
  * Erases the current event from the map until the map is reloaded.
  * Commonly used for one-time events that should disappear after triggering.
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @returns EventCommand[]
  */
-function eraseEvent() {
+function eraseEvent(): EventCommand[] {
   return [
     { code: 214, indent: 0, parameters: [] }
   ];
@@ -337,9 +338,9 @@ function eraseEvent() {
 /**
  * Game Over — code 353
  * Triggers an immediate game over screen.
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @returns EventCommand[]
  */
-function gameOver() {
+function gameOver(): EventCommand[] {
   return [
     { code: 353, indent: 0, parameters: [] }
   ];
@@ -348,13 +349,13 @@ function gameOver() {
 /**
  * Show Picture — code 231
  * Displays a picture on the screen at the specified position.
- * @param {number} id - Picture ID (1-100)
- * @param {string} name - Picture filename (from img/pictures/)
- * @param {number} x - X position
- * @param {number} y - Y position
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param id - Picture ID (1-100)
+ * @param name - Picture filename (from img/pictures/)
+ * @param x - X position
+ * @param y - Y position
+ * @returns EventCommand[]
  */
-function showPicture(id, name, x, y) {
+function showPicture(id: number, name: string, x: number, y: number): EventCommand[] {
   return [
     { code: 231, indent: 0, parameters: [id, name, 0, 0, x, y, 100, 100, 255, 0] }
   ];
@@ -363,10 +364,10 @@ function showPicture(id, name, x, y) {
 /**
  * Plugin Command — code 356
  * Executes a plugin command string.
- * @param {string} command - The plugin command string
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param command - The plugin command string
+ * @returns EventCommand[]
  */
-function pluginCommand(command) {
+function pluginCommand(command: string): EventCommand[] {
   return [
     { code: 356, indent: 0, parameters: [command] }
   ];
@@ -375,10 +376,10 @@ function pluginCommand(command) {
 /**
  * Comment — code 108
  * Adds a comment line to the event command list.
- * @param {string} text - Comment text
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @param text - Comment text
+ * @returns EventCommand[]
  */
-function comment(text) {
+function comment(text: string): EventCommand[] {
   return [
     { code: 108, indent: 0, parameters: [text] }
   ];
@@ -388,15 +389,24 @@ function comment(text) {
  * End of Event Processing — code 0
  * Terminates event command processing. Every event page's list
  * must end with this command.
- * @returns {Array<{code:number, indent:number, parameters:any[]}>}
+ * @returns EventCommand[]
  */
-function end() {
+function end(): EventCommand[] {
   return [
     { code: 0, indent: 0, parameters: [] }
   ];
 }
 
-function playSE(name, volume, pitch, pan) {
+/**
+ * Play SE — code 250
+ * Plays a sound effect.
+ * @param name - SE filename
+ * @param volume - Volume (0-100)
+ * @param pitch - Pitch (50-200)
+ * @param pan - Pan (-100 to 100)
+ * @returns EventCommand[]
+ */
+function playSE(name: string, volume: number, pitch: number, pan: number): EventCommand[] {
   volume = volume !== undefined ? volume : 90;
   pitch = pitch !== undefined ? pitch : 100;
   pan = pan || 0;
@@ -405,68 +415,147 @@ function playSE(name, volume, pitch, pan) {
   ];
 }
 
-function changePartyMember(actorId, add) {
+/**
+ * Change Party Member — code 129
+ * Adds or removes an actor from the party.
+ * @param actorId - The actor ID
+ * @param add - true = add to party, false = remove from party
+ * @returns EventCommand[]
+ */
+function changePartyMember(actorId: number, add: boolean): EventCommand[] {
   add = add !== undefined ? add : true;
   return [
     { code: 129, indent: 0, parameters: [actorId, add ? 0 : 1, 0] }
   ];
 }
 
-function changeHP(actorId, value, isAdd) {
+/**
+ * Change HP — code 311
+ * Modifies an actor's HP by a fixed value or percentage.
+ * @param actorId - The actor ID (0 for entire party)
+ * @param value - The amount to change
+ * @param isAdd - true = add (0), false = subtract (1)
+ * @returns EventCommand[]
+ */
+function changeHP(actorId: number, value: number, isAdd: boolean): EventCommand[] {
     isAdd = isAdd !== undefined ? isAdd : true;
     return [
         { code: 311, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, 0] }
     ];
 }
 
-function changeMP(actorId, value, isAdd) {
+/**
+ * Change MP — code 312
+ * Modifies an actor's MP by a fixed value or percentage.
+ * @param actorId - The actor ID (0 for entire party)
+ * @param value - The amount to change
+ * @param isAdd - true = add (0), false = subtract (1)
+ * @returns EventCommand[]
+ */
+function changeMP(actorId: number, value: number, isAdd: boolean): EventCommand[] {
   isAdd = isAdd !== undefined ? isAdd : true;
   return [
     { code: 312, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value] }
   ];
 }
 
-function changeEXP(actorId, value, isAdd) {
+/**
+ * Change EXP — code 315
+ * Modifies an actor's experience points.
+ * @param actorId - The actor ID (0 for entire party)
+ * @param value - The amount to change
+ * @param isAdd - true = add (0), false = subtract (1)
+ * @returns EventCommand[]
+ */
+function changeEXP(actorId: number, value: number, isAdd: boolean): EventCommand[] {
     isAdd = isAdd !== undefined ? isAdd : true;
     return [
         { code: 315, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, 0] }
     ];
 }
 
-function changeLevel(actorId, value, isAdd) {
+/**
+ * Change Level — code 317
+ * Modifies an actor's level.
+ * @param actorId - The actor ID (0 for entire party)
+ * @param value - The amount to change
+ * @param isAdd - true = add (0), false = subtract (1)
+ * @returns EventCommand[]
+ */
+function changeLevel(actorId: number, value: number, isAdd: boolean): EventCommand[] {
     isAdd = isAdd !== undefined ? isAdd : true;
     return [
         { code: 317, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, 0] }
     ];
 }
 
-function changeSkill(actorId, skillId, learn) {
+/**
+ * Change Skill — code 318
+ * Teaches or forgets a skill for an actor.
+ * @param actorId - The actor ID (0 for entire party)
+ * @param skillId - The skill ID
+ * @param learn - true = learn (0), false = forget (1)
+ * @returns EventCommand[]
+ */
+function changeSkill(actorId: number, skillId: number, learn: boolean): EventCommand[] {
     learn = learn !== undefined ? learn : true;
     return [
         { code: 318, indent: 0, parameters: [0, actorId, learn ? 0 : 1, skillId] }
     ];
 }
 
-function changeState(actorId, stateId, add) {
+/**
+ * Change State — code 313
+ * Adds or removes a state from an actor.
+ * @param actorId - The actor ID (0 for entire party)
+ * @param stateId - The state ID
+ * @param add - true = add (0), false = remove (1)
+ * @returns EventCommand[]
+ */
+function changeState(actorId: number, stateId: number, add: boolean): EventCommand[] {
     add = add !== undefined ? add : true;
     return [
         { code: 313, indent: 0, parameters: [0, actorId, add ? 0 : 1, stateId] }
     ];
 }
 
-function changeEquip(actorId, slotType, itemId) {
+/**
+ * Change Equip — code 319
+ * Changes an actor's equipped item.
+ * @param actorId - The actor ID
+ * @param slotType - The equipment slot type
+ * @param itemId - The item ID to equip (0 = unequip)
+ * @returns EventCommand[]
+ */
+function changeEquip(actorId: number, slotType: number, itemId: number): EventCommand[] {
   return [
     { code: 319, indent: 0, parameters: [actorId, slotType, itemId] }
   ];
 }
 
-function scrollMap(direction, distance, speed) {
+/**
+ * Scroll Map — code 204
+ * Scrolls the map camera in the specified direction.
+ * @param direction - Direction to scroll (2=down, 4=left, 6=right, 8=up)
+ * @param distance - Distance in tiles
+ * @param speed - Scroll speed (default 4)
+ * @returns EventCommand[]
+ */
+function scrollMap(direction: number, distance: number, speed: number): EventCommand[] {
   return [
     { code: 204, indent: 0, parameters: [direction, distance, speed || 4] }
   ];
 }
 
-function battleProcessing(troopId, canEscape, canLose) {
+/**
+ * Battle Processing — code 301
+ * Initiates a battle with a specific troop.
+ * @param troopId - The troop ID to battle
+ * @param canEscape - Whether escape is allowed
+ * @param canLose - Whether losing continues the game
+ * @returns EventCommand[]
+ */
+function battleProcessing(troopId: number, canEscape: boolean, canLose: boolean): EventCommand[] {
     canEscape = canEscape !== undefined ? canEscape : true;
     canLose = canLose !== undefined ? canLose : false;
     return [
@@ -474,59 +563,121 @@ function battleProcessing(troopId, canEscape, canLose) {
     ];
 }
 
-function shopProcessing(goods, purchaseOnly) {
+/**
+ * Shop Processing — code 302
+ * Opens a shop with the specified goods.
+ * @param goods - Array of goods [itemType, itemId, priceFlag, price]
+ * @param purchaseOnly - true = purchase only, false = buy and sell
+ * @returns EventCommand[]
+ */
+function shopProcessing(goods: [number, number, number, number][], purchaseOnly: boolean): EventCommand[] {
     purchaseOnly = purchaseOnly !== undefined ? purchaseOnly : true;
-    var result = [
+    const result: EventCommand[] = [
         { code: 302, indent: 0, parameters: [0, purchaseOnly ? 1 : 0] }
     ];
-    for (var i = 0; i < goods.length; i++) {
-        result.push({ code: 605, indent: 0, parameters: goods[i] });
+    for (let i = 0; i < goods.length; i++) {
+        result.push({ code: 605, indent: 0, parameters: goods[i] as unknown[] });
     }
     return result;
 }
 
-function nameInput(actorId, maxLength) {
+/**
+ * Name Input — code 303
+ * Opens the name input screen for an actor.
+ * @param actorId - The actor ID
+ * @param maxLength - Maximum character length
+ * @returns EventCommand[]
+ */
+function nameInput(actorId: number, maxLength: number): EventCommand[] {
   maxLength = maxLength || 8;
   return [
     { code: 303, indent: 0, parameters: [actorId, maxLength] }
   ];
 }
 
-function changeMapDisplayName(displayName) {
+/**
+ * Change Map Display Name — code 323
+ * Changes the map name displayed on the save/load screen.
+ * @param displayName - The new display name
+ * @returns EventCommand[]
+ */
+function changeMapDisplayName(displayName: string): EventCommand[] {
   return [
     { code: 323, indent: 0, parameters: [displayName] }
   ];
 }
 
-function setMoveRoute(eventId, routeCommands) {
+/**
+ * Set Move Route — code 205
+ * Assigns a movement route to an event or the player.
+ * @param eventId - Event ID (-1 = player, 0 = this event, >0 = specific event)
+ * @param routeCommands - Array of move route commands
+ * @returns EventCommand[]
+ */
+function setMoveRoute(eventId: number, routeCommands: EventCommand[]): EventCommand[] {
   return [
     { code: 205, indent: 0, parameters: [eventId, { list: routeCommands, repeat: false, skippable: true, wait: true }] }
   ];
 }
 
-function moveRouteCommand(code, parameters) {
-  return { code: code, parameters: parameters || [] };
+/**
+ * Move Route Command — helper for building individual move route commands.
+ * @param code - The move route command code
+ * @param parameters - The command parameters
+ * @returns EventCommand
+ */
+function moveRouteCommand(code: number, parameters: unknown[]): EventCommand {
+  return { code: code, indent: 0, parameters: parameters || [] };
 }
 
-function recoverAll(actorId) {
+/**
+ * Recover All — code 314
+ * Fully recovers an actor's HP, MP, and removes all states.
+ * @param actorId - The actor ID (0 for entire party)
+ * @returns EventCommand[]
+ */
+function recoverAll(actorId: number): EventCommand[] {
   return [
     { code: 314, indent: 0, parameters: [0, actorId] }
   ];
 }
 
-function changeActorName(actorId, name) {
+/**
+ * Change Actor Name — code 320
+ * Changes an actor's display name.
+ * @param actorId - The actor ID
+ * @param name - The new name
+ * @returns EventCommand[]
+ */
+function changeActorName(actorId: number, name: string): EventCommand[] {
   return [
     { code: 320, indent: 0, parameters: [actorId, name] }
   ];
 }
 
-function changeActorClass(actorId, classId) {
+/**
+ * Change Actor Class — code 321
+ * Changes an actor's class.
+ * @param actorId - The actor ID
+ * @param classId - The new class ID
+ * @returns EventCommand[]
+ */
+function changeActorClass(actorId: number, classId: number): EventCommand[] {
   return [
     { code: 321, indent: 0, parameters: [actorId, classId] }
   ];
 }
 
-function playBGS(name, volume, pitch, pan) {
+/**
+ * Play BGS — code 245
+ * Plays a background sound.
+ * @param name - BGS filename
+ * @param volume - Volume (0-100)
+ * @param pitch - Pitch (50-200)
+ * @param pan - Pan (-100 to 100)
+ * @returns EventCommand[]
+ */
+function playBGS(name: string, volume: number, pitch: number, pan: number): EventCommand[] {
   volume = volume !== undefined ? volume : 90;
   pitch = pitch !== undefined ? pitch : 100;
   pan = pan || 0;
@@ -535,14 +686,29 @@ function playBGS(name, volume, pitch, pan) {
   ];
 }
 
-function fadeoutBGS(duration) {
+/**
+ * Fadeout BGS — code 246
+ * Fades out the currently playing BGS over the specified duration.
+ * @param duration - Fade duration in seconds
+ * @returns EventCommand[]
+ */
+function fadeoutBGS(duration: number): EventCommand[] {
   duration = duration !== undefined ? duration : 1;
   return [
     { code: 246, indent: 0, parameters: [duration] }
   ];
 }
 
-function playME(name, volume, pitch, pan) {
+/**
+ * Play ME — code 249
+ * Plays a music effect (ME).
+ * @param name - ME filename
+ * @param volume - Volume (0-100)
+ * @param pitch - Pitch (50-200)
+ * @param pan - Pan (-100 to 100)
+ * @returns EventCommand[]
+ */
+function playME(name: string, volume: number, pitch: number, pan: number): EventCommand[] {
   volume = volume !== undefined ? volume : 90;
   pitch = pitch !== undefined ? pitch : 100;
   pan = pan || 0;
@@ -551,7 +717,13 @@ function playME(name, volume, pitch, pan) {
   ];
 }
 
-function getActorInfo(actorId) {
+/**
+ * Get Actor Info — code 108 (comment placeholder)
+ * Provides actor information via a script call placeholder.
+ * @param actorId - The actor ID
+ * @returns EventCommand[]
+ */
+function getActorInfo(actorId: number): EventCommand[] {
   return [
     { code: 108, indent: 0, parameters: ['Get Actor Info placeholder - use script calls for advanced features'] }
   ];
@@ -594,9 +766,9 @@ const cmd = {
   changeMP,
   changeEXP,
   changeLevel,
-    changeSkill,
-    changeState,
-    changeEquip,
+  changeSkill,
+  changeState,
+  changeEquip,
   scrollMap,
   battleProcessing,
   shopProcessing,
