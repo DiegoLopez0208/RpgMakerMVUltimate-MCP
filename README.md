@@ -5,7 +5,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Make
 ## Features
 
 - **102 MCP tools** covering every aspect of RPG Maker MV project data
-- **TypeScript ESM** — fully typed codebase with strict compilation, zero `@ts-nocheck`
+- **TypeScript ESM** — fully typed codebase with strict compilation.
 - **Vision AI analysis** — `analyze_screenshot` sends project images to any OpenAI-compatible vision API (OpenAI, Ollama, LocalAI, NVIDIA, etc.) for AI descriptions
 - **Offline ASCII map rendering** — `render_map_ascii` generates ASCII maps with event markers and region IDs, no API needed
 - **Knowledge-driven map generation** with 21 themes, procedural generation (Perlin noise, BSP, cellular automata), and 106 template maps
@@ -159,7 +159,7 @@ The unified map generator produces coherent, beautiful maps using your project's
 
 ### Template-Based Generation
 
-Generate maps from 106 ProjectR reference templates:
+Generate maps from 106 Rpg maker MV reference templates:
 
 ```json
 {
