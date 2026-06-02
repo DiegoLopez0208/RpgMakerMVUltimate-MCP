@@ -1,0 +1,67 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.diegolopez0208/rpgmaker-mv-ultimate",
+  "description": "MCP server for RPG Maker MV project management. 102 tools for actors, classes, skills, items, weapons, armors, enemies, states, troops, maps, events, tilesets, animations, system settings, AI vision analysis, and procedural map generation with 21 themes.",
+  "repository": {
+    "url": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP",
+    "source": "github"
+  },
+  "version": "4.0.1",
+  "categories": [
+    "developer-tools",
+    "gaming"
+  ],
+  "tags": [
+    "rpg-maker",
+    "game-development",
+    "rpg-maker-mv",
+    "procedural-generation",
+    "vision-ai"
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "rpgmaker-mv-mcp",
+      "version": "4.0.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "command": {
+        "type": "node",
+        "args": [
+          "dist/index.js"
+        ]
+      },
+      "environmentVariables": [
+        {
+          "name": "RPGMAKER_PROJECT_PATH",
+          "description": "Path to your RPG Maker MV project",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "VISION_API_URL",
+          "description": "Base URL for OpenAI-compatible Vision API (optional)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "VISION_API_KEY",
+          "description": "API key for Vision API (optional)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "VISION_MODEL",
+          "description": "Model name for Vision API (optional, defaults to meta/llama-3.2-90b-vision-instruct)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
