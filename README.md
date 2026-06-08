@@ -253,7 +253,11 @@ knowledge/
   database-schemas.json   # MV data type schemas
   image-paths.json        # Image path conventions
 ```
+[
 
+![DiegoLopez0208/RpgMakerMVUltimate-MCP MCP server](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP/badges/score.svg)
+
+](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP)
 ## License
 
 MIT
