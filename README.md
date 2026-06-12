@@ -1,10 +1,10 @@
 # RPG Maker MV Ultimate MCP Server
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides **102 tools** for actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, **AI vision analysis**, **offline ASCII map rendering**, and **knowledge-driven map generation**.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides **101 tools** for actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, **AI vision analysis**, **offline ASCII map rendering**, and **knowledge-driven map generation**.
 
 ## Features
 
-- **102 MCP tools** covering every aspect of RPG Maker MV project data
+- **101 MCP tools** covering every aspect of RPG Maker MV project data
 - **TypeScript ESM** — fully typed codebase with strict compilation.
 - **Vision AI analysis** — `analyze_screenshot` sends project images to any OpenAI-compatible vision API (OpenAI, Ollama, LocalAI, NVIDIA, etc.) for AI descriptions
 - **Offline ASCII map rendering** — `render_map_ascii` generates ASCII maps with event markers and region IDs, no API needed

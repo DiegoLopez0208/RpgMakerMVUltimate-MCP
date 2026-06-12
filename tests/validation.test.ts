@@ -1,92 +1,156 @@
 import { describe, it, expect } from "vitest";
-import { CreateMapSchema, CreateNpcSchema, AnalyzeScreenshotSchema, CreateSkillSchema } from "../src/utils/validation.js";
+import {
+  CreateMapSchema,
+  CreateNpcSchema,
+  AnalyzeScreenshotSchema,
+  CreateDamageSkillSchema,
+  CreateHealingSkillSchema,
+  CreateBuffSkillSchema,
+  CreateStateSkillSchema,
+  RenderMapAsciiSchema,
+} from "../src/utils/validation.js";
 
 describe("validation schemas", () => {
   describe("CreateMapSchema", () => {
-    it("should validate valid map creation params", () => {
+    it("accepts the camelCase args the create_map tool sends", () => {
       const result = CreateMapSchema.safeParse({
         name: "Test Map",
         width: 25,
         height: 20,
-        tileset_id: 1,
+        tilesetId: 4,
         theme: "forest",
+        bgmName: "Town1",
+        displayName: "Bosque",
       });
-      expect(result.success).toBe(true);
-    });
-
-    it("should reject name > 100 chars", () => {
-      const result = CreateMapSchema.safeParse({
-        name: "x".repeat(101),
-        width: 25,
-        height: 20,
-      });
-      expect(result.success).toBe(false);
-    });
-
-    it("should use defaults for missing fields", () => {
-      const result = CreateMapSchema.safeParse({ name: "Test" });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.width).toBe(25);
-        expect(result.data.height).toBe(20);
-        expect(result.data.tileset_id).toBe(1);
-        expect(result.data.scroll_type).toBe(0);
+        // Regression for <=4.1.0: zod stripped unknown (snake_case-mismatched) keys
+        expect(result.data.tilesetId).toBe(4);
+        expect(result.data.bgmName).toBe("Town1");
+        expect(result.data.displayName).toBe("Bosque");
       }
+    });
+
+    it("does not require name and uses the documented defaults (17x13, tileset 1)", () => {
+      const result = CreateMapSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.width).toBe(17);
+        expect(result.data.height).toBe(13);
+        expect(result.data.tilesetId).toBe(1);
+      }
+    });
+
+    it("coerces numeric strings", () => {
+      const result = CreateMapSchema.safeParse({ width: "30", height: "20" });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.width).toBe(30);
+        expect(result.data.height).toBe(20);
+      }
+    });
+
+    it("rejects unknown themes", () => {
+      expect(CreateMapSchema.safeParse({ theme: "moon" }).success).toBe(false);
     });
   });
 
   describe("CreateNpcSchema", () => {
-    it("should validate valid NPC creation params", () => {
+    it("accepts the camelCase args the create_npc tool sends", () => {
       const result = CreateNpcSchema.safeParse({
-        map_id: 1,
+        mapId: 1,
         x: 10,
         y: 5,
         name: "Guard",
         dialogues: ["Hello!", "Welcome!"],
-      });
-      expect(result.success).toBe(true);
-    });
-
-    it("should default dialogues to empty array", () => {
-      const result = CreateNpcSchema.safeParse({
-        map_id: 1,
-        x: 0,
-        y: 0,
-        name: "NPC",
+        characterName: "People1",
+        characterIndex: 3,
       });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.dialogues).toEqual([]);
+        expect(result.data.mapId).toBe(1);
+        expect(result.data.characterName).toBe("People1");
       }
+    });
+
+    it("coerces a numeric-string mapId", () => {
+      const result = CreateNpcSchema.safeParse({ mapId: "2", x: 0, y: 0, name: "NPC", dialogues: [] });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.mapId).toBe(2);
+    });
+
+    it("requires mapId, position, name and dialogues", () => {
+      expect(CreateNpcSchema.safeParse({ x: 0, y: 0, name: "NPC", dialogues: [] }).success).toBe(false);
+      expect(CreateNpcSchema.safeParse({ mapId: 1, x: 0, y: 0, dialogues: [] }).success).toBe(false);
+      expect(CreateNpcSchema.safeParse({ mapId: 1, x: 0, y: 0, name: "NPC" }).success).toBe(false);
+    });
+  });
+
+  describe("skill helper schemas", () => {
+    it("create_damage_skill keeps mpCost and formula (regression for <=4.1.0 silent drop)", () => {
+      const result = CreateDamageSkillSchema.safeParse({
+        name: "Fireball",
+        mpCost: 15,
+        scope: 1,
+        formula: "a.mat * 4 - b.mdf * 2",
+        element: 2,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.mpCost).toBe(15);
+        expect(result.data.formula).toBe("a.mat * 4 - b.mdf * 2");
+        expect(result.data.element).toBe(2);
+      }
+    });
+
+    it("create_damage_skill rejects a missing formula", () => {
+      expect(CreateDamageSkillSchema.safeParse({ name: "Hit", mpCost: 0, scope: 1 }).success).toBe(false);
+    });
+
+    it("create_healing_skill keeps its formula", () => {
+      const result = CreateHealingSkillSchema.safeParse({ name: "Heal", mpCost: 8, scope: 7, formula: "a.mat * 3 + 100" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.formula).toBe("a.mat * 3 + 100");
+    });
+
+    it("create_buff_skill keeps paramId and turns", () => {
+      const result = CreateBuffSkillSchema.safeParse({ name: "Protect", mpCost: 10, scope: 7, paramId: 3, turns: 5 });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.paramId).toBe(3);
+        expect(result.data.turns).toBe(5);
+      }
+    });
+
+    it("create_state_skill keeps stateId and chance, and bounds chance to 0-1", () => {
+      const ok = CreateStateSkillSchema.safeParse({ name: "Poison", mpCost: 5, scope: 1, stateId: 4, chance: 0.8 });
+      expect(ok.success).toBe(true);
+      if (ok.success) {
+        expect(ok.data.stateId).toBe(4);
+        expect(ok.data.chance).toBe(0.8);
+      }
+      expect(CreateStateSkillSchema.safeParse({ name: "Poison", mpCost: 5, scope: 1, stateId: 4, chance: 80 }).success).toBe(false);
     });
   });
 
   describe("AnalyzeScreenshotSchema", () => {
-    it("should reject path traversal", () => {
-      const result = AnalyzeScreenshotSchema.safeParse({
-        image_path: "../../../etc/passwd",
-      });
-      expect(result.success).toBe(false);
+    it("rejects path traversal", () => {
+      expect(AnalyzeScreenshotSchema.safeParse({ image_path: "../../../etc/passwd" }).success).toBe(false);
     });
 
-    it("should accept valid paths", () => {
-      const result = AnalyzeScreenshotSchema.safeParse({
-        image_path: "img/tilesets/Outside.png",
-      });
-      expect(result.success).toBe(true);
+    it("accepts valid paths", () => {
+      expect(AnalyzeScreenshotSchema.safeParse({ image_path: "img/tilesets/Outside.png" }).success).toBe(true);
     });
   });
 
-  describe("CreateSkillSchema", () => {
-    it("should validate skill creation with defaults", () => {
-      const result = CreateSkillSchema.safeParse({
-        name: "Fireball",
-        mp_cost: 15,
-      });
+  describe("RenderMapAsciiSchema", () => {
+    it("matches the tool's snake_case contract and defaults", () => {
+      const result = RenderMapAsciiSchema.safeParse({ map_id: 3 });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.scope).toBe(1);
-        expect(result.data.damage_formula).toBe("a.atk * 4 - b.def * 2");
+        expect(result.data.map_id).toBe(3);
+        expect(result.data.layer).toBe(0);
+        expect(result.data.show_events).toBe(true);
       }
     });
   });

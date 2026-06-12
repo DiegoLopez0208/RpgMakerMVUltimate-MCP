@@ -1,20 +1,16 @@
 #!/usr/bin/env node
-import http from "http";
-
-
 import path from "path";
 import { readFile, access, readdir } from 'fs/promises';
 
 /**
- * server.js — RPG Maker MV MCP Server v3.0
+ * server.ts — RPG Maker MV MCP Server
  *
  * Main entry point for the Model Context Protocol server.
- * Provides ~75 tools for managing RPG Maker MV project data:
- * actors, classes, skills, items, weapons, armors, enemies, states,
- * troops, common events, maps, events (NPC/chest/teleport/shop/inn/boss/puzzle),
- * tilesets, animations, system settings, project management, and image analysis.
+ * Tool definitions (descriptions, schemas, annotations) live in
+ * toolDefinitions.ts; this file wires them to their implementations
+ * in tools/ and handles transport, validation, and error reporting.
  *
- * Run: RPGMAKER_PROJECT_PATH=/path/to/project node server.js
+ * Run: RPGMAKER_PROJECT_PATH=/path/to/project node dist/index.js
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -30,7 +26,7 @@ import * as itemTools from './tools/itemTools.js';
 import * as skillTools from './tools/skillTools.js';
 import * as mapTools from './tools/mapTools.js';
 import { resolveSafePath } from './utils/security.js';
-import { AnalyzeScreenshotSchema, CreateMapSchema, RenderMapAsciiSchema, CreateNpcSchema, CreateSkillSchema } from './utils/validation.js';
+import { AnalyzeScreenshotSchema, CreateMapSchema, RenderMapAsciiSchema, CreateNpcSchema, CreateDamageSkillSchema, CreateHealingSkillSchema, CreateBuffSkillSchema, CreateStateSkillSchema } from './utils/validation.js';
 import * as systemTools from './tools/systemTools.js';
 import * as classTools from './tools/classTools.js';
 import * as enemyTools from './tools/enemyTools.js';
@@ -41,8 +37,12 @@ import * as troopTools from './tools/troopTools.js';
 import * as animationTools from './tools/animationTools.js';
 import * as projectTools from './tools/projectTools.js';
 import * as assetTools from './tools/assetTools.js';
+import { TOOL_DEFINITIONS } from './toolDefinitions.js';
 
 const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
+
+// Single-flight queue for tool executions (see CallTool handler)
+var toolCallQueue: Promise<void> = Promise.resolve();
 
 // ─── Project Context & Validation Functions ───
 
@@ -179,8 +179,9 @@ async function validateMap(projectPath: string, mapId: number) {
         if (cmd.code === 126 && cmd.parameters && cmd.parameters.length >= 1 && cmd.parameters[0] === 0) {
           issues.push({ type: 'null_item_ref', event: ev.id, eventName: ev.name, page: pi, cmdIndex: ci, message: 'Change Item with itemId=0 (null) in event "' + ev.name + '"' });
         }
-        if (cmd.code === 123 && cmd.parameters && cmd.parameters[1] === 0) {
-          issues.push({ type: 'self_switch_off', event: ev.id, eventName: ev.name, page: pi, cmdIndex: ci, message: 'Self Switch set to OFF (0) instead of ON (1) in event "' + ev.name + '" - events may not lock properly' });
+        // MV's Game_Interpreter.command123 treats parameters[1] === 0 as ON, 1 as OFF
+        if (cmd.code === 123 && cmd.parameters && cmd.parameters[1] === 1) {
+          issues.push({ type: 'self_switch_off', event: ev.id, eventName: ev.name, page: pi, cmdIndex: ci, message: 'Self Switch set to OFF (value 1) in event "' + ev.name + '" - if this page should lock the event, use ON (value 0)' });
         }
         if (cmd.code === 201 && cmd.parameters && cmd.parameters.length >= 2 && cmd.parameters[1] === 0) {
           issues.push({ type: 'null_transfer', event: ev.id, eventName: ev.name, page: pi, cmdIndex: ci, message: 'Transfer Player to mapId=0 (nonexistent) in event "' + ev.name + '"' });
@@ -203,1245 +204,6 @@ async function validateMap(projectPath: string, mapId: number) {
   };
 }
 
-// ─── Tool Definitions ───
-// Each tool has: name, description, inputSchema (JSON Schema)
-
-const TOOL_DEFINITIONS = [
-  // ──────── ACTOR TOOLS ────────
-  {
-    name: 'get_actors',
-    description: 'Get all actors from the RPG Maker MV project. Returns the full Actors.json data (excluding null entries).',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_actor',
-    description: 'Get a single actor by ID from the RPG Maker MV project.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: ['number', 'string'], description: 'The actor ID to retrieve' }
-      },
-      required: ['id']
-    }
-  },
-  {
-    name: 'create_actor',
-    description: 'Create a new actor in the RPG Maker MV project with the specified properties.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Actor name' },
-        nickname: { type: 'string', description: 'Actor nickname' },
-        classId: { type: ['number', 'string'], description: 'Class ID' },
-        initialLevel: { type: ['number', 'string'], description: 'Starting level (default 1)' },
-        maxLevel: { type: ['number', 'string'], description: 'Maximum level (default 99)' },
-        characterName: { type: 'string', description: 'Character sprite filename' },
-        characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' },
-        faceName: { type: 'string', description: 'Face graphic filename' },
-        faceIndex: { type: ['number', 'string'], description: 'Face graphic index (0-7)' },
-          battlerName: { type: 'string', description: 'Battler sprite filename' },
-          profile: { type: 'string', description: 'Actor profile text' },
-          traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
-          equips: { type: 'array', description: 'Array of initial equip IDs' },
-          note: { type: 'string', description: 'Note field' }
-          },
-          required: ['name']
-    }
-  },
-  {
-    name: 'update_actor',
-    description: 'Update an existing actor\'s properties (partial update). Only the fields provided will be changed.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: ['number', 'string'], description: 'The actor ID to update' },
-        fields: { type: 'object', description: 'Object containing actor fields to update' }
-      },
-      required: ['id', 'fields']
-    }
-  },
-  {
-    name: 'search_actors',
-    description: 'Search actors by name or nickname (case-insensitive).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search term to match against name or nickname' }
-      },
-      required: ['query']
-    }
-  },
-
-  // ──────── ITEM TOOLS ────────
-  {
-    name: 'get_items',
-    description: 'Get all items from the RPG Maker MV project.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_weapons',
-    description: 'Get all weapons from the RPG Maker MV project.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_armors',
-    description: 'Get all armors from the RPG Maker MV project.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_skills',
-    description: 'Get all skills from the RPG Maker MV project.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'create_item',
-    description: 'Create a new item (consumable: potions, scrolls, etc.). Generates a complete RPG Maker MV item object.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Item name' },
-        description: { type: 'string', description: 'Item description' },
-        price: { type: ['number', 'string'], description: 'Shop price' },
-        consumable: { type: 'boolean', description: 'Whether the item is consumed on use (default true)' },
-        scope: { type: ['number', 'string'], description: 'Target scope: 1=single enemy, 7=all allies, 11=user' },
-        occasion: { type: ['number', 'string'], description: 'When usable: 0=always, 1=battle, 2=menu, 3=never' },
-        animationId: { type: ['number', 'string'], description: 'Animation ID when used' },
-          effects: { type: 'array', description: 'Array of effect objects {code, dataId, value1, value2}' },
-          note: { type: 'string', description: 'Note field for plugins' },
-          iconIndex: { type: ['number', 'string'], description: 'Icon index' },
-          itypeId: { type: ['number', 'string'], description: 'Item type ID' },
-          traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' }
-          },
-          required: ['name']
-          }
-          },
-          {
-          name: 'create_weapon',
-    description: 'Create a new weapon. Generates a complete RPG Maker MV weapon object.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Weapon name' },
-        description: { type: 'string', description: 'Weapon description' },
-        wtypeId: { type: ['number', 'string'], description: 'Weapon type ID' },
-        price: { type: ['number', 'string'], description: 'Shop price' },
-        params: {
-          type: 'array',
-          description: 'Parameter bonuses [mhp, mmp, atk, def, mat, mdf, agi, luk]',
-          items: { type: ['number', 'string'] }
-        },
-          traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
-          note: { type: 'string', description: 'Note field' },
-          iconIndex: { type: ['number', 'string'], description: 'Icon index' },
-          etypeId: { type: ['number', 'string'], description: 'Equip type ID' },
-          animationId: { type: ['number', 'string'], description: 'Animation ID' }
-          },
-          required: ['name']
-          }
-          },
-          {
-          name: 'create_armor',
-    description: 'Create a new armor. Generates a complete RPG Maker MV armor object.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Armor name' },
-        description: { type: 'string', description: 'Armor description' },
-        atypeId: { type: ['number', 'string'], description: 'Armor type ID' },
-        price: { type: ['number', 'string'], description: 'Shop price' },
-        params: {
-          type: 'array',
-          description: 'Parameter bonuses [mhp, mmp, atk, def, mat, mdf, agi, luk]',
-          items: { type: ['number', 'string'] }
-        },
-        traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
-          etypeId: { type: ['number', 'string'], description: 'Equip type: 2=shield, 3=head, 4=body, 5=accessory' },
-          note: { type: 'string', description: 'Note field' },
-          iconIndex: { type: ['number', 'string'], description: 'Icon index' }
-          },
-          required: ['name']
-          }
-          },
-          {
-          name: 'update_item',
-    description: 'Update an existing item, weapon, or armor by ID (partial update).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: ['number', 'string'], description: 'The item/weapon/armor ID to update' },
-        type: { type: 'string', description: 'Type: "item", "weapon", or "armor"', enum: ['item', 'weapon', 'armor'] },
-        fields: { type: 'object', description: 'Fields to update' }
-      },
-      required: ['id', 'type', 'fields']
-    }
-  },
-  {
-    name: 'search_items',
-    description: 'Search items, weapons, or armors by name or description (case-insensitive).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search term' },
-        type: { type: 'string', description: 'Type: "item", "weapon", or "armor" (default "item")', enum: ['item', 'weapon', 'armor'] }
-      },
-      required: ['query']
-    }
-  },
-
-  // ──────── SKILL TOOLS ────────
-  {
-    name: 'get_skill',
-    description: 'Get a single skill by ID.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: ['number', 'string'], description: 'The skill ID' }
-      },
-      required: ['id']
-    }
-  },
-  {
-    name: 'get_all_skills',
-    description: 'Get all skills from the RPG Maker MV project.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'create_skill',
-    description: 'Create a new skill with full control over all properties including damage, effects, etc.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Skill name' },
-        description: { type: 'string', description: 'Skill description' },
-        mpCost: { type: ['number', 'string'], description: 'MP cost' },
-        tpCost: { type: ['number', 'string'], description: 'TP cost' },
-        scope: { type: ['number', 'string'], description: 'Target scope: 1=single enemy, 2=all enemies, 7=all allies, 11=user' },
-        occasion: { type: ['number', 'string'], description: 'When usable: 0=always, 1=battle, 2=menu, 3=never' },
-        animationId: { type: ['number', 'string'], description: 'Animation ID' },
-        damage: {
-          type: 'object',
-          description: 'Damage configuration: {type, elementId, formula, variance, critical}',
-          properties: {
-            type: { type: ['number', 'string'], description: '0=none, 1=HP damage, 2=MP damage, 3=HP recover, 4=MP recover, 5=MP drain' },
-            elementId: { type: ['number', 'string'], description: 'Element: 0=none, 2=fire, 3=ice, 4=thunder, etc.' },
-            formula: { type: 'string', description: 'Damage formula (e.g. "a.mat * 4 - b.mdf * 2")' },
-            variance: { type: ['number', 'string'], description: 'Variance percentage (0-100, default 20)' },
-            critical: { type: 'boolean', description: 'Can critical hit (default false)' }
-          }
-        },
-          effects: { type: 'array', description: 'Array of effect objects {code, dataId, value1, value2}' },
-          note: { type: 'string', description: 'Note field' },
-          iconIndex: { type: ['number', 'string'], description: 'Icon index' },
-          stypeId: { type: ['number', 'string'], description: 'Skill type ID' },
-          hitType: { type: ['number', 'string'], description: 'Hit type: 0=certain, 1=physical, 2=magical' },
-          speed: { type: ['number', 'string'], description: 'Speed correction' },
-          successRate: { type: ['number', 'string'], description: 'Success rate (default 100)' },
-          repeats: { type: ['number', 'string'], description: 'Number of repeats (default 1)' },
-          tpGain: { type: ['number', 'string'], description: 'TP gained (default 0)' },
-          message1: { type: 'string', description: 'Message line 1 when used' },
-          message2: { type: 'string', description: 'Message line 2 when used' },
-          requiredWtypeId1: { type: ['number', 'string'], description: 'Required weapon type ID 1' },
-          requiredWtypeId2: { type: ['number', 'string'], description: 'Required weapon type ID 2' },
-          messageType: { type: ['number', 'string'], description: 'Message type' },
-          traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' }
-          },
-          required: ['name']
-    }
-  },
-  {
-    name: 'create_damage_skill',
-    description: 'Create a damage-dealing skill (simplified). Sets damage type to HP damage automatically.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Skill name' },
-        mpCost: { type: ['number', 'string'], description: 'MP cost' },
-        scope: { type: ['number', 'string'], description: 'Target scope: 1=single enemy, 2=all enemies' },
-        formula: { type: 'string', description: 'Damage formula (e.g. "a.mat * 4 - b.mdf * 2")' },
-        element: { type: ['number', 'string'], description: 'Element ID: 0=none, 2=fire, 3=ice, 4=thunder (default 0)' },
-        animationId: { type: ['number', 'string'], description: 'Animation ID (default 1)' }
-      },
-      required: ['name', 'mpCost', 'scope', 'formula']
-    }
-  },
-  {
-    name: 'create_healing_skill',
-    description: 'Create a healing skill (simplified). Sets damage type to HP recover automatically.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Skill name' },
-        mpCost: { type: ['number', 'string'], description: 'MP cost' },
-        scope: { type: ['number', 'string'], description: 'Target scope: 7=all allies, 11=user' },
-        formula: { type: 'string', description: 'Healing formula (e.g. "a.mat * 3 + 100")' },
-        animationId: { type: ['number', 'string'], description: 'Animation ID (default 47)' }
-      },
-      required: ['name', 'mpCost', 'scope', 'formula']
-    }
-  },
-  {
-    name: 'create_buff_skill',
-    description: 'Create a buff skill (simplified). Adds a buff effect to a parameter for a number of turns.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Skill name' },
-        mpCost: { type: ['number', 'string'], description: 'MP cost' },
-        scope: { type: ['number', 'string'], description: 'Target scope: 7=all allies, 11=user' },
-        paramId: { type: ['number', 'string'], description: 'Parameter to buff: 0=MaxHP, 1=MaxMP, 2=ATK, 3=DEF, 4=MAT, 5=MDF, 6=AGI, 7=LUK' },
-        turns: { type: ['number', 'string'], description: 'Number of turns the buff lasts' }
-      },
-      required: ['name', 'mpCost', 'scope', 'paramId', 'turns']
-    }
-  },
-  {
-    name: 'create_state_skill',
-    description: 'Create a state-inflicting skill (simplified). Adds a state effect like poison, sleep, etc.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Skill name' },
-        mpCost: { type: ['number', 'string'], description: 'MP cost' },
-        scope: { type: ['number', 'string'], description: 'Target scope: 1=single enemy, 2=all enemies' },
-        stateId: { type: ['number', 'string'], description: 'State ID: 4=poison, 5=blind, 6=silence, 8=confusion, 9=sleep' },
-        chance: { type: ['number', 'string'], description: 'Success chance (0.0 to 1.0)' }
-      },
-      required: ['name', 'mpCost', 'scope', 'stateId', 'chance']
-    }
-  },
-  {
-    name: 'update_skill',
-    description: 'Update an existing skill\'s properties (partial update).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: ['number', 'string'], description: 'The skill ID to update' },
-        fields: { type: 'object', description: 'Fields to update' }
-      },
-      required: ['id', 'fields']
-    }
-  },
-  {
-    name: 'search_skills',
-    description: 'Search skills by name or description (case-insensitive).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search term' }
-      },
-      required: ['query']
-    }
-  },
-
-  // ──────── MAP TOOLS ────────
-  {
-    name: 'get_map_infos',
-    description: 'Get information about all maps in the project (MapInfos.json). Returns the map tree structure.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_map',
-    description: 'Get full map data by ID including events, tiles, and settings.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID (e.g. 1 for Map001.json)' }
-      },
-      required: ['mapId']
-    }
-  },
-  {
-    name: 'get_map_events',
-    description: 'Get all events from a specific map.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' }
-      },
-      required: ['mapId']
-    }
-  },
-  {
-    name: 'get_map_event',
-    description: 'Get a specific event from a map by event ID.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' },
-        eventId: { type: ['number', 'string'], description: 'The event ID' }
-      },
-      required: ['mapId', 'eventId']
-    }
-  },
-  {
-    name: 'create_map',
-    description: 'Create a new map with specified dimensions and properties. Optionally generates a tile layout by theme. When a tilesetId is provided with a theme, uses the enhanced V2 generator that reads actual tileset tile IDs for coherent, beautiful maps with proper shadow/region layers.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Map name as shown in the editor' },
-        width: { type: ['number', 'string'], description: 'Map width in tiles (default 17)' },
-        height: { type: ['number', 'string'], description: 'Map height in tiles (default 13)' },
-        tilesetId: { type: ['number', 'string'], description: 'Tileset ID (default 1)' },
-        bgmName: { type: 'string', description: 'BGM filename to autoplay' },
-        displayName: { type: 'string', description: 'Display name shown to the player' },
-        note: { type: 'string', description: 'Note field for plugin metadata' },
-        theme: {
-          type: 'string',
-          description: 'Tile layout theme. When a tilesetId is set, the generator uses the tileset\'s actual tiles (via scan_project_assets) for coherent, beautiful maps. Themes: forest, dungeon, town, castle, cave, village, swamp, desert, ruins, interior, beach',
-          enum: ['forest', 'dungeon', 'town', 'castle', 'cave', 'village', 'swamp', 'desert', 'ruins', 'interior', 'beach']
-        }
-      },
-      required: []
-    }
-  },
-  {
-    name: 'fill_map_layer',
-    description: 'Fill an entire tile layer of a map with a specific tile ID. Useful for setting base terrain.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' },
-        layer: { type: ['number', 'string'], description: 'Layer index (0-5): 0-1=ground, 2-3=upper, 4=shadow, 5=region' },
-        tileId: { type: ['number', 'string'], description: 'Tile ID to fill with (0=clear)' }
-      },
-      required: ['mapId', 'layer', 'tileId']
-    }
-  },
-  {
-    name: 'create_map_event',
-    description: 'Create a new event on a map with specified position, name, trigger, and optional pages.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' },
-        x: { type: ['number', 'string'], description: 'X position on the map' },
-        y: { type: ['number', 'string'], description: 'Y position on the map' },
-        name: { type: 'string', description: 'Event name' },
-        trigger: { type: ['number', 'string'], description: 'Trigger: 0=action button, 1=player touch, 2=event touch, 3=autorun, 4=parallel' },
-        pages: { type: 'array', description: 'Array of event page objects (optional)' }
-      },
-      required: ['mapId', 'x', 'y', 'name']
-    }
-},
-{
-  name: 'generate_map_v3',
-  description: 'Generate a new map using the V3 procedural generator with Perlin noise, BSP dungeon, cellular automata caves. Supports 21 themes: forest, town, village, castle, dungeon, cave, beach, desert, swamp, ruins, interior, snow, harbor, volcano, sewer, fortress, magic_forest, magic_interior, space_interior, space_exterior, world. Generates events automatically (NPCs, chests, bosses, transfers). Returns mapId and seed used.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'Map name for MapInfos' },
-      displayName: { type: 'string', description: 'Display name shown to player' },
-      width: { type: ['number', 'string'], description: 'Map width in tiles (default 30)' },
-      height: { type: ['number', 'string'], description: 'Map height in tiles (default 25)' },
-      tilesetId: { type: ['number', 'string'], description: 'Tileset ID (1=Overworld,2=Outside,3=Inside,4=Dungeon,5=SF Outside,6=SF Inside,7=Magic Exterior,8=Space Interior)' },
-      theme: { type: 'string', description: 'Theme: forest, town, village, castle, dungeon, cave, beach, desert, swamp, ruins, interior, snow, harbor, volcano, sewer, fortress, magic_forest, magic_interior, space_interior, space_exterior, world' },
-      seed: { type: ['number', 'string'], description: 'Random seed (omit for random). Same seed = same map.' },
-      addEvents: { type: 'boolean', description: 'Generate events automatically (default true)' },
-      parentId: { type: ['number', 'string'], description: 'Parent folder ID in map tree (0=root)' }
-    },
-    required: ['theme']
-  }
-},
-{
-  name: 'generate_map_batch',
-  description: 'Generate multiple maps in a single call. Each entry specifies theme, size, tilesetId, name. Returns all mapIds for interconnection.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      batch: {
-        type: 'array',
-        description: 'Array of map specs: [{key, name, theme, width, height, tilesetId, seed, parentId}]',
-        items: {
-          type: 'object',
-          properties: {
-            key: { type: 'string', description: 'Reference key for connect_maps later' },
-            name: { type: 'string', description: 'Map name' },
-            theme: { type: 'string', description: 'Theme name' },
-            width: { type: ['number', 'string'] },
-            height: { type: ['number', 'string'] },
-            tilesetId: { type: ['number', 'string'] },
-            seed: { type: ['number', 'string'] },
-            parentId: { type: ['number', 'string'] }
-          }
-        }
-      }
-    },
-    required: ['batch']
-  }
-},
-{
-  name: 'connect_maps',
-  description: 'Create bidirectional transfer events between two maps. Player touch events at specified positions.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      mapIdA: { type: ['number', 'string'], description: 'First map ID' },
-      mapIdB: { type: ['number', 'string'], description: 'Second map ID' },
-      posA: { type: 'object', description: 'Position on map A: {x, y, trigger}', properties: { x: { type: ['number', 'string'] }, y: { type: ['number', 'string'] }, trigger: { type: ['number', 'string'] } } },
-      posB: { type: 'object', description: 'Position on map B: {x, y, trigger}', properties: { x: { type: ['number', 'string'] }, y: { type: ['number', 'string'] }, trigger: { type: ['number', 'string'] } } }
-    },
-    required: ['mapIdA', 'mapIdB', 'posA', 'posB']
-  }
-},
-{
-  name: 'populate_map_events',
-  description: 'Add multiple events of a type (npc, chest, boss) to an existing map at random positions.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      mapId: { type: ['number', 'string'], description: 'Map ID' },
-      eventType: { type: 'string', description: 'Event type: npc, chest, boss' },
-      count: { type: ['number', 'string'], description: 'Number of events to add (default 3)' },
-      opts: { type: 'object', description: 'Options: {name, troopId, x, y}' }
-    },
-    required: ['mapId', 'eventType']
-  }
-},
-{
-  name: 'set_map_display_names',
-  description: 'Set display names for multiple maps at once. Display name is shown to the player during gameplay.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      names: { type: 'array', description: 'Array of {mapId, name} objects', items: { type: 'object', properties: { mapId: { type: ['number', 'string'] }, name: { type: 'string' } } } }
-    },
-    required: ['names']
-  }
-},
-{
-  name: 'organize_map_tree',
-  description: 'Organize maps into folders by setting parentId. Creates a hierarchy in the RPG Maker editor map tree.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      folders: { type: 'array', description: 'Array of {mapId, parentId} objects. parentId=0 means root level.', items: { type: 'object', properties: { mapId: { type: ['number', 'string'] }, parentId: { type: ['number', 'string'] } } } }
-    },
-    required: ['folders']
-  }
-},
-{
-  name: 'update_map_event',
-    description: 'Update an existing map event\'s properties (partial update).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' },
-        eventId: { type: ['number', 'string'], description: 'The event ID to update' },
-        fields: { type: 'object', description: 'Fields to update (e.g. name, x, y, pages)' }
-      },
-      required: ['mapId', 'eventId', 'fields']
-    }
-  },
-  {
-    name: 'add_event_command',
-    description: 'Add an event command to a specific page of an event. Command is inserted before the page terminator (code 0).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' },
-        eventId: { type: ['number', 'string'], description: 'The event ID (number or numeric string)' },
-        pageIndex: { type: ['number', 'string'], description: 'Page index (0-based)' },
-        command: {
-          type: 'object',
-          description: 'The event command object: {code, indent, parameters}',
-          properties: {
-            code: { type: ['number', 'string'], description: 'MV event command code' },
-            indent: { type: ['number', 'string'], description: 'Indent level (default 0)' },
-            parameters: { type: 'array', description: 'Command parameters' }
-          },
-          required: ['code', 'parameters']
-        }
-      },
-      required: ['mapId', 'eventId', 'command']
-    }
-  },
-  {
-    name: 'create_npc',
-    description: 'HIGH LEVEL: Create an NPC with dialogue on a map. Produces a 2-page event: Page 1 has dialogue triggered by Action Button, Page 2 shows "already talked" when Self Switch A is ON.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' },
-        x: { type: ['number', 'string'], description: 'X position' },
-        y: { type: ['number', 'string'], description: 'Y position' },
-        name: { type: 'string', description: 'NPC name' },
-        dialogues: {
-          type: 'array',
-          description: 'Array of dialogue strings. Each becomes a Show Text command.',
-          items: { type: 'string' }
-        },
-        characterName: { type: 'string', description: 'Character sprite filename' },
-        characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' }
-      },
-      required: ['mapId', 'x', 'y', 'name', 'dialogues']
-    }
-  },
-  {
-    name: 'create_chest',
-    description: 'HIGH LEVEL: Create a chest event on a map. Produces a 2-page event: Page 1 gives items and activates Self Switch A, Page 2 shows "already opened" when Self Switch A is ON.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' },
-        x: { type: ['number', 'string'], description: 'X position' },
-        y: { type: ['number', 'string'], description: 'Y position' },
-        items: {
-          type: 'array',
-          description: 'Array of items to give: {type: "item"|"weapon"|"armor", id: number, amount: number}',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string', description: '"item", "weapon", or "armor"' },
-              id: { type: ['number', 'string'], description: 'Item/weapon/armor ID' },
-              amount: { type: ['number', 'string'], description: 'Quantity (default 1)' }
-            }
-          }
-        },
-        characterName: { type: 'string', description: 'Chest sprite filename (default "Chest")' },
-        characterIndex: { type: ['number', 'string'], description: 'Chest sprite index (default 0)' }
-      },
-      required: ['mapId', 'x', 'y', 'items']
-    }
-  },
-  {
-    name: 'create_teleport_event',
-    description: 'HIGH LEVEL: Create a teleport event that transfers the player to another map position.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The current map ID' },
-        x: { type: ['number', 'string'], description: 'X position on current map' },
-        y: { type: ['number', 'string'], description: 'Y position on current map' },
-        destMapId: { type: ['number', 'string'], description: 'Destination map ID' },
-        destX: { type: ['number', 'string'], description: 'Destination X coordinate' },
-        destY: { type: ['number', 'string'], description: 'Destination Y coordinate' },
-        trigger: { type: ['number', 'string'], description: 'Trigger: 0=action button (doors), 1=player touch (walk-on, default)' }
-      },
-      required: ['mapId', 'x', 'y', 'destMapId', 'destX', 'destY']
-    }
-  },
-  {
-    name: 'search_map_events',
-    description: 'Search map events by name (case-insensitive).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'The map ID' },
-        query: { type: 'string', description: 'Search term' }
-      },
-      required: ['mapId', 'query']
-    }
-  },
-
-  // ──────── SYSTEM TOOLS ────────
-  {
-    name: 'get_system',
-    description: 'Get the full system data from System.json (game title, switches, variables, starting position, etc.).',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_switches',
-    description: 'Get all game switch names from the project.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_variables',
-    description: 'Get all game variable names from the project.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'set_switch_name',
-    description: 'Set a switch name by ID.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: ['number', 'string'], description: 'Switch ID (1-based)' },
-        name: { type: 'string', description: 'New name for the switch' }
-      },
-      required: ['id', 'name']
-    }
-  },
-  {
-    name: 'set_variable_name',
-    description: 'Set a variable name by ID.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: ['number', 'string'], description: 'Variable ID (1-based)' },
-        name: { type: 'string', description: 'New name for the variable' }
-      },
-      required: ['id', 'name']
-    }
-  },
-  {
-    name: 'get_game_title',
-    description: 'Get the game title.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'update_game_title',
-    description: 'Update the game title.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', description: 'New game title' }
-      },
-      required: ['title']
-    }
-  },
-  {
-    name: 'update_starting_position',
-    description: 'Update the player starting position (map ID and coordinates).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mapId: { type: ['number', 'string'], description: 'Starting map ID' },
-        x: { type: ['number', 'string'], description: 'Starting X coordinate' },
-        y: { type: ['number', 'string'], description: 'Starting Y coordinate' }
-      },
-      required: ['mapId', 'x', 'y']
-    }
-  },
-
-  // ──────── CLASS TOOLS ────────
-{
-  name: 'get_classes',
-  description: 'Get all classes from the RPG Maker MV project. Returns all non-null entries from Classes.json.',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'get_class',
-  description: 'Get a single class by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'The class ID' } }, required: ['id'] }
-},
-{
-  name: 'create_class',
-  description: 'Create a new class with the specified properties. Classes define skill learning, parameters, and traits for actors.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'Class name' },
-      params: { type: 'array', description: 'Base parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: ['number', 'string'] } },
-      expParams: { type: 'array', description: 'EXP curve [base, inflation, correction, max level]', items: { type: ['number', 'string'] } },
-      learnings: { type: 'array', description: 'Array of {level, skillId} learning entries' },
-      traits: { type: 'array', description: 'Array of trait objects {code, dataId, value}' },
-      note: { type: 'string', description: 'Note field' }
-    },
-    required: ['name']
-  }
-},
-{
-  name: 'update_class',
-  description: 'Update an existing class (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Class ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
-},
-{
-  name: 'search_classes',
-  description: 'Search classes by name (case-insensitive).',
-  inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Search term' } }, required: ['query'] }
-},
-{
-  name: 'delete_class',
-  description: 'Delete a class by ID (sets entry to null).',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Class ID to delete' } }, required: ['id'] }
-},
-// ──────── ENEMY TOOLS ────────
-{
-  name: 'get_enemies',
-  description: 'Get all enemies from the RPG Maker MV project.',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'get_enemy',
-  description: 'Get a single enemy by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Enemy ID' } }, required: ['id'] }
-},
-{
-  name: 'create_enemy',
-  description: 'Create a new enemy with the specified properties.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'Enemy name' },
-      battlerName: { type: 'string', description: 'Battler sprite filename' },
-      battlerHue: { type: ['number', 'string'], description: 'Battler hue (0-360)' },
-      exp: { type: ['number', 'string'], description: 'EXP given on defeat' },
-      gold: { type: ['number', 'string'], description: 'Gold given on defeat' },
-      params: { type: 'array', description: 'Parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: ['number', 'string'] } },
-      dropItems: { type: 'array', description: 'Drop items array [{kind, dataId, denominator}]' },
-      actions: { type: 'array', description: 'Action patterns [{skillId, conditionType, conditionParam1, conditionParam2, rating}]' },
-      traits: { type: 'array', description: 'Trait objects {code, dataId, value}' }
-    },
-    required: ['name']
-  }
-},
-{
-  name: 'create_boss_enemy',
-  description: 'Create a boss enemy with higher stats and special attack pattern. Simplified helper.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'Boss name' },
-      battlerName: { type: 'string', description: 'Battler sprite filename' },
-      exp: { type: ['number', 'string'], description: 'EXP given (default 500)' },
-      gold: { type: ['number', 'string'], description: 'Gold given (default 200)' },
-      params: { type: 'array', description: 'Parameters [mhp, mmp, atk, def, mat, mdf, agi, luk]', items: { type: ['number', 'string'] } },
-      specialSkillId: { type: ['number', 'string'], description: 'Special skill ID for boss attack pattern' },
-      actions: { type: 'array', description: 'Custom action patterns' }
-    },
-    required: ['name']
-  }
-},
-{
-  name: 'update_enemy',
-  description: 'Update an existing enemy (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Enemy ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
-},
-{
-  name: 'search_enemies',
-  description: 'Search enemies by name (case-insensitive).',
-  inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Search term' } }, required: ['query'] }
-},
-{
-  name: 'delete_enemy',
-  description: 'Delete an enemy by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Enemy ID to delete' } }, required: ['id'] }
-},
-// ──────── STATE TOOLS ────────
-{
-  name: 'get_states',
-  description: 'Get all states from the RPG Maker MV project (poison, sleep, confusion, etc.).',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'get_state',
-  description: 'Get a single state by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'State ID' } }, required: ['id'] }
-},
-{
-  name: 'create_state',
-  description: 'Create a new state (poison, sleep, confusion, buff, etc.).',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'State name' },
-      iconIndex: { type: ['number', 'string'], description: 'Icon index' },
-      restriction: { type: ['number', 'string'], description: 'Restriction: 0=none, 1=attack enemy, 2=attack ally, 3=attack anyone, 4=cannot move' },
-      priority: { type: ['number', 'string'], description: 'State priority (default 50)' },
-      removeAtBattleEnd: { type: 'boolean', description: 'Remove when battle ends (default false)' },
-      removeByDamage: { type: 'boolean', description: 'Chance to remove when damaged (default false)' },
-      autoRemovalTiming: { type: ['number', 'string'], description: 'Auto remove: 0=none, 1=action end, 2=turn end' },
-      minTurns: { type: ['number', 'string'], description: 'Minimum turns (default 1)' },
-      maxTurns: { type: ['number', 'string'], description: 'Maximum turns (default 5)' },
-      traits: { type: 'array', description: 'Trait objects {code, dataId, value}' },
-      message1: { type: 'string', description: 'Message when applied' },
-      message2: { type: 'string', description: 'Message when remaining' },
-      message3: { type: 'string', description: 'Message when removed' },
-          message4: { type: 'string', description: 'Message on failure' },
-          note: { type: 'string', description: 'Note field' },
-          removeByRestriction: { type: 'boolean', description: 'Remove by restriction (default false)' },
-          stepsToRemove: { type: ['number', 'string'], description: 'Steps to remove (default 100)' }
-          },
-          required: ['name']
-          }
-          },
-          {
-          name: 'update_state',
-  description: 'Update an existing state (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'State ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
-},
-{
-  name: 'search_states',
-  description: 'Search states by name (case-insensitive).',
-  inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Search term' } }, required: ['query'] }
-},
-{
-  name: 'delete_state',
-  description: 'Delete a state by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'State ID to delete' } }, required: ['id'] }
-},
-// ──────── TILESET TOOLS ────────
-{
-  name: 'get_tilesets',
-  description: 'Get all tilesets from the RPG Maker MV project.',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'get_tileset',
-  description: 'Get a single tileset by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Tileset ID' } }, required: ['id'] }
-},
-{
-  name: 'update_tileset',
-  description: 'Update a tileset (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Tileset ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
-},
-
-// ──────── COMMON EVENT TOOLS ────────
-{
-  name: 'get_common_events',
-  description: 'Get all common events from the RPG Maker MV project.',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'create_common_event',
-  description: 'Create a new common event. Trigger types: 0=none, 1=autorun, 2=parallel.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'Common event name' },
-      trigger: { type: ['number', 'string'], description: 'Trigger type: 0=none, 1=autorun, 2=parallel' },
-      switchId: { type: ['number', 'string'], description: 'Switch ID that activates this event (required if trigger>0)' },
-          list: { type: 'array', description: 'Event command list' },
-          note: { type: 'string', description: 'Note field' }
-          },
-          required: ['name']
-          }
-          },
-          {
-          name: 'update_common_event',
-  description: 'Update an existing common event (partial update).',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Common event ID' }, fields: { type: 'object', description: 'Fields to update' } }, required: ['id', 'fields'] }
-},
-{
-  name: 'add_common_event_command',
-  description: 'Add an event command to a common event\'s command list.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: { type: ['number', 'string'], description: 'Common event ID' },
-      command: { type: 'object', description: 'Event command {code, indent, parameters}' }
-    },
-    required: ['id', 'command']
-  }
-},
-// ──────── TROOP TOOLS ────────
-{
-  name: 'get_troops',
-  description: 'Get all troops (enemy groups) from the RPG Maker MV project.',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'get_troop',
-  description: 'Get a single troop by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Troop ID' } }, required: ['id'] }
-},
-{
-  name: 'create_troop',
-  description: 'Create a new troop (enemy group for battle encounters).',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'Troop name' },
-      members: { type: 'array', description: 'Enemy members [{enemyId, x, y}]' }
-    },
-    required: ['name']
-  }
-},
-{
-            name: 'add_enemy_to_troop',
-            description: 'Add an enemy to an existing troop at auto-generated battle position.',
-            inputSchema: {
-                type: 'object',
-                properties: {
-                    troopId: { type: ['number', 'string'], description: 'Troop ID' },
-                    enemyId: { type: ['number', 'string'], description: 'Enemy ID to add' }
-                },
-                required: ['troopId', 'enemyId']
-            }
-        },
-{
-  name: 'create_random_encounter_troop',
-  description: 'Create a troop with specified enemies at auto-generated battle positions. Simplified helper for random encounters.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'Troop name' },
-      enemyIds: { type: 'array', description: 'Array of enemy IDs to include', items: { type: ['number', 'string'] } }
-    },
-    required: ['name', 'enemyIds']
-  }
-},
-// ──────── ANIMATION TOOLS ────────
-{
-  name: 'get_animations',
-  description: 'Get all animations from the RPG Maker MV project.',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'get_animation',
-  description: 'Get a single animation by ID.',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Animation ID' } }, required: ['id'] }
-},
-// ──────── DELETE TOOLS (Actors/Items/Skills) ────────
-{
-  name: 'delete_actor',
-  description: 'Delete an actor by ID (sets entry to null in Actors.json).',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Actor ID to delete' } }, required: ['id'] }
-},
-{
-  name: 'delete_item',
-  description: 'Delete an item, weapon, or armor by ID and type.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: { type: ['number', 'string'], description: 'Item ID to delete' },
-      type: { type: 'string', description: 'Type: "item", "weapon", or "armor"', enum: ['item', 'weapon', 'armor'] }
-    },
-    required: ['id', 'type']
-  }
-},
-{
-  name: 'delete_skill',
-  description: 'Delete a skill by ID (sets entry to null in Skills.json).',
-  inputSchema: { type: 'object', properties: { id: { type: ['number', 'string'], description: 'Skill ID to delete' } }, required: ['id'] }
-},
-// ──────── NEW MAP HELPER TOOLS ────────
-{
-  name: 'delete_map_event',
-  description: 'Delete an event from a map by event ID.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      mapId: { type: ['number', 'string'], description: 'Map ID' },
-      eventId: { type: ['number', 'string'], description: 'Event ID to delete' }
-    },
-    required: ['mapId', 'eventId']
-  }
-},
-{
-  name: 'duplicate_map',
-  description: 'Duplicate an existing map to create a new one with the same tiles and events.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      sourceMapId: { type: ['number', 'string'], description: 'Source map ID to duplicate' },
-      name: { type: 'string', description: 'Name for the new map' },
-      displayName: { type: 'string', description: 'Display name shown to player' }
-    },
-    required: ['sourceMapId', 'name']
-  }
-},
-{
-  name: 'create_shop',
-  description: 'Create a shop event on a map. Uses Shop Processing event commands with a list of goods.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      mapId: { type: ['number', 'string'], description: 'Map ID' },
-      x: { type: ['number', 'string'], description: 'X position' },
-      y: { type: ['number', 'string'], description: 'Y position' },
-      name: { type: 'string', description: 'Event name' },
-      goods: { type: 'array', description: 'Array of [type, itemId, priceType, price]. type: 0=item, 1=weapon, 2=armor. priceType: 0=standard, 1=custom', items: { type: 'array' } },
-      characterName: { type: 'string', description: 'Character sprite filename' },
-      characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' }
-    },
-    required: ['mapId', 'x', 'y', 'name', 'goods']
-  }
-},
-{
-  name: 'create_inn',
-  description: 'Create an inn event on a map. Shows a choice (Yes/No), checks gold, and recovers all if the player can pay.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      mapId: { type: ['number', 'string'], description: 'Map ID' },
-      x: { type: ['number', 'string'], description: 'X position' },
-      y: { type: ['number', 'string'], description: 'Y position' },
-      name: { type: 'string', description: 'Event name' },
-      cost: { type: ['number', 'string'], description: 'Cost to stay at the inn (default 50)' },
-      characterName: { type: 'string', description: 'Character sprite filename' },
-      characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' }
-    },
-    required: ['mapId', 'x', 'y', 'name']
-  }
-},
-{
-  name: 'create_boss_event',
-  description: 'Create a boss battle event on a map. 2-page event: page 1 triggers battle, page 2 (self-switch A) for post-battle. On lose: game over.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      mapId: { type: ['number', 'string'], description: 'Map ID' },
-      x: { type: ['number', 'string'], description: 'X position' },
-      y: { type: ['number', 'string'], description: 'Y position' },
-      name: { type: 'string', description: 'Event name' },
-      troopId: { type: ['number', 'string'], description: 'Troop ID for the boss battle' },
-      characterName: { type: 'string', description: 'Character sprite filename' },
-      characterIndex: { type: ['number', 'string'], description: 'Character sprite index (0-7)' }
-    },
-    required: ['mapId', 'x', 'y', 'name', 'troopId']
-  }
-},
-{
-  name: 'create_puzzle_switch',
-  description: 'Create a puzzle switch and door pair on a map. The switch activates a game switch; the door opens when that switch is ON. Creates 2 events.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      mapId: { type: ['number', 'string'], description: 'Map ID' },
-      switchX: { type: ['number', 'string'], description: 'Switch X position' },
-      switchY: { type: ['number', 'string'], description: 'Switch Y position' },
-      doorX: { type: ['number', 'string'], description: 'Door X position' },
-      doorY: { type: ['number', 'string'], description: 'Door Y position' },
-      gameSwitchId: { type: ['number', 'string'], description: 'Game switch ID to activate' },
-      switchName: { type: 'string', description: 'Switch event name (default "Switch")' },
-      doorName: { type: 'string', description: 'Door event name (default "Door")' }
-    },
-    required: ['mapId', 'switchX', 'switchY', 'doorX', 'doorY', 'gameSwitchId']
-  }
-},
-// ──────── PROJECT TOOLS ────────
-{
-  name: 'get_project_summary',
-  description: 'Get a summary of the current RPG Maker MV project (counts of actors, items, maps, etc.).',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'get_project_context',
-  description: 'Get a complete pre-digested context of the project. Call this FIRST before creating maps, events, or database entries. Returns: tilesets with available tile categories, maps list, actors, items/weapons/armors IDs, switches, variables, and available sprites.',
-  inputSchema: { type: 'object', properties: {}, required: [] }
-},
-{
-  name: 'validate_map',
-  description: 'Validate a map for common errors: invalid tile IDs, wrong layer usage, broken event commands, invalid references to switches/variables/items/troops, missing page terminators. Returns a list of issues found.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      mapId: { type: ['number', 'string'], description: 'Map ID to validate' }
-    },
-    required: ['mapId']
-  }
-},
-{
-  name: 'set_project_path',
-  description: 'Switch the server to a different RPG Maker MV project at runtime. Validates the new path.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      path: { type: 'string', description: 'Absolute path to the new RPG Maker MV project directory' }
-    },
-    required: ['path']
-  }
-},
-// ──────── VISION / IMAGE TOOLS ────────
-  {
-    name: 'analyze_tileset_image',
-    description: 'Analyze a tileset image (base64 PNG) to determine grid dimensions, tile count, rows and columns. Assumes standard RPG Maker MV 48x48 tile size.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        base64PNG: { type: 'string', description: 'Base64-encoded PNG image of a tileset' }
-      },
-      required: ['base64PNG']
-    }
-  },
-  {
-    name: 'read_screenshot',
-    description: 'Analyze a screenshot (base64 PNG) by splitting into 4 quadrants and returning the dominant color (average RGB) of each. Useful for visual reasoning about what\'s on screen.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        base64PNG: { type: 'string', description: 'Base64-encoded PNG screenshot' }
-      },
-      required: ['base64PNG']
-    }
-  },
-  // ──────── ASSET TOOLS ────────
-  {
-    name: 'scan_project_assets',
-    description: 'Scan the project\'s img/ folder and Tilesets.json to build a complete asset index. Returns tileset sheet metadata (dimensions, tile counts, autotile kinds) and categorized available tiles (ground, water, wallSide, wallTop, roof, decoration) for each tileset. Also lists all PNG files in each img/ subdirectory. Use this before creating maps to get tilesetConfig for better tile layouts.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_tile_ids_for_tileset',
-    description: 'Get categorized tile IDs for a specific tileset. Returns tile IDs organized by category: ground, water, wallSide, wallTop, roof, decoration. Each entry includes the tileId, kind index, and description. Use this to pick specific tiles for manual map editing or to understand what tiles a tileset provides.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        tilesetId: { type: ['number', 'string'], description: 'The tileset ID to scan' }
-      },
-      required: ['tilesetId']
-    }
-  },
-  // ──────── VISION AI TOOLS ────────
-  {
-    name: 'analyze_screenshot',
-    description: 'Analyze an image from the RPG Maker MV project using an OpenAI-compatible Vision API. Can analyze: tilesets (tile categories, rows/cols), character sprites (directions, poses), map screenshots (terrain, events, layout), battlers, faces, etc. Returns a detailed textual description. Configure VISION_API_URL, VISION_API_KEY, and VISION_MODEL via environment variables. Works with any OpenAI-compatible vision endpoint (LocalAI, Ollama, NVIDIA, OpenAI, etc.).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        image_path: { type: 'string', description: 'Relative path to the image within the project (e.g. "img/tilesets/Outside.png" or "img/characters/Actor1.png")' },
-        prompt: { type: 'string', description: 'Custom analysis prompt (optional). Default: RPG Maker specific analysis in Spanish.' },
-        resize_max: { type: ['number', 'string'], description: 'Max width in pixels to resize the image before sending (default: 1024, saves tokens)' }
-      },
-      required: ['image_path']
-    }
-  },
-  {
-    name: 'render_map_ascii',
-    description: 'Render an ASCII representation of an RPG Maker MV map. Works offline without any API. Shows tile layout, event positions, and region IDs. Useful when no screenshot is available or you need precise coordinate information.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        map_id: { type: ['number', 'string'], description: 'Map ID to render' },
-        layer: { type: ['number', 'string'], description: 'Tile layer to render (0=ground, 2=upper, default: 0)' },
-        show_events: { type: 'boolean', description: 'Show event positions (default: true)' },
-        show_regions: { type: 'boolean', description: 'Show region IDs (default: false)' }
-      },
-      required: ['map_id']
-    }
-  }
-];
 
 // ─── Tool Execution Handler ───
 // Dispatches tool calls to the appropriate tool module function
@@ -1654,19 +416,13 @@ case 'delete_map_event':
             case 'duplicate_map':
                 return await mapTools.duplicateMap(p, args.sourceMapId, args);
             case 'create_shop':
-                return await mapTools.createShop(
-                    p, args.mapId, args.x, args.y, args.name,
-                    (args.goods || []).filter(function(g: number[]) { return g[0] === 0; }).map(function(g: number[]) { return g[1]; }),
-                    (args.goods || []).filter(function(g: number[]) { return g[0] === 1; }).map(function(g: number[]) { return g[1]; }),
-                    (args.goods || []).filter(function(g: number[]) { return g[0] === 2; }).map(function(g: number[]) { return g[1]; }),
-                    args.characterName, args.characterIndex
-                );
+                return await mapTools.createShop(p, args.mapId, args.x, args.y, args.name, args.goods, args.characterName, args.characterIndex);
             case 'create_inn':
                 return await mapTools.createInn(p, args.mapId, args.x, args.y, args.name, args.cost, args.characterName, args.characterIndex);
             case 'create_boss_event':
                 return await mapTools.createBossEvent(p, args.mapId, args.x, args.y, args.name, args.troopId, args.characterName, args.characterIndex);
             case 'create_puzzle_switch':
-                return await mapTools.createPuzzleSwitch(p, args.mapId, args.switchX, args.switchY, args.gameSwitchId, args.doorX, args.doorY, args.switchName);
+                return await mapTools.createPuzzleSwitch(p, args.mapId, args.switchX, args.switchY, args.doorX, args.doorY, args.gameSwitchId, args.switchName, args.doorName);
 
 // ── Project Tools ──
 case 'get_project_summary':
@@ -1779,7 +535,7 @@ async function readScreenshot(base64PNG: string) {
 // ─── Vision AI Tool Implementations ───
 
 var VISION_API_URL: string = process.env.VISION_API_URL || 'http://127.0.0.1:9999';
-var VISION_API_PATH: string = process.env.VISION_API_PATH || '';
+var VISION_API_PATH: string = process.env.VISION_API_PATH || '/v1/chat/completions';
 
 var VISION_DEFAULT_PROMPT = [
   'Analiza esta imagen de un proyecto RPG Maker MV. Describe detalladamente:',
@@ -1827,63 +583,51 @@ async function analyzeScreenshot(projectPath: string, imagePath: string, customP
     stream: false
   });
 
-  return new Promise(function(resolve, reject) {
-    var parsedUrl = new URL(VISION_API_URL + VISION_API_PATH);
-    var options = {
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || 80,
-      path: parsedUrl.pathname,
+  var endpoint = VISION_API_URL.replace(/\/+$/, '') + VISION_API_PATH;
+  var response;
+  try {
+    response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(requestBody),
         'Authorization': 'Bearer ' + (process.env.VISION_API_KEY || 'sk-proxy')
-      }
-    };
-
-    var req = http.request(options, function(res) {
-      var chunks: Uint8Array[] = [];
-      res.on('data', function(chunk) { chunks.push(chunk); });
-      res.on('end', function() {
-        var body = Buffer.concat(chunks).toString('utf8');
-        try {
-          var data = JSON.parse(body);
-          if (data.error) {
-            reject(new Error('Vision API error: ' + JSON.stringify(data.error)));
-            return;
-          }
-          var content = '';
-          if (data.choices && data.choices[0] && data.choices[0].message) {
-            content = data.choices[0].message.content || '';
-          }
-          var usage = data.usage || {};
-          resolve({
-            image_path: imagePath,
-            analysis: content,
-            model: data.model || 'unknown',
-            tokens_used: {
-              prompt: usage.prompt_tokens || 0,
-              completion: usage.completion_tokens || 0,
-              total: usage.total_tokens || 0
-            }
-          });
-        } catch(e: unknown) {
-          reject(new Error('Failed to parse vision API response: ' + (e instanceof Error ? e.message : String(e)) + ' | body: ' + body.slice(0, 500)));
-        }
-      });
+      },
+      body: requestBody,
+      signal: AbortSignal.timeout(120000)
     });
+  } catch (err) {
+    var msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error('Vision API timeout (120s) at ' + endpoint);
+    }
+    throw new Error('Vision API request failed: ' + msg + '. Is the endpoint at ' + endpoint + ' reachable?');
+  }
 
-    req.on('error', function(err) {
-      reject(new Error('Vision API request failed: ' + err.message + '. Is nvidia-glm-proxy running at ' + VISION_API_URL + '?'));
-    });
-
-    req.setTimeout(120000, function() {
-      req.destroy(new Error('Vision API timeout (120s)'));
-    });
-
-    req.write(requestBody);
-    req.end();
-  });
+  var body = await response.text();
+  var data;
+  try {
+    data = JSON.parse(body);
+  } catch (e: unknown) {
+    throw new Error('Failed to parse vision API response (HTTP ' + response.status + '): ' + body.slice(0, 500));
+  }
+  if (data.error) {
+    throw new Error('Vision API error: ' + JSON.stringify(data.error));
+  }
+  var content = '';
+  if (data.choices && data.choices[0] && data.choices[0].message) {
+    content = data.choices[0].message.content || '';
+  }
+  var usage = data.usage || {};
+  return {
+    image_path: imagePath,
+    analysis: content,
+    model: data.model || 'unknown',
+    tokens_used: {
+      prompt: usage.prompt_tokens || 0,
+      completion: usage.completion_tokens || 0,
+      total: usage.total_tokens || 0
+    }
+  };
 }
 
 async function renderMapAscii(projectPath: string, mapId: number, layer: number, showEvents: boolean, showRegions: boolean) {
@@ -2033,7 +777,7 @@ export async function main() {
   logger.info('Project path: ' + PROJECT_PATH);
 
   const server = new Server(
-    { name: 'rpgmaker-mv-mcp', version: '4.0.0' },
+    { name: 'rpgmaker-mv-mcp', version: '4.1.1' },
     { capabilities: { tools: {} } }
   );
 
@@ -2051,10 +795,10 @@ export async function main() {
       create_map: CreateMapSchema,
       render_map_ascii: RenderMapAsciiSchema,
       create_npc: CreateNpcSchema,
-      create_damage_skill: CreateSkillSchema,
-      create_healing_skill: CreateSkillSchema,
-      create_buff_skill: CreateSkillSchema,
-      create_state_skill: CreateSkillSchema,
+      create_damage_skill: CreateDamageSkillSchema,
+      create_healing_skill: CreateHealingSkillSchema,
+      create_buff_skill: CreateBuffSkillSchema,
+      create_state_skill: CreateStateSkillSchema,
     };
 
     var schema = SCHEMA_MAP[toolName];
@@ -2075,7 +819,13 @@ export async function main() {
         throw new Error('No project path set. Use set_project_path or set RPGMAKER_PROJECT_PATH.');
       }
 
-      var result = await handleToolCall(toolName, args);
+      // Serialize tool executions: the SDK dispatches requests concurrently, and
+      // two tools writing the same data file in parallel interleave their writes
+      // and corrupt the project JSON. Reads are cheap, so everything goes
+      // through one queue for safety.
+      var queuedCall = toolCallQueue.then(function() { return handleToolCall(toolName, args); });
+      toolCallQueue = queuedCall.then(function() { return undefined; }, function() { return undefined; });
+      var result = await queuedCall;
 
       logger.info('Tool call succeeded: ' + toolName);
       return {
@@ -2120,7 +870,7 @@ transport.send = function(message) {
   return originalSend(message);
 };
 await server.connect(transport);
-  logger.info('RPG Maker MV MCP server v4.0.0 running on stdio (' + TOOL_DEFINITIONS.length + ' tools)');
+  logger.info('RPG Maker MV MCP server v4.1.1 running on stdio (' + TOOL_DEFINITIONS.length + ' tools)');
 }
 
 main().catch(function(error) {

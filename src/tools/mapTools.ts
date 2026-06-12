@@ -272,18 +272,23 @@ async function populateMapEvents(projectPath: string, mapId: number, eventType: 
 }
 
 async function setMapDisplayNames(projectPath: string, nameMap: Record<string, unknown>[]) {
-  const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
+  // Sets the player-visible displayName inside each MapNNN.json
+  // (NOT the editor tree name in MapInfos.json — use organize_map_tree/MapInfos for that).
   var updated: unknown[] = [];
+  var skipped: unknown[] = [];
   for (var i = 0; i < nameMap.length; i++) {
     var entry = nameMap[i];
     var id = toNum(entry.mapId, 'mapId in names[' + i + ']');
-    if (id! < mapInfos.length && mapInfos[id!]) {
-      (mapInfos[id!] as Record<string, string>).name = entry.name as string;
-      updated.push({ mapId: id, name: entry.name });
+    try {
+      var map = await getMap(projectPath, id) as RpgMakerMap;
+      map.displayName = entry.name as string;
+      await writeJsonDirect(getMapPath(projectPath, id), map);
+      updated.push({ mapId: id, displayName: entry.name });
+    } catch (_) {
+      skipped.push({ mapId: id, reason: 'map file not found' });
     }
   }
-  await writeJson(projectPath, 'MapInfos.json', mapInfos);
-  return { updated: updated };
+  return { updated: updated, skipped: skipped };
 }
 
 async function organizeMapTree(projectPath: string, folderMap: Record<string, unknown>[]) {
@@ -467,7 +472,8 @@ async function createNpc(projectPath: string, mapId: number, x: number, y: numbe
       page1List.push(msgCommands[i]);
     }
     }
-    page1List.push({ code: 123, indent: 0, parameters: ['A', 1] });
+    // Self Switch A = ON (MV: parameters[1] === 0 means ON) so page 2 takes over
+    page1List.push({ code: 123, indent: 0, parameters: ['A', 0] });
     // Add the page terminator (code 0 = End of Event Processing)
     page1List.push({ code: 0, indent: 0, parameters: [] });
 
@@ -560,7 +566,7 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
   const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const newId = nextId(map.events);
 
-  characterName = characterName || 'Chest';
+  characterName = characterName || '!Chest';
   characterIndex = characterIndex || 0;
 
   var page1List: EventCommand[] = [];
@@ -856,24 +862,27 @@ async function duplicateMap(projectPath: string, sourceMapId: number, params: Re
   return { mapId: newMapId, map: newMap };
 }
 
-async function createShop(projectPath: string, mapId: number, x: number, y: number, name: string, itemIds: number[], weaponIds: number[], armorIds: number[], characterName: string, characterIndex: number) {
+async function createShop(projectPath: string, mapId: number, x: number, y: number, name: string, goods: unknown[][], characterName: string, characterIndex: number) {
   var numMapId = toNum(mapId, 'mapId');
   const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const newId = nextId(map.events);
   characterName = characterName || '';
   characterIndex = characterIndex || 0;
-  var itemList = (itemIds || []).map(function(id: number) { return [0, id, 0, 0]; });
-  var weaponList = (weaponIds || []).map(function(id: number) { return [1, id, 0, 0]; });
-  var armorList = (armorIds || []).map(function(id: number) { return [2, id, 0, 0]; });
-  var goods = itemList.concat(weaponList).concat(armorList);
-    if (goods.length === 0) goods = [[0, 1, 0, 0]];
-    var pageList = [
-        { code: 302, indent: 0, parameters: [0, 1] },
-    ];
-    for (var i = 0; i < goods.length; i++) {
-        pageList.push({ code: 605, indent: 0, parameters: goods[i] });
-    }
-    pageList.push({ code: 0, indent: 0, parameters: [] });
+  // Each good is [type(0=item,1=weapon,2=armor), id, priceType(0=standard,1=custom), price]
+  var normalized = (goods || []).map(function(g: unknown[]) {
+    return [toNum(g[0], 'goods type'), toNum(g[1], 'goods id'), g[2] !== undefined ? toNum(g[2], 'goods priceType') : 0, g[3] !== undefined ? toNum(g[3], 'goods price') : 0];
+  });
+  if (normalized.length === 0) throw new Error('create_shop requires at least one entry in goods');
+  // MV Shop Processing: command 302 carries the FIRST good (plus purchaseOnly flag);
+  // each additional good is a 605 command following it.
+  var first = normalized[0];
+  var pageList = [
+    { code: 302, indent: 0, parameters: [first[0], first[1], first[2], first[3], false] as unknown[] },
+  ];
+  for (var i = 1; i < normalized.length; i++) {
+    pageList.push({ code: 605, indent: 0, parameters: normalized[i] });
+  }
+  pageList.push({ code: 0, indent: 0, parameters: [] });
   var page1 = {
     conditions: createDefaultConditions(), directionFix: true,
     image: { characterIndex: characterIndex, characterName: characterName, direction: 2, pattern: 1, tileId: 0 },
@@ -943,7 +952,8 @@ async function createBossEvent(projectPath: string, mapId: number, x: number, y:
   var page1List: EventCommand[] = [
   { code: 301, indent: 0, parameters: [0, numTroopId, 0, 1] },
         { code: 601, indent: 0, parameters: [] },
-        { code: 123, indent: 1, parameters: ['A', 1] },
+        // Self Switch A = ON (value 0) on victory so the boss stays defeated
+        { code: 123, indent: 1, parameters: ['A', 0] },
         { code: 0, indent: 1, parameters: [] },
         { code: 602, indent: 0, parameters: [] },
         { code: 0, indent: 1, parameters: [] },
@@ -976,9 +986,9 @@ async function createBossEvent(projectPath: string, mapId: number, x: number, y:
   return event;
 }
 
-async function createPuzzleSwitch(projectPath: string, mapId: number, x: number, y: number, switchId: number, doorX: number, doorY: number, switchCharacterName: string) {
+async function createPuzzleSwitch(projectPath: string, mapId: number, x: number, y: number, doorX: number, doorY: number, switchId: number, switchName?: string, doorName?: string) {
   var numMapId = toNum(mapId, 'mapId');
-  var numSwitchId = toNum(switchId, 'switchId');
+  var numSwitchId = toNum(switchId, 'gameSwitchId');
   const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   const switchId2 = nextId(map.events);
   var switchPage1List = [
@@ -990,7 +1000,7 @@ async function createPuzzleSwitch(projectPath: string, mapId: number, x: number,
   ];
   var switchPage1 = {
     conditions: createDefaultConditions(), directionFix: true,
-    image: { characterIndex: 0, characterName: switchCharacterName || '', direction: 2, pattern: 0, tileId: 0 },
+    image: { characterIndex: 0, characterName: '', direction: 2, pattern: 0, tileId: 0 },
     list: switchPage1List, moveFrequency: 3,
     moveRoute: { list: [{ code: 0, parameters: [] }], repeat: true, skippable: false, wait: false },
     moveSpeed: 2, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: false
@@ -998,13 +1008,13 @@ async function createPuzzleSwitch(projectPath: string, mapId: number, x: number,
   var switchPage2 = {
     conditions: Object.assign({}, createDefaultConditions(), { selfSwitchCh: 'A', selfSwitchValid: true }),
     directionFix: true,
-    image: { characterIndex: 0, characterName: switchCharacterName || '', direction: 2, pattern: 1, tileId: 0 },
+    image: { characterIndex: 0, characterName: '', direction: 2, pattern: 1, tileId: 0 },
     list: [{ code: 0, indent: 0, parameters: [] }],
     moveFrequency: 3,
     moveRoute: { list: [{ code: 0, parameters: [] }], repeat: true, skippable: false, wait: false },
     moveSpeed: 2, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: false
   };
-  var switchEvent = { id: switchId2, name: 'Switch', note: '', x: x, y: y, pages: [switchPage1, switchPage2] };
+  var switchEvent = { id: switchId2, name: switchName || 'Switch', note: '', x: x, y: y, pages: [switchPage1, switchPage2] };
   while (map.events.length <= switchId2) map.events.push(null);
   map.events[switchId2] = switchEvent;
   var doorId = nextId(map.events);
@@ -1027,7 +1037,8 @@ async function createPuzzleSwitch(projectPath: string, mapId: number, x: number,
         list: [
         { code: 205, indent: 0, parameters: [-1, { list: [{ code: 44, parameters: [] }, { code: 0, parameters: [] }], repeat: false, skippable: true, wait: true }] },
         { code: 505, indent: 0, parameters: [{ code: 44, parameters: [] }] },
-        { code: 123, indent: 0, parameters: ['A', 1] },
+        // Self Switch A = ON (value 0) so the door stays open (page 3)
+        { code: 123, indent: 0, parameters: ['A', 0] },
         { code: 0, indent: 0, parameters: [] }
     ],
     moveFrequency: 3,
@@ -1043,7 +1054,7 @@ async function createPuzzleSwitch(projectPath: string, mapId: number, x: number,
     moveRoute: { list: [{ code: 0, parameters: [] }], repeat: true, skippable: false, wait: false },
     moveSpeed: 2, moveType: 0, priorityType: 0, stepAnime: false, through: true, trigger: 0, walkAnime: false
   };
-  var doorEvent = { id: doorId, name: 'Door', note: '', x: doorX, y: doorY, pages: [doorPage1, doorPage2, doorPage3] };
+  var doorEvent = { id: doorId, name: doorName || 'Door', note: '', x: doorX, y: doorY, pages: [doorPage1, doorPage2, doorPage3] };
   while (map.events.length <= doorId) map.events.push(null);
   map.events[doorId] = doorEvent;
   const mapPath = getMapPath(projectPath, numMapId);

@@ -1,5 +1,33 @@
 # Changelog
 
+## [4.1.1] - 2026-06-11
+
+### Fixed
+- **Zod validation key mismatch** that silently broke 6 tools: schemas used snake_case (`map_id`, `mp_cost`) while tools send camelCase, and Zod strips unknown keys. `create_npc` always failed with "map_id: Required"; `create_damage_skill`/`create_healing_skill`/`create_buff_skill`/`create_state_skill` dropped `mpCost`/`formula`/`paramId`/`stateId` and produced corrupt skills; `create_map` ignored `tilesetId`/`bgmName`/`displayName`. Schemas rewritten in camelCase with `z.coerce.number()` (numeric strings are now coerced before hitting the data files); each skill helper has its own schema
+- **Self Switch commands inverted** (MV treats `parameters[1] === 0` as ON): `create_npc` page 2 never activated, bosses from `create_boss_event` reappeared after defeat, the `create_puzzle_switch` door re-locked itself. All now write ON correctly; `validate_map`'s self-switch check had the same inversion and flagged correct events
+- **`create_shop` always sold item #1**: the Shop Processing command (302) carries the first good in its own parameters and it was hardcoded `[0, 1]`; custom prices (`priceType`/`price`) were also discarded. Goods are now passed through intact, first good in the 302, rest as 605
+- **`create_puzzle_switch` argument mix-up**: `switchName` was passed as a sprite filename and `doorName` was ignored; both now set the event names as documented
+- **`create_class` produced engine-crashing classes**: `params` was written as one flat 8-value array, but MV expects 8 curves of 100 per-level values (`params[paramId][level]`). Flat seed input now expands to full 1-99 curves (seed at level 1 growing to 10x at 99); 8x100 arrays are passed through. `expParams` default corrected to the editor's [30, 20, 30, 30]
+- **`set_map_display_names` edited the wrong field**: it renamed the editor map-tree entry (MapInfos `name`) instead of the player-visible `displayName` inside each map file
+- **`analyze_screenshot` only worked over plain HTTP**: rewritten with `fetch`, so `https://` Vision endpoints (OpenAI, NVIDIA) now work; `VISION_API_PATH` defaults to `/v1/chat/completions` instead of posting to `/`
+- `create_skill` no longer overwrites legitimate falsy values (`iconIndex: 0` became 64, `successRate: 0` became 100, `scope: 0` became 1) — `??` instead of `||`
+- `update_skill` can no longer desync an entry by passing `id` inside `fields`
+- `create_chest` default sprite corrected from `'Chest'` (missing in default projects) to `'!Chest'`
+- **Concurrent tool calls corrupted project files**: the MCP SDK dispatches requests concurrently, so parallel calls writing the same data file interleaved their writes (found by integration testing — Map001.json ended up with trailing garbage). Tool executions are now serialized through a single-flight queue
+
+## [4.1.0] - 2026-06-11
+
+### Changed
+- **Complete rewrite of all tool descriptions** for MCP tool-definition quality: every tool now documents its behavior (which data file it reads/writes, immediate disk writes, no undo), return value, error conditions, and when to use it vs. related tools
+- All parameter descriptions rewritten with semantic meaning (value ranges, defaults, default-database ID references, validation caveats) instead of restating the schema
+- Tool definitions extracted from `server.ts` into `src/toolDefinitions.ts`
+
+### Added
+- **MCP behavior annotations** (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) on all 101 tools so clients can reason about safety; `analyze_screenshot` is flagged `openWorldHint: true` for its external Vision API call
+
+### Removed
+- `get_all_skills` removed from the advertised tool list (exact duplicate of `get_skills`); calls to it still work for backward compatibility
+
 ## [4.0.0] - 2026-06-02
 
 ### Changed

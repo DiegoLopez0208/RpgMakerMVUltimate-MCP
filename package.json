@@ -1,6 +1,6 @@
 {
   "name": "rpgmaker-mv-mcp",
-  "version": "4.0.1",
+  "version": "4.1.1",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

@@ -29,31 +29,32 @@ async function createSkill(projectPath: string, params: SkillParams) {
   var hitType = params.hitType !== undefined ? params.hitType :
     (damage.type === 1 || damage.type === 5 ? 1 : 2);
 
+  // ?? instead of || so legitimate falsy values (iconIndex 0, scope 0, successRate 0) survive
   var newSkill = {
     id: newId,
-    name: params.name || '',
-    description: params.description || '',
-    iconIndex: params.iconIndex || 64,
-    stypeId: params.stypeId || 1,
-    mpCost: params.mpCost || 0,
-    tpCost: params.tpCost || 0,
-    scope: params.scope || 1,
-    occasion: params.occasion !== undefined ? params.occasion : 1,
-    speed: params.speed || 0,
-    successRate: params.successRate || 100,
-    repeats: params.repeats || 1,
-    tpGain: params.tpGain || 0,
+    name: params.name ?? '',
+    description: params.description ?? '',
+    iconIndex: params.iconIndex ?? 64,
+    stypeId: params.stypeId ?? 1,
+    mpCost: params.mpCost ?? 0,
+    tpCost: params.tpCost ?? 0,
+    scope: params.scope ?? 1,
+    occasion: params.occasion ?? 1,
+    speed: params.speed ?? 0,
+    successRate: params.successRate ?? 100,
+    repeats: params.repeats ?? 1,
+    tpGain: params.tpGain ?? 0,
     hitType: hitType,
-    animationId: params.animationId || 0,
+    animationId: params.animationId ?? 0,
     damage: damage,
-    effects: params.effects || [],
-    message1: params.message1 || '',
-    message2: params.message2 || '',
-    note: params.note || '',
-    requiredWtypeId1: params.requiredWtypeId1 || 0,
-    requiredWtypeId2: params.requiredWtypeId2 || 0,
-    messageType: params.messageType || 1,
-    traits: params.traits || []
+    effects: params.effects ?? [],
+    message1: params.message1 ?? '',
+    message2: params.message2 ?? '',
+    note: params.note ?? '',
+    requiredWtypeId1: params.requiredWtypeId1 ?? 0,
+    requiredWtypeId2: params.requiredWtypeId2 ?? 0,
+    messageType: params.messageType ?? 1,
+    traits: params.traits ?? []
   };
 
   while (skills.length <= newId) skills.push(null);
@@ -64,8 +65,8 @@ async function createSkill(projectPath: string, params: SkillParams) {
 }
 
 async function createDamageSkill(projectPath: string, name: string, mpCost: number, scope: number, formula: string, element: number, animationId: number) {
-  element = element || 0;
-  animationId = animationId || 1;
+  element = element ?? 0;
+  animationId = animationId ?? 1;
   return await createSkill(projectPath, {
     name: name,
     mpCost: mpCost,
@@ -84,7 +85,7 @@ async function createDamageSkill(projectPath: string, name: string, mpCost: numb
 }
 
 async function createHealingSkill(projectPath: string, name: string, mpCost: number, scope: number, formula: string, animationId: number) {
-  animationId = animationId || 47;
+  animationId = animationId ?? 47;
   return await createSkill(projectPath, {
     name: name,
     mpCost: mpCost,
@@ -156,7 +157,8 @@ async function updateSkill(projectPath: string, id: number, fields: Partial<Skil
     throw new Error('Skill with ID ' + id + ' not found');
   }
 
-  skills[id] = Object.assign({}, skills[id], fields);
+  // Force id last so a stray fields.id can't desync the entry from its array index
+  skills[id] = Object.assign({}, skills[id], fields, { id: id });
   await writeJson(projectPath, 'Skills.json', skills);
   return skills[id];
 }
