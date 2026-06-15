@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.1.0] - 2026-06-15
+
+### Fixed
+- **Procedural map generator produced maps made of water.** `makeAutotileId(kind, shape, sheetBase)` silently dropped its 3rd argument and always computed `2048 + kind*48 + shape`, so every tile resolved from the A1 (animated water) sheet. Floors and walls in the `inside`, `dungeon`, `sf_inside`, `space_interior`, `sf_outside` themes — plus the walls of `outside`/`magic_exterior` — rendered as water. Only `overworld` was unaffected (it used global autotile kinds). The base offset is now honored, so A2 floors, A3 roofs/walls and A4 walls resolve correctly. `validate_map` never caught this because the wrong tiles were still valid IDs
+
+### Added
+- **Autotiling: generated maps now border their tiles.** Generators painted every autotile at shape 0 (flat blocks with hard square edges and no shorelines). A new `src/utils/autotile.ts` recomputes the MV autotile shape (0-47) for each cell from its 8 neighbours and runs as a post-pass in `generateTileLayoutV3` (opt out with `autotile: false`). The shape lookup tables were derived empirically from the 106 bundled reference maps and validated to reproduce them: **A1 water 97%, A2 ground/floors 99%, A3 roofs/exterior walls 93%** (generated maps that follow the rule are exact). A4 interior walls are left as solid blocks — their pseudo-3D tall-wall shapes depend on vertical run length, which an 8-neighbour model can't recover (only ~55%), so they are deliberately not auto-shaped to avoid visible seams
+
 ## [5.0.0] - 2026-06-12
 
 ### Changed

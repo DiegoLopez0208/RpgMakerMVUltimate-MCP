@@ -1,6 +1,7 @@
 import path from "path";
 import { readFile, access } from 'fs/promises';
 import type { MapEvent, TilesetConfig, GeneratorOptions, MapTemplate } from '../types/rpgmaker.js';
+import { applyAutotileShapes } from './autotile.js';
 
 // ─── mapGenerator.ts — RPG Maker MV Procedural Map Generator ───
 // Features: Perlin noise 2D, BSP dungeon, cellular automata caves,
@@ -190,8 +191,13 @@ function setRegion(data: number[], w: number, h: number, x1: number, y1: number,
   }
 }
 
-function makeAutotileId(kind: number, shape: number = 0, fallback?: number): number {
-  return 2048 + kind * 48 + (shape || 0);
+// MV autotile id = sheetBase + kind*48 + shape, where sheetBase is the start of
+// the autotile sheet (A1 2048, A2 2816, A3 4352, A4 5888) and `kind` is the
+// local autotile index within that sheet. Historically the 3rd argument was
+// dropped, so every floor/wall collapsed to base 2048 (A1 animated water) and
+// interiors/dungeons rendered as water. It is now honored.
+function makeAutotileId(kind: number, shape: number = 0, sheetBase: number = 2048): number {
+  return (sheetBase || 2048) + kind * 48 + (shape || 0);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -353,7 +359,7 @@ function generateBSPDungeon(data: number[], w: number, h: number, rng: PRNG, ts:
   const margin: number = (opts as Record<string, number>).margin || 1;
   const wallThick: number = (opts as Record<string, number>).wallThick || 1;
 
-  const floorTile = ts.floor || 2304;
+  const floorTile = ts.floor || 2816;
   const wallTile = ts.wallSide || 5888;
   const wallTopTile = ts.wallTop || makeAutotileId(1, 0, 5888);
 
@@ -1082,6 +1088,14 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
       genFn(data, width, height, rng);
   } else {
     fillLayer(data, width, height, LAYER_GROUND1, 2816);
+  }
+
+  // Border every autotile against its neighbours (shorelines, ground edges,
+  // roof/wall corners). Generators lay tiles down at shape 0; without this the
+  // map renders as flat blocks with hard square edges. Opt out with
+  // opts.autotile === false to keep raw shape-0 tiles.
+  if ((opts as Record<string, unknown>).autotile !== false) {
+    applyAutotileShapes(data, width, height);
   }
 
   const events = generateEvents(width, height, rng, theme, opts);

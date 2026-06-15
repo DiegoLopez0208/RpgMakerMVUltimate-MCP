@@ -8,6 +8,8 @@ import { dispatchTool } from "../src/server.js";
 import * as projectTools from "../src/tools/projectTools.js";
 import { TOOL_DEFINITIONS_V5 } from "../src/toolDefinitionsV5.js";
 import { TOOL_DEFINITIONS } from "../src/toolDefinitions.js";
+import { readdirSync } from "fs";
+import { applyAutotileShapes, autotileShape, autotileKind } from "../src/utils/autotile.js";
 
 let projectDir: string;
 
@@ -238,6 +240,69 @@ describe("generate_map and edit_map", () => {
     }) as any;
     expect(result.eventA).toBeDefined();
     expect(result.eventB).toBeDefined();
+  });
+});
+
+describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () => {
+  const A2 = 2816; // A2 ground autotile, kind 16, shape 0
+
+  it("an interior cell of a solid autotile block keeps shape 0; edges get borders", () => {
+    const w = 5, h = 5;
+    const data = new Array(w * h * 6).fill(0);
+    for (let i = 0; i < w * h; i++) data[i] = A2; // fill ground layer with solid A2
+    applyAutotileShapes(data, w, h);
+    const at = (x: number, y: number) => data[y * w + x];
+    // Center is fully surrounded (off-map counts as same too) -> interior shape 0.
+    expect(autotileShape(at(2, 2))).toBe(0);
+    // All cells stay the same A2 kind, only the shape changes.
+    for (let i = 0; i < w * h; i++) expect(autotileKind(data[i])).toBe(16);
+  });
+
+  it("a one-tile A2 island surrounded by a different kind is shaped as an isolated piece", () => {
+    const w = 3, h = 3;
+    const data = new Array(w * h * 6).fill(0);
+    for (let i = 0; i < w * h; i++) data[i] = 2816 + 48; // A2 kind 17 background
+    data[1 * w + 1] = A2;                                 // single kind-16 tile in the middle
+    applyAutotileShapes(data, w, h);
+    // Isolated floor tile (no same-kind neighbour) is a non-interior shape.
+    expect(autotileShape(data[1 * w + 1])).not.toBe(0);
+  });
+
+  it("reproduces the bundled reference maps for A1/A2/A3 (>=90%) and never touches A4", () => {
+    const dir = "knowledge/maps";
+    let a13Total = 0, a13Match = 0, a4Total = 0, a4Untouched = 0;
+    for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
+      let m: any;
+      try { m = JSON.parse(readFileSync(`${dir}/${f}`, "utf8")); } catch { continue; }
+      if (!m?.data || !m.width) continue;
+      const w = m.width, h = m.height;
+      const orig = m.data.slice();
+      const test = m.data.slice();
+      applyAutotileShapes(test, w, h);
+      for (let layer = 0; layer < 4; layer++) {
+        const base = layer * w * h;
+        for (let i = 0; i < w * h; i++) {
+          const o = orig[base + i];
+          if (o < 2048) continue;
+          if (autotileKind(o) >= 80) { a4Total++; if (test[base + i] === o) a4Untouched++; }
+          else { a13Total++; if (test[base + i] === o) a13Match++; }
+        }
+      }
+    }
+    expect(a13Total).toBeGreaterThan(10000);
+    expect(a13Match / a13Total).toBeGreaterThan(0.90); // measured ~96%
+    expect(a4Untouched).toBe(a4Total);                 // A4 left exactly as-is
+  });
+
+  it("generated maps no longer render ground as flat shape-0 (beach has shorelines)", async () => {
+    const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
+    const m: any = generateTileLayoutV3(40, 30, "beach", { seed: 3, addEvents: false });
+    const shapes = new Set<number>();
+    for (let i = 0; i < m.width * m.height; i++) {
+      const id = m.data[i];
+      if (id >= 2048) shapes.add(autotileShape(id));
+    }
+    expect(shapes.size).toBeGreaterThan(3);
   });
 });
 
