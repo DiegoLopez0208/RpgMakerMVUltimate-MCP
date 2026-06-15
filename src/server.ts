@@ -38,11 +38,53 @@ import * as animationTools from './tools/animationTools.js';
 import * as projectTools from './tools/projectTools.js';
 import * as assetTools from './tools/assetTools.js';
 import { TOOL_DEFINITIONS } from './toolDefinitions.js';
+import { TOOL_DEFINITIONS_V5 } from './toolDefinitionsV5.js';
+import { routeV5Tool, V5_TOOL_NAMES } from './v5Router.js';
 
 const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
 
 // Single-flight queue for tool executions (see CallTool handler)
 var toolCallQueue: Promise<void> = Promise.resolve();
+
+// Zod validation applied before dispatch, keyed by (legacy) tool name.
+// v5 tools route through these same legacy names, so validation applies to both.
+const SCHEMA_MAP: Record<string, { safeParse: (a: unknown) => { success: boolean; data?: any; error?: any } }> = {
+  analyze_screenshot: AnalyzeScreenshotSchema,
+  create_map: CreateMapSchema,
+  render_map_ascii: RenderMapAsciiSchema,
+  create_npc: CreateNpcSchema,
+  create_damage_skill: CreateDamageSkillSchema,
+  create_healing_skill: CreateHealingSkillSchema,
+  create_buff_skill: CreateBuffSkillSchema,
+  create_state_skill: CreateStateSkillSchema,
+};
+
+/**
+ * Validate (when a schema exists) and dispatch one legacy-named tool call.
+ * This is the single entry point used by the MCP CallTool handler and by the
+ * v5 router; it is NOT serialized itself — serialization happens once at the
+ * request level so nested v5→legacy calls don't deadlock.
+ */
+export async function executeTool(name: string, args: Record<string, any>): Promise<unknown> {
+  const schema = SCHEMA_MAP[name];
+  if (schema) {
+    const parsed = schema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error('Validation error: ' + parsed.error.issues.map(function(i: any) { return i.path.join('.') + ': ' + i.message; }).join('; '));
+    }
+    args = parsed.data;
+  }
+  return handleToolCall(name, args);
+}
+
+/** Dispatch one tool call, v5 or legacy. Exported for integration tests. */
+export async function dispatchTool(name: string, args: Record<string, any>): Promise<unknown> {
+  if (V5_TOOL_NAMES.includes(name)) {
+    const p = projectTools.getProjectPath() || PROJECT_PATH;
+    return routeV5Tool(executeTool, p, name, args);
+  }
+  return executeTool(name, args);
+}
 
 // ─── Project Context & Validation Functions ───
 
@@ -777,41 +819,25 @@ export async function main() {
   logger.info('Project path: ' + PROJECT_PATH);
 
   const server = new Server(
-    { name: 'rpgmaker-mv-mcp', version: '4.1.1' },
+    { name: 'rpgmaker-mv-mcp', version: '5.0.0' },
     { capabilities: { tools: {} } }
   );
 
+  // Default: the 12 consolidated v5 tools. RPGMV_LEGACY_TOOLS=1 additionally
+  // advertises the v4 names (calls to v4 names always work either way).
+  const legacyMode = process.env.RPGMV_LEGACY_TOOLS === '1';
+  const advertisedTools = legacyMode
+    ? TOOL_DEFINITIONS_V5.concat(TOOL_DEFINITIONS.filter(function(t) { return !V5_TOOL_NAMES.includes(t.name); }) as typeof TOOL_DEFINITIONS_V5)
+    : TOOL_DEFINITIONS_V5;
+
   server.setRequestHandler(ListToolsRequestSchema, async function() {
-    return { tools: TOOL_DEFINITIONS };
+    return { tools: advertisedTools };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async function(request) {
     var toolName = request.params.name;
     var args = request.params.arguments || {};
     logger.info('Tool call: ' + toolName);
-
-    var SCHEMA_MAP: Record<string, any> = {
-      analyze_screenshot: AnalyzeScreenshotSchema,
-      create_map: CreateMapSchema,
-      render_map_ascii: RenderMapAsciiSchema,
-      create_npc: CreateNpcSchema,
-      create_damage_skill: CreateDamageSkillSchema,
-      create_healing_skill: CreateHealingSkillSchema,
-      create_buff_skill: CreateBuffSkillSchema,
-      create_state_skill: CreateStateSkillSchema,
-    };
-
-    var schema = SCHEMA_MAP[toolName];
-    if (schema) {
-      var parsed = schema.safeParse(args);
-      if (!parsed.success) {
-        return {
-          content: [{ type: 'text', text: 'Validation error: ' + parsed.error.issues.map(function(i: any) { return i.path.join('.') + ': ' + i.message; }).join('; ') }],
-          isError: true
-        };
-      }
-      args = parsed.data;
-    }
 
     try {
       var currentPath = projectTools.getProjectPath();
@@ -823,18 +849,22 @@ export async function main() {
       // two tools writing the same data file in parallel interleave their writes
       // and corrupt the project JSON. Reads are cheap, so everything goes
       // through one queue for safety.
-      var queuedCall = toolCallQueue.then(function() { return handleToolCall(toolName, args); });
+      var queuedCall = toolCallQueue.then(function() { return dispatchTool(toolName, args); });
       toolCallQueue = queuedCall.then(function() { return undefined; }, function() { return undefined; });
       var result = await queuedCall;
 
       logger.info('Tool call succeeded: ' + toolName);
+      var structured = (typeof result === 'object' && result !== null && !Array.isArray(result))
+        ? result as Record<string, unknown>
+        : { result: result };
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(result, null, 2)
           }
-        ]
+        ],
+        structuredContent: structured
       };
     } catch (error) {
       var errorMessage = error instanceof Error ? error.message : String(error);
@@ -861,19 +891,19 @@ export async function main() {
     process.exit(0);
   });
 
-var transport = new StdioServerTransport();
-var originalSend = transport.send.bind(transport);
-transport.send = function(message) {
-  if ((message as any).id !== undefined && (message as any).id !== null && typeof (message as any).id === 'number') {
-    message = Object.assign({}, message, { id: String((message as any).id) });
+  var transport = new StdioServerTransport();
+  if (process.env.RPGMV_STRING_IDS === '1') {
+    // Legacy quirk (default in <=4.x): coerce numeric JSON-RPC response ids to
+    // strings. Violates JSON-RPC (the id must echo the request's type), so it
+    // is now opt-in for any client that happened to depend on it.
+    var originalSend = transport.send.bind(transport);
+    transport.send = function(message) {
+      if ((message as any).id !== undefined && (message as any).id !== null && typeof (message as any).id === 'number') {
+        message = Object.assign({}, message, { id: String((message as any).id) });
+      }
+      return originalSend(message);
+    };
   }
-  return originalSend(message);
-};
-await server.connect(transport);
-  logger.info('RPG Maker MV MCP server v4.1.1 running on stdio (' + TOOL_DEFINITIONS.length + ' tools)');
+  await server.connect(transport);
+  logger.info('RPG Maker MV MCP server v5.0.0 running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
 }
-
-main().catch(function(error) {
-  logger.error('Fatal error starting server: ' + (error instanceof Error ? error.message : String(error)));
-  process.exit(1);
-});

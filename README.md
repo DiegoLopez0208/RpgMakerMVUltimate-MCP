@@ -1,10 +1,10 @@
 # RPG Maker MV Ultimate MCP Server
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides **101 tools** for actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, **AI vision analysis**, **offline ASCII map rendering**, and **knowledge-driven map generation**.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides **12 consolidated tools** covering actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, **AI vision analysis**, **offline ASCII map rendering**, and **knowledge-driven map generation**. The 101 fine-grained v4 tool names keep working as call aliases (`RPGMV_LEGACY_TOOLS=1` re-advertises them).
 
 ## Features
 
-- **101 MCP tools** covering every aspect of RPG Maker MV project data
+- **12 consolidated MCP tools** covering every aspect of RPG Maker MV project data (the v4 names remain callable for backward compatibility)
 - **TypeScript ESM** — fully typed codebase with strict compilation.
 - **Vision AI analysis** — `analyze_screenshot` sends project images to any OpenAI-compatible vision API (OpenAI, Ollama, LocalAI, NVIDIA, etc.) for AI descriptions
 - **Offline ASCII map rendering** — `render_map_ascii` generates ASCII maps with event markers and region IDs, no API needed
@@ -42,27 +42,24 @@ Add to your MCP config:
 }
 ```
 
-## Tool Categories
+## Tools (v5)
 
-| Category | Tools | Description |
-|---|---|---|
-| **Actor** | 6 | CRUD, search, delete |
-| **Item/Weapon/Armor** | 6 | CRUD, search, delete |
-| **Skill** | 9 | Full + simplified builders (damage, healing, buff, state), CRUD |
-| **Class** | 6 | CRUD, search, delete |
-| **Enemy** | 7 | CRUD, boss builder, search, delete |
-| **State** | 6 | CRUD, search, delete |
-| **Map** | 15 | CRUD, fill layer, events, search, delete, duplicate |
-| **Event Helpers** | 8 | NPC, chest, teleport, shop, inn, boss, puzzle switch, transfer |
-| **Tileset** | 3 | Get, update |
-| **Common Event** | 4 | CRUD, add command |
-| **Troop** | 5 | CRUD, add enemy, random encounter builder |
-| **Animation** | 2 | Get, get by ID |
-| **System** | 8 | Switches, variables, game title, starting position |
-| **Project** | 4 | Summary, context, validate map, set path |
-| **Asset** | 2 | Scan project assets, get tile IDs for tileset |
-| **Vision AI** | 2 | AI screenshot analysis (OpenAI-compatible), ASCII map render |
-| **Image** | 2 | Tileset dimension analysis, screenshot quadrant analysis |
+| Tool | Purpose |
+|---|---|
+| `query_database` | List / get by ID / search any database (actors, classes, skills, items, weapons, armors, enemies, states, troops, tilesets, common events, animations) |
+| `create_database_entry` | Create entries, with presets: `damage_skill`, `healing_skill`, `buff_skill`, `state_skill`, `boss_enemy`, `encounter_troop` |
+| `update_database_entry` | Partial updates; append commands to common events; add enemies to troops |
+| `delete_database_entry` | Delete entries (with reference-breakage warnings) |
+| `query_map` | Map tree, full map data, events, single event, lint (`validate`), offline ASCII render |
+| `generate_map` | Blank / themed / procedural (21 themes, seeded) / batch / duplicate / from one of 106 bundled templates |
+| `edit_map` | Fill tile layers, set player-visible display names, organize the map tree, connect two maps |
+| `manage_map_event` | Create (presets: npc, chest, teleport, shop, inn, boss, puzzle_switch), update, delete, add commands, bulk-populate |
+| `manage_system` | Game title, switch/variable names, starting position |
+| `get_project_context` | Project digest, asset index, per-tileset tile IDs, template catalog |
+| `set_project_path` | Switch projects at runtime |
+| `analyze_image` | Vision AI analysis, offline tileset grid measurement, quadrant colors |
+
+Set `RPGMV_LEGACY_TOOLS=1` to also advertise the 101 v4 tool names; calls to v4 names work regardless of the flag.
 
 ## Vision AI
 

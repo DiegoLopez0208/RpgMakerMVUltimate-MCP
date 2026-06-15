@@ -1,5 +1,20 @@
 # Changelog
 
+## [5.0.0] - 2026-06-12
+
+### Changed
+- **BREAKING (advertised surface only): 101 tools consolidated into 12.** The new tools select their operation via a discriminator argument: `query_database`, `create_database_entry`, `update_database_entry`, `delete_database_entry` (entity), `query_map` (view), `generate_map` (mode), `edit_map`, `manage_map_event`, `manage_system` (action), `get_project_context` (detail), `set_project_path`, `analyze_image` (mode). All v4 tool names keep working as call aliases; set `RPGMV_LEGACY_TOOLS=1` to re-advertise them in `tools/list`
+- Tool responses now include `structuredContent` alongside the JSON text
+- The JSON-RPC numeric-id-to-string coercion on responses (a spec violation shipped since v3) is now opt-in via `RPGMV_STRING_IDS=1`
+- `main()` no longer auto-runs on module import; `dist/index.js` remains the entry point
+
+### Added
+- `generate_map` mode `template` + `get_project_context` detail `templates`: the 106 bundled reference maps (`knowledge/`) are finally reachable (they shipped unused since 4.0.0)
+- Integration test suite (32 tests) exercising every v5 tool against a fixture project, including regression tests for every 4.1.1 bug (Zod key drops, Self Switch inversion, shop 302, class curves, displayName)
+
+### Fixed
+- The postbuild step copied the template data to `dist/knowledge/knowledge/`, so the template index never loaded even in built servers (latent since 4.0.0)
+
 ## [4.1.1] - 2026-06-11
 
 ### Fixed

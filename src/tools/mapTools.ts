@@ -5,7 +5,7 @@ import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
 
-import { generateTileLayoutV3, THEMES as V3_THEMES, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent } from '../utils/mapGenerator.js';
+import { generateTileLayoutV3, generateFromTemplate, THEMES as V3_THEMES, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 
 /**
@@ -202,6 +202,62 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
 
     await writeJson(projectPath, 'MapInfos.json', mapInfos);
     return { mapId: mapId, seed: tileResult.seed, theme: theme };
+}
+
+/**
+ * Create a new map from one of the bundled reference templates (knowledge/maps).
+ * The template's tile data (and optionally its events) are copied into a brand-new
+ * map file registered in MapInfos.json.
+ */
+async function createMapFromTemplate(projectPath: string, params: Record<string, unknown>) {
+    var templateId = toNum(params.templateId, 'templateId');
+    var tileResult = await generateFromTemplate(templateId, {
+        width: params.width as number,
+        height: params.height as number,
+        keepEvents: params.keepEvents !== false
+    } as Record<string, unknown>);
+    if (!tileResult) {
+        throw new Error('Template ' + templateId + ' not found. List templates with get_project_context detail "templates".');
+    }
+
+    var bgmName = (params.bgmName as string) || '';
+    var map: RpgMakerMap = {
+        autoplayBgm: bgmName ? true : false,
+        autoplayBgs: false,
+        battleback1Name: '', battleback2Name: '',
+        bgm: { name: bgmName, pan: 0, pitch: 100, volume: 90 },
+        bgs: { name: '', pan: 0, pitch: 100, volume: 90 },
+        disableDashing: false,
+        displayName: (params.displayName as string) || '',
+        encounterList: [], encounterStep: 30,
+        height: tileResult.height, width: tileResult.width,
+        note: (params.note as string) || '',
+        parallaxLoopX: false, parallaxLoopY: false,
+        parallaxName: '', parallaxShow: true,
+        parallaxSx: 0, parallaxSy: 0,
+        scrollType: 0, specifyBattleback: false,
+        tilesetId: (params.tilesetId as number) || 1,
+        data: tileResult.data,
+        events: tileResult.events && tileResult.events.length > 0 ? tileResult.events : [null]
+    };
+
+    const mapId = await getNextMapId(projectPath);
+    await writeJsonDirect(getMapPath(projectPath, mapId), map);
+
+    const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
+    while (mapInfos.length <= mapId) mapInfos.push(null);
+    const maxOrder = (mapInfos as unknown[]).reduce(function(max: number, info: unknown) {
+        return info && (info as Record<string, number>).order && (info as Record<string, number>).order > max ? (info as Record<string, number>).order : max;
+    }, 0);
+    mapInfos[mapId] = {
+        id: mapId, expanded: false,
+        name: (params.name as string) || 'MAP' + String(mapId).padStart(3, '0'),
+        order: maxOrder + 1, parentId: (params.parentId as number) || 0,
+        scrollX: Math.floor(tileResult.width * 32 * 0.8),
+        scrollY: Math.floor(tileResult.height * 32 * 0.8)
+    };
+    await writeJson(projectPath, 'MapInfos.json', mapInfos);
+    return { mapId: mapId, templateId: templateId, width: tileResult.width, height: tileResult.height };
 }
 
 async function createMapBatch(projectPath: string, batchSpec: unknown[]) {
@@ -1069,6 +1125,7 @@ export { getMapEvent };
 export { getNextMapId };
 export { createMap };
 export { createMapV3 };
+export { createMapFromTemplate };
 export { createMapBatch };
 export { connectMaps };
 export { populateMapEvents };
