@@ -32,15 +32,16 @@ export function autotileShape(tileId: number): number {
 }
 
 /**
- * Floor-type autotiles border on all 8 directions (A1 water, A2 ground/floors,
- * A4 even kinds = wall-tops/floors). Wall-type autotiles (A3, A4 odd kinds =
- * wall sides) border only on the 4 cardinal directions.
+ * Floor-type autotiles border on all 8 directions (A1 water, A2 ground/floors).
+ * A3 roofs/exterior walls are cardinal-only wall-type. A4 interior walls are a
+ * separate "tall wall" type (see computeA4WallShape).
  */
 export function isFloorType(tileId: number): boolean {
-  const k = autotileKind(tileId);
-  if (k < 48) return true;          // A1, A2
-  if (k < 80) return false;         // A3 (wall/roof — cardinal only)
-  return k % 2 === 0;               // A4: even = floor/wall-top
+  return autotileKind(tileId) < 48; // A1, A2
+}
+
+export function isA4Wall(tileId: number): boolean {
+  return autotileKind(tileId) >= 80; // A4 interior wall/floor sheet
 }
 
 // ── Shape tables (derived from reference maps) ────────────────────
@@ -58,9 +59,24 @@ const FLOOR_SHAPE: Record<number, number> = {
   239: 2, 255: 0
 };
 
-// Wall-type: 4-bit cardinal mask N,E,S,W → shape. Clean bijection (an
-// all-same interior cell is shape 0, a fully isolated cell shape 15).
+// Wall-type (A3 roofs/exterior walls): 4-bit cardinal mask N,E,S,W → shape.
+// Clean bijection (all-same interior cell is shape 0, isolated cell shape 15).
 const WALL_SHAPE: number[] = [15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0];
+
+// A4 interior walls render as a pseudo-3D vertical structure: a top cap (no
+// wall above), a repeating body, and a bottom face (no wall below). The shape
+// can't be recovered from a flat 8-neighbour mask — it depends on the cell's
+// vertical zone within the wall — so it is keyed by (zone, wallEast, wallWest).
+// Zones: 0 TOP (!n), 1 BODY (n&&s), 2 FACE (n&&!s), 3 SINGLE (!n&&!s).
+// Derived from the bundled maps; the high-traffic fills/edges/corners are
+// 86-91% confident, mixed junctions less so (a heuristic, ~70% overall, vs the
+// near-exact A1/A2/A3 tables — but far better than the flat shape 0 it replaces).
+const A4_WALL_SHAPE: number[] = [7, 3, 6, 2, 32, 16, 24, 0, 13, 9, 12, 8, 46, 43, 45, 33];
+
+export function computeA4WallShape(n: boolean, e: boolean, s: boolean, w: boolean): number {
+  const zone = (!n && !s) ? 3 : !n ? 0 : !s ? 2 : 1;
+  return A4_WALL_SHAPE[zone * 4 + (e ? 1 : 0) + (w ? 2 : 0)];
+}
 
 /**
  * Compute the autotile shape for a cell given which of its 8 neighbours are
@@ -105,24 +121,21 @@ export function applyAutotileShapes(data: number[], width: number, height: numbe
         const id = orig[y * width + x];
         if (id < TILE_ID_A1) continue;
         const k = autotileKind(id);
-        // Skip A4 (kind >= 80): the interior wall/floor sheet renders walls as
-        // tall pseudo-3D structures whose shape depends on the wall's vertical
-        // run (top/middle/base), which an 8-neighbour model cannot recover.
-        // Validation against the reference maps shows only ~55% accuracy here
-        // versus 93-99% for A1/A2/A3, and a wrong wall shape reads as a visible
-        // seam, so A4 cells are left at whatever shape the generator assigned
-        // (a solid wall block) rather than risk glitches. A1 water, A2 ground/
-        // floors and A3 roofs/exterior walls are all autotiled correctly.
-        if (k >= 80) continue;
         const same = (nx: number, ny: number): boolean => {
           const nk = kindAt(nx, ny);
           return nk === -1 /* off-map */ || nk === k;
         };
-        const shape = computeShape(
-          isFloorType(id),
-          same(x, y - 1), same(x + 1, y), same(x, y + 1), same(x - 1, y),
-          same(x + 1, y - 1), same(x + 1, y + 1), same(x - 1, y + 1), same(x - 1, y - 1)
-        );
+        const n = same(x, y - 1), e = same(x + 1, y), s = same(x, y + 1), w = same(x - 1, y);
+        let shape: number;
+        if (k >= 80) {
+          // A4 interior wall — pseudo-3D vertical structure.
+          shape = computeA4WallShape(n, e, s, w);
+        } else {
+          shape = computeShape(
+            isFloorType(id), n, e, s, w,
+            same(x + 1, y - 1), same(x + 1, y + 1), same(x - 1, y + 1), same(x - 1, y - 1)
+          );
+        }
         data[base + y * width + x] = TILE_ID_A1 + k * 48 + shape;
       }
     }

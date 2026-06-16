@@ -331,6 +331,8 @@ async function handleToolCall(name: string, args: Record<string, any>) {
       return await mapTools.createChest(p, args.mapId, args.x, args.y, args.items, args.characterName, args.characterIndex);
     case 'create_teleport_event':
       return await mapTools.createTeleportEvent(p, args.mapId, args.x, args.y, args.destMapId, args.destX, args.destY, args.trigger);
+    case 'create_door':
+      return await mapTools.createDoor(p, args.mapId, args.x, args.y, args.destMapId, args.destX, args.destY, args);
 case 'search_map_events':
         return await mapTools.searchMapEvents(p, args.mapId, args.query);
       case 'generate_map_v3':

@@ -10,6 +10,8 @@ import { TOOL_DEFINITIONS_V5 } from "../src/toolDefinitionsV5.js";
 import { TOOL_DEFINITIONS } from "../src/toolDefinitions.js";
 import { readdirSync } from "fs";
 import { applyAutotileShapes, autotileShape, autotileKind } from "../src/utils/autotile.js";
+import { makeChestEvent, makeBossEvent } from "../src/utils/mapGenerator.js";
+import { cmd } from "../src/utils/commandBuilder.js";
 
 let projectDir: string;
 
@@ -174,12 +176,62 @@ describe("manage_map_event", () => {
     expect(doorSelfSwitch.parameters).toEqual(["A", 0]);
   });
 
+  it("preset door makes an action-button transfer; lockedSwitchId adds a gated second page", async () => {
+    const open = await dispatchTool("manage_map_event", {
+      action: "create", preset: "door", mapId: 1, x: 4, y: 4, destMapId: 9, destX: 5, destY: 6
+    }) as any;
+    expect(open.pages.length).toBe(1);
+    expect(open.pages[0].trigger).toBe(0); // action button
+    const t = open.pages[0].list.find((c: any) => c.code === 201);
+    expect(t.parameters).toEqual([0, 9, 5, 6, 0, 0]);
+
+    const locked = await dispatchTool("manage_map_event", {
+      action: "create", preset: "door", mapId: 1, x: 8, y: 8,
+      destMapId: 9, destX: 1, destY: 1, lockedSwitchId: 3, lockedMessage: "Need a key"
+    }) as any;
+    expect(locked.pages.length).toBe(2);
+    expect(locked.pages[1].conditions.switch1Id).toBe(3);
+    expect(locked.pages[1].conditions.switch1Valid).toBe(true);
+    // Transfer lives on the unlocked page, not the locked one.
+    expect(locked.pages[1].list.some((c: any) => c.code === 201)).toBe(true);
+    expect(locked.pages[0].list.some((c: any) => c.code === 201)).toBe(false);
+  });
+
+  it("preset inn gold check uses a Script conditional, not the Button type (5.2.0 fix)", async () => {
+    const ev = await dispatchTool("manage_map_event", {
+      action: "create", preset: "inn", mapId: 1, x: 7, y: 7, cost: 80
+    }) as any;
+    const cond = ev.pages[0].list.find((c: any) => c.code === 111);
+    // type 12 = Script; type 11 was Button (key press) and never checked gold.
+    expect(cond.parameters[0]).toBe(12);
+    expect(cond.parameters[1]).toContain("gold()");
+  });
+
   it("update and delete work and report missing events", async () => {
     const ev = await dispatchTool("manage_map_event", { action: "create", mapId: 1, x: 5, y: 5, name: "Temp" }) as any;
     const moved = await dispatchTool("manage_map_event", { action: "update", mapId: 1, eventId: ev.id, fields: { x: 6 } }) as any;
     expect(moved.x).toBe(6);
     await dispatchTool("manage_map_event", { action: "delete", mapId: 1, eventId: ev.id });
     await expect(dispatchTool("manage_map_event", { action: "delete", mapId: 1, eventId: ev.id })).rejects.toThrow(/not found/);
+  });
+});
+
+describe("generator event regressions (5.2.0: 4.1.1 self-switch fix missed the internal makers)", () => {
+  it("makeChestEvent turns Self Switch A ON so generated chests stay open", () => {
+    const ev = makeChestEvent(0, 5, 5);
+    const ss = ev.pages[0].list.find((c: any) => c.code === 123);
+    expect(ss!.parameters).toEqual(["A", 0]); // was ["A", 1] = OFF -> reopened forever
+  });
+
+  it("makeBossEvent turns Self Switch A ON on victory so generated bosses stay defeated", () => {
+    const ev = makeBossEvent(0, 5, 5, 1);
+    const ss = ev.pages[0].list.find((c: any) => c.code === 123);
+    expect(ss!.parameters).toEqual(["A", 0]); // was ["A", 1] = OFF -> respawned
+  });
+
+  it("cmd.conditionalVariable orders params as [1, varId, operandType, value, op]", () => {
+    // Compare variable 3 >= 10 (operator 1). Constant operand (type 0).
+    expect(cmd.conditionalVariable(3, 1, 10)[0].parameters).toEqual([1, 3, 0, 10, 1]);
   });
 });
 
@@ -220,6 +272,25 @@ describe("generate_map and edit_map", () => {
     expect(result.mapId).toBeGreaterThan(1);
     expect(result.seed).toBe(1234);
     generatedMapId = result.mapId;
+  });
+
+  it("mode town generates enterable house interiors with two-way warps (5.2.0)", async () => {
+    const res = await dispatchTool("generate_map", { mode: "procedural", theme: "town", width: 34, height: 28, seed: 5, name: "Villa" }) as any;
+    expect(Array.isArray(res.interiorMapIds)).toBe(true);
+    expect(res.interiorMapIds.length).toBeGreaterThan(0);
+    const pad = (n: number) => "Map" + String(n).padStart(3, "0") + ".json";
+    const dests = (mapFile: any) => mapFile.events
+      .filter((e: any) => e)
+      .flatMap((e: any) => e.pages[0].list.filter((c: any) => c.code === 201).map((c: any) => c.parameters[1]));
+    // Exterior has an action-button door transferring to each interior.
+    const ext = dataFile(pad(res.mapId));
+    for (const iid of res.interiorMapIds) expect(dests(ext)).toContain(iid);
+    // Each interior exists, is registered, and warps back to the exterior.
+    const mapInfos = dataFile("MapInfos.json");
+    for (const iid of res.interiorMapIds) {
+      expect(dests(dataFile(pad(iid)))).toContain(res.mapId);
+      expect(mapInfos[iid].parentId).toBe(res.mapId);
+    }
   });
 
   it("mode template fails gracefully when the template index is unavailable (dev runs from src/)", async () => {
@@ -268,9 +339,9 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
     expect(autotileShape(data[1 * w + 1])).not.toBe(0);
   });
 
-  it("reproduces the bundled reference maps for A1/A2/A3 (>=90%) and never touches A4", () => {
+  it("reproduces the bundled reference maps: A1/A2/A3 near-exact (>=90%), A4 walls heuristic (>=65%)", () => {
     const dir = "knowledge/maps";
-    let a13Total = 0, a13Match = 0, a4Total = 0, a4Untouched = 0;
+    let a13Total = 0, a13Match = 0, a4Total = 0, a4Match = 0;
     for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
       let m: any;
       try { m = JSON.parse(readFileSync(`${dir}/${f}`, "utf8")); } catch { continue; }
@@ -284,14 +355,14 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
         for (let i = 0; i < w * h; i++) {
           const o = orig[base + i];
           if (o < 2048) continue;
-          if (autotileKind(o) >= 80) { a4Total++; if (test[base + i] === o) a4Untouched++; }
+          if (autotileKind(o) >= 80) { a4Total++; if (test[base + i] === o) a4Match++; }
           else { a13Total++; if (test[base + i] === o) a13Match++; }
         }
       }
     }
     expect(a13Total).toBeGreaterThan(10000);
     expect(a13Match / a13Total).toBeGreaterThan(0.90); // measured ~96%
-    expect(a4Untouched).toBe(a4Total);                 // A4 left exactly as-is
+    expect(a4Match / a4Total).toBeGreaterThan(0.65);   // A4 tall walls ~70% (heuristic)
   });
 
   it("generated maps no longer render ground as flat shape-0 (beach has shorelines)", async () => {

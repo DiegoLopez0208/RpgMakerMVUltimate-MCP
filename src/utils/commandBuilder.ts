@@ -113,8 +113,12 @@ function conditionalSelfSwitch(key: SelfSwitchKey, value: boolean): EventCommand
  * @returns EventCommand[]
  */
 function conditionalVariable(varId: number, operator: number, val: number): EventCommand[] {
+    // MV command 111 type 1 (variable): [1, varId, operandType, operandValue,
+    // comparisonOp]. operandType 0 = compare against a constant. The params
+    // were previously [1, varId, operator, 0, val], which made MV compare the
+    // variable against variable #0 and use `val` as the operator.
     return [
-        { code: 111, indent: 0, parameters: [1, varId, operator, 0, val] }
+        { code: 111, indent: 0, parameters: [1, varId, 0, val, operator] }
     ];
 }
 

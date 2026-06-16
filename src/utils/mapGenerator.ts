@@ -964,7 +964,10 @@ function makeChestEvent(id: number, x: number, y: number): MapEvent {
       list: [
         { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
         { code: 401, indent: 0, parameters: ['Found treasure!'] },
-        { code: 123, indent: 0, parameters: ['A', 1] },
+        // Self Switch A = ON (MV: command123 sets value = params[1] === 0) so
+        // page 2 takes over and the chest stays open. Was ['A', 1] (= OFF),
+        // which left the chest reopenable forever.
+        { code: 123, indent: 0, parameters: ['A', 0] },
         { code: 0, indent: 0, parameters: [] }
       ],
       moveFrequency: 3, moveRoute: { list: [{ code: 0, indent: 0, parameters: [] as unknown[] }], repeat: true, skippable: false, wait: false },
@@ -989,7 +992,9 @@ function makeBossEvent(id: number, x: number, y: number, troopId: number = 1): M
       list: [
         { code: 301, indent: 0, parameters: [0, troopId || 1, 0, 1] },
         { code: 601, indent: 0, parameters: [] },
-        { code: 123, indent: 1, parameters: ['A', 1] },
+        // Win branch: Self Switch A = ON (params[1] === 0) so the boss stays
+        // defeated. Was ['A', 1] (= OFF), so the boss respawned after victory.
+        { code: 123, indent: 1, parameters: ['A', 0] },
         { code: 0, indent: 1, parameters: [] },
         { code: 602, indent: 0, parameters: [] },
         { code: 0, indent: 1, parameters: [] },
@@ -1027,6 +1032,25 @@ function makeTransferEvent(id: number, x: number, y: number, destMapId: number, 
   };
 }
 
+// Action-button door (e.g. a house entrance): press to transfer. Unlike
+// makeTransferEvent (a walk-on, walk-through transfer zone) the player stops at
+// it (through:false, priorityType 1) and must press the action button.
+function makeDoorEvent(id: number, x: number, y: number, destMapId: number, destX: number, destY: number): MapEvent {
+  return {
+    id: id, name: 'Door to Map' + destMapId, note: '', x: x, y: y,
+    pages: [{
+      conditions: defaultConditions(), directionFix: true,
+      image: { characterIndex: 0, characterName: '', direction: 8, pattern: 1, tileId: 0 },
+      list: [
+        { code: 201, indent: 0, parameters: [0, destMapId, destX, destY, 0, 0] },
+        { code: 0, indent: 0, parameters: [] }
+      ],
+      moveFrequency: 3, moveRoute: { list: [{ code: 0, indent: 0, parameters: [] as unknown[] }], repeat: true, skippable: false, wait: false },
+      moveSpeed: 2, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: false
+    }]
+  };
+}
+
 function defaultConditions() {
   return { actorId: 1, actorValid: false, itemId: 1, itemValid: false, selfSwitchCh: 'A', selfSwitchValid: false, switch1Id: 1, switch1Valid: false, switch2Id: 1, switch2Valid: false, variableId: 1, variableValid: false, variableValue: 0 };
 }
@@ -1050,6 +1074,7 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
   theme: string;
   width: number;
   height: number;
+  houses?: { x: number; y: number; w: number; h: number }[];
 } {
   const seed = opts.seed || Math.floor(Math.random() * 2147483647);
   const rng = new PRNG(seed);
@@ -1081,14 +1106,20 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
   };
 
   const genFn = themeMap[theme];
+  let genResult: unknown;
   if (genFn) {
     if (genFn.length >= 5)
-      genFn(data, width, height, rng, perlin);
+      genResult = genFn(data, width, height, rng, perlin);
     else
-      genFn(data, width, height, rng);
+      genResult = genFn(data, width, height, rng);
   } else {
     fillLayer(data, width, height, LAYER_GROUND1, 2816);
   }
+  // town/village generators return the house rectangles; surface them so the
+  // caller can wire up enterable-house doors and interiors.
+  const houses = (genResult && typeof genResult === 'object' && 'houses' in (genResult as object))
+    ? (genResult as { houses: { x: number; y: number; w: number; h: number }[] }).houses
+    : undefined;
 
   // Border every autotile against its neighbours (shorelines, ground edges,
   // roof/wall corners). Generators lay tiles down at shape 0; without this the
@@ -1106,7 +1137,8 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
     seed: seed,
     theme: theme,
     width: width,
-    height: height
+    height: height,
+    houses: houses
   };
 }
 
@@ -1186,7 +1218,7 @@ async function generateMap(opts: GeneratorOptions = {}): Promise<{
   );
 }
 
-export { generateTileLayoutV3, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent };
+export { generateTileLayoutV3, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent };
 export { generateMap };
 export { generateFromTemplate };
 export { searchTemplates };

@@ -76,6 +76,7 @@ const EVENT_PRESETS: Record<string, string> = {
   npc: 'create_npc',
   chest: 'create_chest',
   teleport: 'create_teleport_event',
+  door: 'create_door',
   shop: 'create_shop',
   inn: 'create_inn',
   boss: 'create_boss_event',

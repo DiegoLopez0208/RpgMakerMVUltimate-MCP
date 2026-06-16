@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.2.0] - 2026-06-15
+
+### Fixed
+- **Procedurally-generated chests reopened and bosses respawned.** The internal `makeChestEvent`/`makeBossEvent` in the map generator wrote Self Switch A with value `1` (= OFF in MV, where `command123` sets `value = params[1] === 0`), so the page-2 "already opened/defeated" state never activated. The 4.1.1 self-switch fix corrected the manual preset tools but missed these two generator-internal makers. Both now write `['A', 0]` (ON)
+- **The inn's gold check never worked.** `create_inn` used Conditional Branch type `11` (Button pressed) with a script string, so the "can you afford it?" check evaluated a key-press, not gold. Now uses type `12` (Script)
+- **`cmd.conditionalVariable` produced a malformed Conditional Branch.** Parameters were `[1, varId, operator, 0, val]`; MV expects `[1, varId, operandType, operandValue, comparisonOp]`, so it compared the variable against variable #0 and used the value as the operator. Corrected to `[1, varId, 0, val, operator]`
+
+### Added
+- **A4 interior walls are now shaped (tall-wall autotiling).** The autotiler previously skipped A4 (left walls flat at shape 0, ~25% correct). A4 walls now render as a pseudo-3D vertical structure — top cap / body / bottom face — via a zone-based heuristic derived from the bundled maps (~70%; the high-traffic fills, edges and corners are 86-91% confident). A1/A2/A3 remain near-exact (97/99/93%)
+- **`door` event preset** on `manage_map_event`: an action-button warp into another map (e.g. a house entrance), with an optional sprite and an optional `lockedSwitchId` that shows a "locked" message until a game switch is ON
+- **Enterable house interiors.** Procedural `town`/`village` generation now creates an interior map for every house and wires a two-way warp: an action-button door on the house entrance leads inside, and a walk-on exit mat returns the player to the street below the door. The new interior map IDs are returned in `interiorMapIds`; opt out with `enterableHouses: false`
+
 ## [5.1.0] - 2026-06-15
 
 ### Fixed

@@ -5,7 +5,7 @@ import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
 
-import { generateTileLayoutV3, generateFromTemplate, THEMES as V3_THEMES, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent } from '../utils/mapGenerator.js';
+import { generateTileLayoutV3, generateFromTemplate, THEMES as V3_THEMES, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 
 /**
@@ -182,26 +182,83 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     };
 
     const mapId = await getNextMapId(projectPath);
+
+    // Enterable houses: town/village generators return house rectangles. For
+    // each house we create an interior map and a two-way warp — an action-button
+    // door on the house entrance leads inside, and a walk-on exit mat in the
+    // interior returns the player to the street just below the door. Interiors
+    // get sequential IDs right after the exterior. Opt out with
+    // enterableHouses: false. (Interior tileset 3 = the default project's Inside.)
+    const interiorsWanted = (params as Record<string, unknown>).enterableHouses !== false
+        && (theme === 'town' || theme === 'village')
+        && Array.isArray(tileResult.houses) && tileResult.houses.length > 0;
+
+    const interiors: { id: number; map: RpgMakerMap; name: string }[] = [];
+    if (interiorsWanted) {
+        const IW = 11, IH = 9, exitX = Math.floor(IW / 2), exitY = IH - 2;
+        const houses = tileResult.houses as { x: number; y: number; w: number; h: number }[];
+        for (let i = 0; i < houses.length; i++) {
+            const ho = houses[i];
+            const doorX = ho.x + Math.floor(ho.w / 2);
+            const doorY = ho.y + ho.h - 1;
+            const interiorId = mapId + 1 + i;
+            // Exterior door (action button) → interior, landing one tile above the exit mat.
+            tileResult.events.push(makeDoorEvent(tileResult.events.length, doorX, doorY, interiorId, exitX, exitY - 1));
+            // Interior room + walk-on exit mat back to the street below the door.
+            const inner = generateTileLayoutV3(IW, IH, 'interior', { seed: (seed || 0) + 101 + i, addEvents: false });
+            inner.events.push(makeTransferEvent(inner.events.length, exitX, exitY, mapId, doorX, doorY + 1, 1));
+            interiors.push({ id: interiorId, map: makeMapObject(inner.data, IW, IH, inner.events, 3, ''), name: (name || 'Town') + ' House ' + (i + 1) });
+        }
+    }
+
     const mapPath = getMapPath(projectPath, mapId);
     await writeJsonDirect(mapPath, map);
+    for (const it of interiors) await writeJsonDirect(getMapPath(projectPath, it.id), it.map);
 
     const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
-    while (mapInfos.length <= mapId) mapInfos.push(null);
+    const lastId = interiors.length > 0 ? interiors[interiors.length - 1].id : mapId;
+    while (mapInfos.length <= lastId) mapInfos.push(null);
 
-    const maxOrder2 = (mapInfos as unknown[]).reduce(function(max: number, info: unknown) {
+    let nextOrder = (mapInfos as unknown[]).reduce(function(max: number, info: unknown) {
         return info && (info as Record<string, number>).order && (info as Record<string, number>).order > max ? (info as Record<string, number>).order : max;
-    }, 0);
+    }, 0) + 1;
 
     mapInfos[mapId] = {
         id: mapId, expanded: false,
         name: name || 'MAP' + String(mapId).padStart(3, '0'),
-        order: maxOrder2 + 1, parentId: params.parentId || 0,
+        order: nextOrder++, parentId: params.parentId || 0,
         scrollX: Math.floor(width * 32 * 0.8),
         scrollY: Math.floor(height * 32 * 0.8)
     };
+    // Interiors are nested under the exterior map in the editor tree.
+    for (const it of interiors) {
+        mapInfos[it.id] = {
+            id: it.id, expanded: false, name: it.name,
+            order: nextOrder++, parentId: mapId,
+            scrollX: 11 * 32, scrollY: 9 * 32
+        };
+    }
 
     await writeJson(projectPath, 'MapInfos.json', mapInfos);
-    return { mapId: mapId, seed: tileResult.seed, theme: theme };
+    return { mapId: mapId, seed: tileResult.seed, theme: theme, interiorMapIds: interiors.map(function(it) { return it.id; }) };
+}
+
+/** Assemble a minimal RPG Maker MV map object from generated tile data + events. */
+function makeMapObject(data: number[], width: number, height: number, events: MapEvent[], tilesetId: number, displayName: string): RpgMakerMap {
+    return {
+        autoplayBgm: false, autoplayBgs: false,
+        battleback1Name: '', battleback2Name: '',
+        bgm: { name: '', pan: 0, pitch: 100, volume: 90 },
+        bgs: { name: '', pan: 0, pitch: 100, volume: 90 },
+        disableDashing: false, displayName: displayName,
+        encounterList: [], encounterStep: 30,
+        height: height, width: width, note: '',
+        parallaxLoopX: false, parallaxLoopY: false,
+        parallaxName: '', parallaxShow: true,
+        parallaxSx: 0, parallaxSy: 0,
+        scrollType: 0, specifyBattleback: false,
+        tilesetId: tilesetId, data: data, events: events
+    };
 }
 
 /**
@@ -789,6 +846,66 @@ async function createTeleportEvent(projectPath: string, mapId: number, x: number
 }
 
 /**
+ * HIGH LEVEL HELPER: Create a door — an action-button warp into another map
+ * (e.g. a house entrance). Unlike createTeleportEvent (a walk-on transfer
+ * zone), a door is pressed to enter and can show a sprite and be locked.
+ *
+ * Without a lock it is a single page: face the door, press the action button,
+ * transfer. With `lockedSwitchId` it gets two pages — page 1 (switch OFF) shows
+ * a "locked" message; page 2 (switch ON) performs the transfer — so a key/quest
+ * switch can gate it.
+ *
+ * @param destMapId/destX/destY - where the door leads (not validated)
+ * @param opts - { characterName?, characterIndex?, trigger?, lockedSwitchId?, lockedMessage? }
+ */
+async function createDoor(projectPath: string, mapId: number, x: number, y: number, destMapId: number, destX: number, destY: number, opts: Record<string, unknown> = {}) {
+  var numMapId = toNum(mapId, 'mapId');
+  var numDestMapId = toNum(destMapId, 'destMapId');
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
+  const newId = nextId(map.events);
+
+  var characterName = (opts.characterName as string) || '';
+  var characterIndex = opts.characterIndex !== undefined ? toNum(opts.characterIndex, 'characterIndex') : 0;
+  // Doors default to the action button (trigger 0); pass trigger 1 for a
+  // walk-on doorway.
+  var trigger = opts.trigger !== undefined ? toNum(opts.trigger, 'trigger') : 0;
+  var lockedSwitchId = opts.lockedSwitchId !== undefined ? toNum(opts.lockedSwitchId, 'lockedSwitchId') : 0;
+  var lockedMessage = (opts.lockedMessage as string) || "It's locked.";
+
+  function imageFor(): Record<string, unknown> {
+    return { characterIndex: characterIndex, characterName: characterName, direction: 8, pattern: 1, tileId: 0 };
+  }
+  function pageShell(list: EventCommand[], conditions: Record<string, unknown>): Record<string, unknown> {
+    return {
+      conditions: conditions, directionFix: true, image: imageFor(), list: list, moveFrequency: 3,
+      moveRoute: { list: [{ code: 0, parameters: [] }], repeat: true, skippable: false, wait: false },
+      moveSpeed: 2, moveType: 0, priorityType: trigger === 0 ? 1 : 0, stepAnime: false,
+      through: trigger !== 0, trigger: trigger, walkAnime: false
+    };
+  }
+
+  var transferList = cmd.teleport(numDestMapId, destX, destY, 0, 0).slice();
+  transferList.push({ code: 0, indent: 0, parameters: [] });
+
+  var pages: Record<string, unknown>[];
+  if (lockedSwitchId > 0) {
+    // Page 1 (switch OFF): show the locked message.
+    var lockedList = cmd.message(lockedMessage, '', 0);
+    var transferPage = pageShell(transferList, Object.assign(createDefaultConditions(), { switch1Id: lockedSwitchId, switch1Valid: true }));
+    pages = [pageShell(lockedList, createDefaultConditions()), transferPage];
+  } else {
+    pages = [pageShell(transferList, createDefaultConditions())];
+  }
+
+  var event = { id: newId, name: (opts.name as string) || ('Door to Map' + numDestMapId), note: '', x: x, y: y, pages: pages } as unknown as MapEvent;
+  while (map.events.length <= newId) map.events.push(null);
+  map.events[newId] = event;
+  const mapPath = getMapPath(projectPath, numMapId);
+  await writeJsonDirect(mapPath, map);
+  return event;
+}
+
+/**
  * Search map events by name (case-insensitive).
  * @param {string} projectPath - The project root path
  * @param {number} mapId - The map ID
@@ -967,7 +1084,7 @@ async function createInn(projectPath: string, mapId: number, x: number, y: numbe
   { code: 401, indent: 0, parameters: ['Rest here for ' + numCost + ' gold?'] },
   { code: 102, indent: 0, parameters: [['Yes', 'No'], 1] },
   { code: 402, indent: 0, parameters: [0, 'Yes'] },
-  { code: 111, indent: 1, parameters: [11, '$gameParty.gold() >= ' + numCost] },
+  { code: 111, indent: 1, parameters: [12, '$gameParty.gold() >= ' + numCost] },
   { code: 125, indent: 2, parameters: [1, 0, numCost] },
     { code: 314, indent: 2, parameters: [0, 0] },
     { code: 101, indent: 2, parameters: ['', 0, 0, 2] },
@@ -1136,6 +1253,7 @@ export { addEventCommand };
 export { createNpc };
 export { createChest };
 export { createTeleportEvent };
+export { createDoor };
 export { searchMapEvents };
 export { deleteMapEvent };
 export { duplicateMap };
