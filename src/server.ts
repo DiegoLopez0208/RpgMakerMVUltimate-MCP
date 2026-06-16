@@ -807,20 +807,18 @@ async function renderMapAscii(projectPath: string, mapId: number, layer: number,
 export async function main() {
   logger.info('Starting RPG Maker MV MCP Server...');
 
+  // Never exit on a bad/missing project path: that would make the whole MCP
+  // unusable in the client if the project is later moved/renamed. Start anyway;
+  // tools that need a project return a clear "set_project_path" error, and
+  // set_project_path can point the server at a valid project at runtime.
   if (!PROJECT_PATH) {
-    logger.error('RPGMAKER_PROJECT_PATH environment variable not set');
-    process.exit(1);
+    logger.warn('RPGMAKER_PROJECT_PATH not set — server starting; call set_project_path before other tools.');
+  } else if (!(await validateProjectPath(PROJECT_PATH))) {
+    logger.warn('RPGMAKER_PROJECT_PATH "' + PROJECT_PATH + '" is not a valid project (no data/System.json) — it may have been moved/renamed. Server starting; fix the path or call set_project_path.');
+  } else {
+    projectTools.initProjectPath(PROJECT_PATH);
+    logger.info('Project path: ' + PROJECT_PATH);
   }
-
-  const isValid = await validateProjectPath(PROJECT_PATH);
-  if (!isValid) {
-    logger.error('Invalid RPG Maker MV project path: ' + PROJECT_PATH);
-    logger.error('Make sure the path contains a data/System.json file');
-    process.exit(1);
-  }
-
-  projectTools.initProjectPath(PROJECT_PATH);
-  logger.info('Project path: ' + PROJECT_PATH);
 
   const server = new Server(
     { name: 'rpgmaker-mv-mcp', version: '5.0.0' },

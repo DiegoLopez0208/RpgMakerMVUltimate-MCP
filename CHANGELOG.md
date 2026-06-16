@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.3.1] - 2026-06-16
+
+### Fixed
+- **A moved/renamed/missing project made the whole MCP unusable.** The server called `process.exit(1)` when `RPGMAKER_PROJECT_PATH` was unset or didn't point at a valid project, so the client (e.g. OpenCode) couldn't start the MCP at all. The server now logs a warning and starts anyway: `tools/list` works, and `set_project_path` (or fixing the env var) can point it at a valid project at runtime. Tools that need a project already return a clear actionable error.
+
 ## [5.3.0] - 2026-06-16
 
 Grounded the MCP in the actual RPG Maker MV engine (a dev script distills
