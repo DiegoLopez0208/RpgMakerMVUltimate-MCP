@@ -894,8 +894,15 @@ function generateWorldTheme(data: number[], w: number, h: number, _rng: PRNG, pe
 // EVENT GENERATION
 // ════════════════════════════════════════════════════════════════
 
-function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: GeneratorOptions = {}): MapEvent[] {
-  const events: MapEvent[] = [];
+function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: GeneratorOptions = {}): (MapEvent | null)[] {
+  // RPG Maker MV event arrays are 1-indexed: index 0 is null and the first real
+  // event has id 1. The id MUST match the array index — events.push uses
+  // events.length as the id below, so starting from [null] yields id 1 at
+  // index 1, etc. This also matters for correctness, not just convention: MV's
+  // Control Self Switch (command 123) is guarded by `if (this._eventId > 0)`,
+  // so an event with id 0 silently never sets its self switch — the first
+  // generated chest/boss/NPC used to reopen/respawn/repeat forever.
+  const events: (MapEvent | null)[] = [null];
   const addEvents = (opts as Record<string, boolean>).addEvents !== false;
   if (!addEvents) return events;
 
@@ -1069,7 +1076,7 @@ const THEMES = [
 
 function generateTileLayoutV3(width: number, height: number, theme: string, opts: GeneratorOptions = {}, _unused1?: unknown, _unused2?: unknown): {
   data: number[];
-  events: MapEvent[];
+  events: (MapEvent | null)[];
   seed: number;
   theme: string;
   width: number;

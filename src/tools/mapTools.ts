@@ -244,7 +244,7 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
 }
 
 /** Assemble a minimal RPG Maker MV map object from generated tile data + events. */
-function makeMapObject(data: number[], width: number, height: number, events: MapEvent[], tilesetId: number, displayName: string): RpgMakerMap {
+function makeMapObject(data: number[], width: number, height: number, events: (MapEvent | null)[], tilesetId: number, displayName: string): RpgMakerMap {
     return {
         autoplayBgm: false, autoplayBgs: false,
         battleback1Name: '', battleback2Name: '',

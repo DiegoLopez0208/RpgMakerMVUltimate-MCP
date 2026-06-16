@@ -233,6 +233,16 @@ describe("generator event regressions (5.2.0: 4.1.1 self-switch fix missed the i
     // Compare variable 3 >= 10 (operator 1). Constant operand (type 0).
     expect(cmd.conditionalVariable(3, 1, 10)[0].parameters).toEqual([1, 3, 0, 10, 1]);
   });
+
+  it("generated maps are 1-indexed events (id 0 events never set self switches in MV)", async () => {
+    const res = await dispatchTool("generate_map", { mode: "procedural", theme: "dungeon", width: 24, height: 18, seed: 9, name: "Cripta" }) as any;
+    const map = dataFile("Map" + String(res.mapId).padStart(3, "0") + ".json");
+    expect(map.events[0]).toBeNull();
+    // Every real event's id matches its array index, and the first id is >= 1.
+    map.events.forEach((e: any, i: number) => { if (e) expect(e.id).toBe(i); });
+    const firstId = map.events.findIndex((e: any) => e);
+    expect(firstId).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("query_map", () => {

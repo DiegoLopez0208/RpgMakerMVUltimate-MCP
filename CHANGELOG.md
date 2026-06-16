@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.2.1] - 2026-06-15
+
+### Fixed
+- **Procedurally-generated maps wrote a 0-indexed event array** (first event had `id` 0). RPG Maker MV event arrays are 1-indexed with `index 0 = null`, and — crucially — its Control Self Switch command is guarded by `if (this._eventId > 0)`, so an event with id 0 silently never sets its self switch. The first generated chest/boss/NPC on every procedural map therefore reopened/respawned/repeated even after the 5.2.0 self-switch fix. Generated event arrays now start at `[null]` with ids beginning at 1, matching MV
+
+### Notes
+- Reviewed A4 interior wall rendering: the 5.2.0 zone-based shaper already produces structurally correct walls for generated maps (verified on thick dungeon masses and thin interior rooms — top cap / face / side edges / corners / fill all placed correctly). The ~70% figure reflects stylistic variance against hand-drawn reference maps, not defects in generated output, so the larger structural wall rebuild was intentionally not pursued
+
 ## [5.2.0] - 2026-06-15
 
 ### Fixed
