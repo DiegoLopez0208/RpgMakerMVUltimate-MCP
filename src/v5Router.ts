@@ -257,8 +257,14 @@ async function editMap(executeTool: ExecuteTool, args: Record<string, any>) {
         posA: requireArg(args, 'posA', 'edit_map action "connect"'),
         posB: requireArg(args, 'posB', 'edit_map action "connect"')
       });
+    case 'set_encounters':
+      return executeTool('set_map_encounters', {
+        mapId: requireArg(args, 'mapId', 'edit_map action "set_encounters"'),
+        encounters: requireArg(args, 'encounters', 'edit_map action "set_encounters"'),
+        encounterStep: args.encounterStep
+      });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: fill_layer, set_display_names, organize_tree, connect');
+      throw new Error('Unknown action "' + action + '". Valid actions: fill_layer, set_display_names, organize_tree, connect, set_encounters');
   }
 }
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## [5.3.0] - 2026-06-16
+
+Grounded the MCP in the actual RPG Maker MV engine (a dev script distills
+`rpg_core.js`/`rpg_objects.js` + the default project into `src/data/engineDefaults.ts`,
+with a runtime fallback that reads the active project's own `js/rpg_core.js`), and
+fixed the "enemies don't work" report end-to-end (verified by playing the game).
+
+### Fixed
+- **Enemies were invisible in battle.** Created enemies kept `battlerName: ""`. `create_enemy`/`create_boss_enemy` now assign a real battler sprite that exists in the project (front-view `img/enemies` or side-view `img/sv_enemies` per System.json), varied per enemy, and validate any provided name.
+- **No random encounters.** Generated maps shipped `encounterList: []` and there was no way to set encounters, so dungeons/caves had no battles. Added `set_map_encounters` (and `edit_map` action `"set_encounters"`); combat-theme generation (dungeon/cave/world/fortress/sewer/volcano) now auto-populates encounters from the project's troops.
+- **`cmd.changeLevel` used command 317 (Change Parameter) instead of 316 (Change Level)** — verified against the engine's `command###` definitions.
+- **Autotiling now classifies tiles exactly as the engine does** (`isFloorTypeAutotile`/`isWallTypeAutotile`/wall-top vs wall-side from `rpg_core.js`). A4 interior walls jumped from a ~70% heuristic to wall-top 95% / wall-side 87% (A1 98 / A2 99 / A3 93 unchanged); the A4 zone heuristic is gone.
+- **Generalized asset validation**: every map write funnels through one sanitizer that validates event sprites, Show Text face graphics, parallax/battleback images and bgm/bgs against the project, blanking anything missing so no resource can trigger MV's fatal Loading Error.
+
+### Added
+- `create_database_entry` fills any missing fields from the engine's canonical default templates, so every created entry is structurally battle/menu-complete.
+- `scripts/extract-engine.mjs`, `src/data/engineDefaults.ts`, `src/utils/engine.ts`.
+
+### Note
+- Existing projects whose **class `params` are a flat 8-value array** (written by a pre-4.1.1 MCP) give actors null max-HP and crash any battle (`createLinearGradient` non-finite). The current MCP always expands class params to MV's 8×100 curves on create/update; re-saving each class through `update_database_entry` repairs old data.
+
 ## [5.2.4] - 2026-06-16
 
 ### Fixed

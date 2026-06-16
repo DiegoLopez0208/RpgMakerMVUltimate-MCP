@@ -1,5 +1,23 @@
+import { readdirSync, readFileSync } from "fs";
 import { createCrud } from "../utils/crudHelper.js";
 import type { EnemyParams, BossEnemyParams, RpgMakerDbEntry } from "../types/rpgmaker.js";
+
+// An enemy with battlerName "" is invisible in battle. Resolve a battler that
+// actually exists in the project's battler folder (front-view img/enemies or
+// side-view img/sv_enemies per System.json), keeping a valid provided name,
+// and otherwise picking a real sprite deterministically by enemy name so
+// different enemies look different. Returns "" only if no battlers exist.
+function resolveEnemyBattler(projectPath: string, name: string | undefined, key: string): string {
+  let sideView = false;
+  try { sideView = !!JSON.parse(readFileSync(projectPath + "/data/System.json", "utf8")).optSideView; } catch { /* default front */ }
+  const dir = projectPath + (sideView ? "/img/sv_enemies" : "/img/enemies");
+  let battlers: string[] = [];
+  try { battlers = readdirSync(dir).filter((f) => /\.png$/i.test(f)).map((f) => f.replace(/\.png$/i, "")); } catch { return name || ""; }
+  if (battlers.length === 0) return name || "";
+  if (name && battlers.includes(name)) return name;        // valid as given
+  let h = 0; for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return battlers[h % battlers.length];                     // deterministic real sprite
+}
 
 interface Enemy extends RpgMakerDbEntry {
   battlerName: string;
@@ -43,16 +61,20 @@ async function getEnemy(projectPath: string, id: number) {
 }
 
 async function createEnemy(projectPath: string, params: EnemyParams) {
+  const battlerName = resolveEnemyBattler(projectPath, params.battlerName, params.name || "enemy");
   return enemiesCrud.create(projectPath, (id) => ({
     ...enemyFactory(id),
     ...params,
+    battlerName,
   }));
 }
 
 async function createBossEnemy(projectPath: string, params: BossEnemyParams) {
+  const battlerName = resolveEnemyBattler(projectPath, params.battlerName, params.name || "boss");
   return enemiesCrud.create(projectPath, (id) => ({
     ...enemyFactory(id),
     ...params,
+    battlerName,
     params: params.params || [5000, 0, 80, 60, 60, 60, 50, 50],
     exp: params.exp !== undefined ? params.exp : 500,
     gold: params.gold !== undefined ? params.gold : 200,

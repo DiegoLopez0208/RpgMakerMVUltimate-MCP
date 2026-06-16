@@ -110,6 +110,7 @@ export const TOOL_DEFINITIONS_V5 = [
         seed: { ...ID_TYPE, description: 'procedural/batch: random seed for reproducible output (omit for random; returned in the result)' },
         addEvents: { type: 'boolean', description: 'procedural: also place themed NPCs/chests/bosses/transfers (default true)' },
         enterableHouses: { type: 'boolean', description: 'procedural town/village only: also auto-generate an interior map per house with a two-way warp (action-button door outside → interior, walk-on mat inside → back to the street). Default true; the new interior map IDs are returned in interiorMapIds' },
+        encounters: { type: 'boolean', description: 'procedural combat themes (dungeon/cave/world/fortress/sewer/volcano): auto-populate the map\'s random encounters from the project\'s existing troops so enemies appear while walking. Default true (no-op if the project has no troops yet)' },
         parentId: { ...ID_TYPE, description: 'Map tree folder to nest the new map under (0 = root)' },
         bgmName: { type: 'string', description: 'Audio file from audio/bgm/ to autoplay on entry' },
         note: { type: 'string', description: 'Free-form note field for plugin metadata' },
@@ -123,12 +124,12 @@ export const TOOL_DEFINITIONS_V5 = [
   },
   {
     name: 'edit_map',
-    description: 'Modify existing maps; the affected map files / MapInfos.json are written immediately. `action` selects the edit: "fill_layer" overwrites an ENTIRE tile layer with one tile ID (destructive, not undoable; layers: 0-1 ground, 2-3 upper, 4 shadow bits 0-15, 5 region IDs 0-255; tileId 0 clears; find valid IDs with get_project_context detail "tileset"); "set_display_names" sets the player-visible displayName of several maps at once (entries whose map file is missing are reported in `skipped`, not errors); "organize_tree" re-parents maps in the editor tree (purely organizational, gameplay unaffected); "connect" creates a bidirectional pair of transfer events between two maps so the player can walk both ways. Returns a per-action summary. Fails with an error if a referenced map does not exist (except set_display_names, which skips). For event-level work use manage_map_event.',
+    description: 'Modify existing maps; the affected map files / MapInfos.json are written immediately. `action` selects the edit: "fill_layer" overwrites an ENTIRE tile layer with one tile ID (destructive, not undoable; layers: 0-1 ground, 2-3 upper, 4 shadow bits 0-15, 5 region IDs 0-255; tileId 0 clears; find valid IDs with get_project_context detail "tileset"); "set_display_names" sets the player-visible displayName of several maps at once (entries whose map file is missing are reported in `skipped`, not errors); "organize_tree" re-parents maps in the editor tree (purely organizational, gameplay unaffected); "connect" creates a bidirectional pair of transfer events between two maps so the player can walk both ways; "set_encounters" sets the map\'s random-battle list so enemies appear while walking — `encounters` is [{troopId, weight?, regionSet?}] (weight default 5; regionSet [] = whole map; troopId must exist) plus optional `encounterStep`. WITHOUT encounters set, a map has no random battles. Returns a per-action summary. Fails with an error if a referenced map does not exist (except set_display_names, which skips). For event-level work use manage_map_event.',
     annotations: { title: 'Edit map', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['fill_layer', 'set_display_names', 'organize_tree', 'connect'], description: 'Which edit to perform; see the tool description' },
+        action: { type: 'string', enum: ['fill_layer', 'set_display_names', 'organize_tree', 'connect', 'set_encounters'], description: 'Which edit to perform; see the tool description' },
         mapId: { ...ID_TYPE, description: 'action "fill_layer": map to modify' },
         layer: { ...ID_TYPE, description: 'action "fill_layer": layer index 0-5' },
         tileId: { ...ID_TYPE, description: 'action "fill_layer": tile ID to write into every cell (0 = clear)' },
@@ -137,7 +138,9 @@ export const TOOL_DEFINITIONS_V5 = [
         mapIdA: { ...ID_TYPE, description: 'action "connect": first map ID' },
         mapIdB: { ...ID_TYPE, description: 'action "connect": second map ID' },
         posA: { type: 'object', description: 'action "connect": transfer event position on map A {x, y, trigger} (trigger 1=walk-on default, 0=action button for doors)' },
-        posB: { type: 'object', description: 'action "connect": transfer event position on map B {x, y, trigger}' }
+        posB: { type: 'object', description: 'action "connect": transfer event position on map B {x, y, trigger}' },
+        encounters: { type: 'array', description: 'action "set_encounters": [{troopId, weight?, regionSet?}] random-battle entries; troopId must exist (create via create_database_entry "troops")', items: { type: 'object' } },
+        encounterStep: { ...ID_TYPE, description: 'action "set_encounters": average steps between random battles (default 30)' }
       },
       required: ['action']
     }

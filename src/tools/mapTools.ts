@@ -186,6 +186,16 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
 
     const mapId = await getNextMapId(projectPath);
 
+    // Auto-wire random encounters for combat themes from the project's troops,
+    // so a generated dungeon/cave actually has enemies. Opt out: encounters:false.
+    if ((params as Record<string, unknown>).encounters !== false && COMBAT_THEMES.indexOf(theme) >= 0) {
+        const enc = await autoEncounterList(projectPath);
+        if (enc.length > 0) {
+            map.encounterList = enc;
+            map.encounterStep = theme === 'world' ? 40 : 30;
+        }
+    }
+
     // Enterable houses: town/village generators return house rectangles. For
     // each house we create an interior map and a two-way warp — an action-button
     // door on the house entrance leads inside, and a walk-on exit mat in the
@@ -353,13 +363,13 @@ async function connectMaps(projectPath: string, mapIdA: number, mapIdB: number, 
   var evA = makeTransferEvent(newIdA, posA.x, posA.y, numMapIdB, posB.x, posB.y, posA.trigger || 1);
   while (mapA.events.length <= newIdA) mapA.events.push(null);
   mapA.events[newIdA] = evA;
-  await writeJsonDirect(getMapPath(projectPath, numMapIdA), mapA);
+  await writeMapJson(projectPath, getMapPath(projectPath, numMapIdA), mapA);
 
   var newIdB = nextId(mapB.events);
   var evB = makeTransferEvent(newIdB, posB.x, posB.y, numMapIdA, posA.x, posA.y, posB.trigger || 1);
   while (mapB.events.length <= newIdB) mapB.events.push(null);
   mapB.events[newIdB] = evB;
-  await writeJsonDirect(getMapPath(projectPath, numMapIdB), mapB);
+  await writeMapJson(projectPath, getMapPath(projectPath, numMapIdB), mapB);
 
   return { eventA: evA, eventB: evB };
 }
@@ -383,8 +393,55 @@ async function populateMapEvents(projectPath: string, mapId: number, eventType: 
         map.events[newId] = ev;
         added.push(ev);
     }
-  await writeJsonDirect(getMapPath(projectPath, numMapId), map);
+  await writeMapJson(projectPath, getMapPath(projectPath, numMapId), map);
   return { added: added, mapId: numMapId };
+}
+
+/**
+ * Set a map's random-encounter list. Without this, generated dungeons/caves
+ * have no enemies — encounterList stays [] and walking never triggers a battle.
+ * Entries are shaped exactly as the engine reads them in
+ * Game_Player.makeEncounterTroopId: { troopId, weight, regionSet }.
+ * @param encounters - [{ troopId, weight?, regionSet? }] (weight default 5,
+ *   regionSet default [] = whole map). troopId must already exist.
+ * @param encounterStep - average steps between battles (default keeps current/30)
+ */
+async function setMapEncounters(projectPath: string, mapId: number, encounters: Record<string, unknown>[], encounterStep?: number) {
+  var numMapId = toNum(mapId, 'mapId');
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
+  const troops = await readJson(projectPath, 'Troops.json') as unknown[];
+  const list = (encounters || []).map(function (e) {
+    const troopId = toNum(e.troopId, 'troopId');
+    if (!troops[troopId]) throw new Error('Troop ' + troopId + ' does not exist. Create it first (create_database_entry entity "troops").');
+    return {
+      troopId: troopId,
+      weight: e.weight !== undefined ? toNum(e.weight, 'weight') : 5,
+      regionSet: Array.isArray(e.regionSet) ? e.regionSet : []
+    };
+  });
+  map.encounterList = list;
+  if (encounterStep !== undefined) map.encounterStep = toNum(encounterStep, 'encounterStep');
+  else if (!map.encounterStep) map.encounterStep = 30;
+  await writeJsonDirect(getMapPath(projectPath, numMapId), map);
+  return { mapId: numMapId, encounterList: list, encounterStep: map.encounterStep };
+}
+
+// Themes that should auto-wire random encounters from the project's troops.
+const COMBAT_THEMES = ['dungeon', 'cave', 'world', 'fortress', 'sewer', 'volcano'];
+
+// Build a weighted encounterList from the project's existing, non-empty troops
+// (weaker/lower IDs weighted higher). Returns [] if there are no usable troops.
+async function autoEncounterList(projectPath: string): Promise<{ troopId: number; weight: number; regionSet: number[] }[]> {
+  try {
+    const troops = await readJson(projectPath, 'Troops.json') as Array<{ members?: unknown[] } | null>;
+    const valid: number[] = [];
+    for (let i = 1; i < troops.length; i++) {
+      const t = troops[i];
+      if (t && Array.isArray(t.members) && t.members.length > 0) valid.push(i);
+    }
+    const pick = valid.slice(0, 6);
+    return pick.map(function (id, idx) { return { troopId: id, weight: Math.max(1, pick.length - idx) * 5, regionSet: [] }; });
+  } catch (_) { return []; }
 }
 
 async function setMapDisplayNames(projectPath: string, nameMap: Record<string, unknown>[]) {
@@ -470,25 +527,77 @@ async function fillMapLayer(projectPath: string, mapId: number, layer: number, t
 // validates each event image against img/characters/, auto-correcting the
 // RPG Maker object prefixes agents commonly miss ('!'/'$'), and blanking
 // (invisible, harmless) anything it still can't resolve.
-function resolveCharacterName(projectPath: string, name: string): string {
-  if (!name) return name; // '' = intentionally invisible, always safe
-  let files: string[];
-  try { files = readdirSync(projectPath + '/img/characters'); }
-  catch { return name; } // no folder to validate against — leave untouched
-  const set = new Set(files.filter(function (f) { return /\.png$/i.test(f); }).map(function (f) { return f.replace(/\.png$/i, ''); }));
+const _assetCache = new Map<string, Set<string>>();
+function listAssets(dir: string): Set<string> {
+  if (_assetCache.has(dir)) return _assetCache.get(dir)!;
+  let set: Set<string>;
+  try {
+    set = new Set(readdirSync(dir).map(function (f) { return f.replace(/\.(png|ogg|m4a|rpgmvo|rpgmvm)$/i, ''); }));
+  } catch { set = new Set(); }
+  _assetCache.set(dir, set);
+  return set;
+}
+
+// Resolve an asset name against a project folder; '' if unresolvable so a
+// missing asset renders/plays nothing instead of halting the game. `null`
+// return means "folder absent, can't validate — leave the name as-is".
+function resolveAsset(projectPath: string, subdir: string, name: string): string | null {
+  if (!name) return name;
+  const dir = projectPath + '/' + subdir;
+  const set = listAssets(dir);
+  if (set.size === 0) return null; // can't validate
   if (set.has(name)) return name;
-  if (!name.startsWith('!') && set.has('!' + name)) return '!' + name;   // Chest -> !Chest
-  if (name.startsWith('!') && set.has(name.slice(1))) return name.slice(1);
-  if (!name.startsWith('$') && set.has('$' + name)) return '$' + name;
-  return ''; // unknown sprite -> invisible rather than a game-halting crash
+  // RPG Maker object-character prefixes agents commonly miss.
+  if (subdir === 'img/characters') {
+    if (!name.startsWith('!') && set.has('!' + name)) return '!' + name;
+    if (name.startsWith('!') && set.has(name.slice(1))) return name.slice(1);
+    if (!name.startsWith('$') && set.has('$' + name)) return '$' + name;
+  }
+  return '';
+}
+
+function resolveCharacterName(projectPath: string, name: string): string {
+  const r = resolveAsset(projectPath, 'img/characters', name);
+  return r === null ? name : r;
+}
+
+// Sanitize every asset reference a map can hold so none can trigger MV's fatal
+// "Loading Error": event character sprites + Show Text (101) face graphics, and
+// the map's parallax/battleback images and bgm/bgs audio.
+function sanitizeMapAssets(projectPath: string, map: RpgMakerMap): void {
+  if (!map) return;
+  if (Array.isArray(map.events)) for (const e of map.events) sanitizeEventImages(projectPath, e as MapEvent | null);
+  const clear = (subdir: string, val: unknown): string | undefined => {
+    if (typeof val !== 'string' || !val) return val as string | undefined;
+    const r = resolveAsset(projectPath, subdir, val);
+    return r === null ? val : r; // '' if missing
+  };
+  const m = map as unknown as Record<string, unknown>;
+  if (typeof m.parallaxName === 'string') m.parallaxName = clear('img/parallaxes', m.parallaxName);
+  if (typeof m.battleback1Name === 'string') m.battleback1Name = clear('img/battlebacks1', m.battleback1Name);
+  if (typeof m.battleback2Name === 'string') m.battleback2Name = clear('img/battlebacks2', m.battleback2Name);
+  const bgm = m.bgm as { name?: string } | undefined;
+  if (bgm && typeof bgm.name === 'string' && clear('audio/bgm', bgm.name) === '') { bgm.name = ''; m.autoplayBgm = false; }
+  const bgs = m.bgs as { name?: string } | undefined;
+  if (bgs && typeof bgs.name === 'string' && clear('audio/bgs', bgs.name) === '') { bgs.name = ''; m.autoplayBgs = false; }
 }
 
 function sanitizeEventImages(projectPath: string, event: MapEvent | null): void {
   if (!event || !Array.isArray(event.pages)) return;
   for (const pg of event.pages) {
-    const img = pg && (pg as EventPage).image;
+    const page = pg as EventPage;
+    const img = page && page.image;
     if (img && typeof img.characterName === 'string') {
       img.characterName = resolveCharacterName(projectPath, img.characterName);
+    }
+    // Show Text (101): params[0] is a face graphic in img/faces.
+    if (page && Array.isArray(page.list)) {
+      for (const c of page.list as EventCommand[]) {
+        if (c && c.code === 101 && Array.isArray(c.parameters) && typeof c.parameters[0] === 'string' && c.parameters[0]) {
+          const r = resolveAsset(projectPath, 'img/faces', c.parameters[0] as string);
+          if (r !== null) c.parameters[0] = r;
+        }
+      }
     }
   }
 }
@@ -1018,13 +1127,12 @@ async function readJsonDirect(filePath: string) {
     return JSON.parse(content.replace(/^\uFEFF/, '')) as unknown;
 }
 
-// Write a map to disk, first sanitizing every event sprite against the
-// project's img/characters/ so a missing graphic can never halt the game.
-// All map writes go through this; sanitizing is idempotent.
+// Write a map to disk, first sanitizing every asset reference (event sprites,
+// face graphics, parallax/battleback images, bgm/bgs) against the project so a
+// missing resource can never halt the game. All map writes go through this;
+// sanitizing is idempotent.
 async function writeMapJson(projectPath: string, filePath: string, map: RpgMakerMap) {
-  if (map && Array.isArray(map.events)) {
-    for (const e of map.events) sanitizeEventImages(projectPath, e as MapEvent | null);
-  }
+  sanitizeMapAssets(projectPath, map);
   await writeJsonDirect(filePath, map);
 }
 
@@ -1291,6 +1399,7 @@ export { createMapFromTemplate };
 export { createMapBatch };
 export { connectMaps };
 export { populateMapEvents };
+export { setMapEncounters };
 export { fillMapLayer };
 export { createMapEvent };
 export { updateMapEvent };

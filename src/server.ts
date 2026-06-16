@@ -343,6 +343,8 @@ case 'search_map_events':
         return await mapTools.connectMaps(p, args.mapIdA, args.mapIdB, args.posA, args.posB);
       case 'populate_map_events':
         return await mapTools.populateMapEvents(p, args.mapId, args.eventType, args.count, args.opts);
+      case 'set_map_encounters':
+        return await mapTools.setMapEncounters(p, args.mapId, args.encounters, args.encounterStep);
       case 'set_map_display_names':
         return await mapTools.setMapDisplayNames(p, args.names);
       case 'organize_map_tree':

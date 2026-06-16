@@ -479,8 +479,8 @@ function changeEXP(actorId: number, value: number, isAdd: boolean): EventCommand
 }
 
 /**
- * Change Level — code 317
- * Modifies an actor's level.
+ * Change Level — code 316. (Code 317 is Change Parameter — using it here, as a
+ * previous version did, would change a random stat instead of the level.)
  * @param actorId - The actor ID (0 for entire party)
  * @param value - The amount to change
  * @param isAdd - true = add (0), false = subtract (1)
@@ -489,7 +489,7 @@ function changeEXP(actorId: number, value: number, isAdd: boolean): EventCommand
 function changeLevel(actorId: number, value: number, isAdd: boolean): EventCommand[] {
     isAdd = isAdd !== undefined ? isAdd : true;
     return [
-        { code: 317, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, 0] }
+        { code: 316, indent: 0, parameters: [0, actorId, isAdd ? 0 : 1, 0, value, 0] }
     ];
 }
 

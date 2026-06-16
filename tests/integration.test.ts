@@ -376,7 +376,7 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
     expect(autotileShape(data[1 * w + 1])).not.toBe(0);
   });
 
-  it("reproduces the bundled reference maps: A1/A2/A3 near-exact (>=90%), A4 walls heuristic (>=65%)", () => {
+  it("reproduces the bundled reference maps: A1/A2/A3 near-exact (>=90%), A4 walls engine-grounded (>=85%)", () => {
     const dir = "knowledge/maps";
     let a13Total = 0, a13Match = 0, a4Total = 0, a4Match = 0;
     for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
@@ -399,7 +399,7 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
     }
     expect(a13Total).toBeGreaterThan(10000);
     expect(a13Match / a13Total).toBeGreaterThan(0.90); // measured ~96%
-    expect(a4Match / a4Total).toBeGreaterThan(0.65);   // A4 tall walls ~70% (heuristic)
+    expect(a4Match / a4Total).toBeGreaterThan(0.85);   // engine-grounded classification (~92% combined)
   });
 
   it("town/village roads are A2 ground, not A1 water (5.2.2: outside.dirt resolved to the water sheet)", async () => {
@@ -449,6 +449,48 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
       if (id >= 2048) shapes.add(autotileShape(id));
     }
     expect(shapes.size).toBeGreaterThan(3);
+  });
+});
+
+describe("engine grounding (5.3.0: enemies, encounters, command + asset correctness)", () => {
+  it("cmd.changeLevel uses Change Level (316), not Change Parameter (317)", () => {
+    expect(cmd.changeLevel(1, 2, true)[0].code).toBe(316);
+  });
+
+  it("created enemies get a real battler sprite (were invisible with battlerName '')", async () => {
+    mkdirSync(path.join(projectDir, "img", "enemies"), { recursive: true });
+    writeFileSync(path.join(projectDir, "img", "enemies", "Slime.png"), "x");
+    const e = await dispatchTool("create_database_entry", { entity: "enemies", data: { name: "Blob" } }) as any;
+    expect(e.battlerName).toBe("Slime"); // resolved to the only existing battler
+    // and the entry is structurally complete (battle-ready)
+    for (const k of ["params", "exp", "gold", "dropItems", "actions", "traits"]) expect(e[k], k).toBeDefined();
+  });
+
+  it("set_map_encounters wires random battles; combat-theme generation auto-populates them", async () => {
+    // Need a troop with members for encounters to be valid.
+    await dispatchTool("create_database_entry", { entity: "enemies", data: { name: "Bat" } });
+    const troop = await dispatchTool("create_database_entry", { preset: "encounter_troop", data: { name: "Bats", enemyIds: [1] } }) as any;
+    const r = await dispatchTool("edit_map", { action: "set_encounters", mapId: 1, encounters: [{ troopId: troop.id, weight: 8 }], encounterStep: 25 }) as any;
+    expect(r.encounterList[0]).toEqual({ troopId: troop.id, weight: 8, regionSet: [] });
+    expect(r.encounterStep).toBe(25);
+    await expect(dispatchTool("edit_map", { action: "set_encounters", mapId: 1, encounters: [{ troopId: 999 }] })).rejects.toThrow(/does not exist/);
+    // generated dungeon auto-wires encounters from existing troops
+    const d = await dispatchTool("generate_map", { mode: "procedural", theme: "dungeon", width: 24, height: 18, seed: 9, name: "EncDgn" }) as any;
+    const map = dataFile("Map" + String(d.mapId).padStart(3, "0") + ".json");
+    expect(map.encounterList.length).toBeGreaterThan(0);
+    expect(map.encounterList[0].troopId).toBeGreaterThan(0);
+  });
+
+  it("sanitizes missing face graphics in Show Text so they can't halt the game", async () => {
+    mkdirSync(path.join(projectDir, "img", "faces"), { recursive: true });
+    writeFileSync(path.join(projectDir, "img", "faces", "Actor1.png"), "x");
+    const ev = await dispatchTool("manage_map_event", {
+      action: "create", mapId: 1, x: 9, y: 9, name: "Talker",
+      pages: [{ image: { characterIndex: 0, characterName: "", direction: 2, pattern: 0, tileId: 0 },
+        list: [{ code: 101, indent: 0, parameters: ["GhostFace", 0, 0, 2] }, { code: 401, indent: 0, parameters: ["hi"] }, { code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+    }) as any;
+    const c101 = ev.pages[0].list.find((c: any) => c.code === 101);
+    expect(c101.parameters[0]).toBe(""); // unknown face blanked
   });
 });
 
