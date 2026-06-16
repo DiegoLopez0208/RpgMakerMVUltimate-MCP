@@ -284,6 +284,14 @@ describe("generate_map and edit_map", () => {
     generatedMapId = result.mapId;
   });
 
+  it("auto-selects the tileset matching the theme when none is given (5.2.3)", async () => {
+    const pad = (n: number) => "Map" + String(n).padStart(3, "0") + ".json";
+    const town = await dispatchTool("generate_map", { mode: "procedural", theme: "town", width: 20, height: 16, seed: 2, name: "T" }) as any;
+    expect(dataFile(pad(town.mapId)).tilesetId).toBe(2); // Outside, not the old default 1
+    const dgn = await dispatchTool("generate_map", { mode: "procedural", theme: "dungeon", width: 20, height: 16, seed: 2, name: "D" }) as any;
+    expect(dataFile(pad(dgn.mapId)).tilesetId).toBe(4); // Dungeon
+  });
+
   it("mode town generates enterable house interiors with two-way warps (5.2.0)", async () => {
     const res = await dispatchTool("generate_map", { mode: "procedural", theme: "town", width: 34, height: 28, seed: 5, name: "Villa" }) as any;
     expect(Array.isArray(res.interiorMapIds)).toBe(true);
@@ -385,6 +393,31 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
         if (id >= 2048 && id < 2816) a1Water++; // A1 animated-water sheet
       }
       expect(a1Water, theme).toBe(0); // these themes have no water features
+    }
+  });
+
+  it("generated decorations use only object tiles that exist in the reference tilesets (5.2.3)", async () => {
+    const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
+    // Build the set of object tile IDs (non-autotile, <2048) each reference
+    // tileset actually contains, from the bundled ProjectR maps.
+    const exists: Record<number, Set<number>> = { 2: new Set(), 3: new Set() };
+    for (const f of readdirSync("knowledge/maps").filter((f) => f.endsWith(".json"))) {
+      let m: any; try { m = JSON.parse(readFileSync(`knowledge/maps/${f}`, "utf8")); } catch { continue; }
+      if (!m?.data || !exists[m.tilesetId]) continue;
+      for (let L = 0; L < 4; L++) for (let i = 0; i < m.width * m.height; i++) {
+        const id = m.data[L * m.width * m.height + i];
+        if (id > 0 && id < 2048) exists[m.tilesetId].add(id);
+      }
+    }
+    // town → Outside tileset (id 2); interior → Inside tileset (id 3).
+    for (const [theme, ts] of [["town", 2], ["interior", 3]] as const) {
+      const m: any = generateTileLayoutV3(24, 18, theme, { seed: 7, addEvents: false });
+      const bad = new Set<number>();
+      for (let L = 0; L < 4; L++) for (let i = 0; i < m.width * m.height; i++) {
+        const id = m.data[L * m.width * m.height + i];
+        if (id > 0 && id < 2048 && !exists[ts].has(id)) bad.add(id);
+      }
+      expect([...bad], `${theme} placed object tiles missing from tileset ${ts}`).toEqual([]);
     }
   });
 

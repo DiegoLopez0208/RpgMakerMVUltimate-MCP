@@ -105,7 +105,7 @@ export const TOOL_DEFINITIONS_V5 = [
         displayName: { type: 'string', description: 'Location name briefly shown to the player on entry' },
         width: { ...ID_TYPE, description: 'Map width in tiles (defaults: blank/themed 17, procedural 30; template uses the template\'s size)' },
         height: { ...ID_TYPE, description: 'Map height in tiles (defaults: blank/themed 13, procedural 25)' },
-        tilesetId: { ...ID_TYPE, description: 'Tileset to render with (default 1); match it to the theme (default project: 1=Overworld, 2=Outside, 3=Inside, 4=Dungeon)' },
+        tilesetId: { ...ID_TYPE, description: 'Tileset to render with. Defaults to the one matching the theme (Outside=2, Inside=3, Dungeon=4, Overworld=1), so you normally omit it — only set it to override. A mismatched tileset renders the map as garbage' },
         theme: { type: 'string', description: 'Required for themed/procedural. themed: forest, dungeon, town, castle, cave, village, swamp, desert, ruins, interior, beach. procedural adds: snow, harbor, volcano, sewer, fortress, magic_forest, magic_interior, space_interior, space_exterior, world' },
         seed: { ...ID_TYPE, description: 'procedural/batch: random seed for reproducible output (omit for random; returned in the result)' },
         addEvents: { type: 'boolean', description: 'procedural: also place themed NPCs/chests/bosses/transfers (default true)' },

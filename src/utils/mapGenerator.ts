@@ -222,19 +222,28 @@ const TILESETS: Record<string, Record<string, number>> = {
     lava: makeAutotileId(20, 0), swampWater: 2048,
     wallSide: makeAutotileId(8, 0, 4352), wallTop: 4352,
     roof: 4352, roof2: makeAutotileId(1, 0, 4352), roof3: makeAutotileId(2, 0, 4352),
-    tree: 1538, bush: 1539, flower: 1540, rock: 1541, pillar: 1536, stump: 1537,
-    fence: 1542, well: 1543, barrel: 1544, crate: 1545,
-    chest: 1546, sign: 1547, lamp: 1548, flower2: 1549,
-    magicDeco: 512, magicDeco2: 513, magicDeco3: 514
+    // Decorations are real object tiles confirmed used by the ProjectR Outside
+    // tileset (id 2). tree/bush/flower/rock/flower2 keep the A5 ids that the
+    // reference maps actually place (1538-1541, 1549); the rest were unused A5
+    // slots (often blank in the sheet) and are remapped to common single-tile
+    // B/C objects from the reference maps.
+    tree: 1538, bush: 1539, flower: 1540, rock: 1541, pillar: 101, stump: 168,
+    fence: 77, well: 107, barrel: 68, crate: 48,
+    chest: 56, sign: 176, lamp: 91, flower2: 1549,
+    magicDeco: 393, magicDeco2: 417, magicDeco3: 425
   },
   inside: {
     floor: makeAutotileId(0, 0, 2816), carpet: makeAutotileId(2, 0, 2816),
     woodFloor: makeAutotileId(4, 0, 2816), tileFloor: makeAutotileId(6, 0, 2816),
     wallSide: makeAutotileId(0, 0, 5888), wallTop: makeAutotileId(1, 0, 5888),
-    door: 1536, bookshelf: 1537, table: 1538, chair: 1539,
-    bed: 1540, chest: 1541, pot: 1542, lamp: 1543,
-    stairs: 1544, window: 1545, fireplace: 1546, cabinet: 1547,
-    magicDeco: 512, magicDeco2: 513, magicDeco3: 514, magicDeco4: 768
+    // Interior furniture lives in the B/C object pages, NOT A5 (which is floor
+    // patterns) — the old A5 ids 1537-1547 were blank cells, so furniture
+    // rendered as nothing. Remapped to real object tiles the ProjectR Inside
+    // tileset (id 3) actually uses.
+    door: 1536, bookshelf: 104, table: 209, chair: 105,
+    bed: 387, chest: 88, pot: 69, lamp: 77,
+    stairs: 142, window: 33, fireplace: 41, cabinet: 80,
+    magicDeco: 466, magicDeco2: 474, magicDeco3: 387, magicDeco4: 88
   },
   dungeon: {
     floor: makeAutotileId(0, 0, 2816), darkFloor: makeAutotileId(2, 0, 2816),
@@ -1078,6 +1087,18 @@ const THEMES = [
   'world'
 ];
 
+// Default tileset id per theme, matching the tile semantics each generator
+// emits (Outside=2, Inside=3, Dungeon=4, Overworld=1 in the ProjectR/RTP
+// defaults). Used when the caller doesn't pass a tilesetId — otherwise a town
+// (Outside tiles) on the Overworld tileset renders as garbage.
+const THEME_TILESET: Record<string, number> = {
+  forest: 2, town: 2, village: 2, castle: 2, beach: 2, desert: 2, swamp: 2,
+  ruins: 2, snow: 2, harbor: 2, magic_forest: 2, space_exterior: 2,
+  interior: 3, magic_interior: 3, space_interior: 3,
+  dungeon: 4, cave: 4, volcano: 4, sewer: 4, fortress: 4,
+  world: 1
+};
+
 function generateTileLayoutV3(width: number, height: number, theme: string, opts: GeneratorOptions = {}, _unused1?: unknown, _unused2?: unknown): {
   data: number[];
   events: (MapEvent | null)[];
@@ -1235,6 +1256,7 @@ export { generateFromTemplate };
 export { searchTemplates };
 export { loadTemplateIndex };
 export { THEMES };
+export { THEME_TILESET };
 export { TILESETS };
 export { PerlinNoise };
 export { PRNG };

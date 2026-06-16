@@ -1,5 +1,11 @@
 # Changelog
 
+## [5.2.3] - 2026-06-15
+
+### Fixed
+- **Generated maps used the wrong tileset, rendering as garbage.** `generate_map` defaulted `tilesetId` to 1 (Overworld) regardless of theme, so a `town` (whose tiles are Outside-tileset tiles) was painted with the Overworld tileset. The tileset is now auto-selected from the theme (Outside=2, Inside=3, Dungeon=4, Overworld=1) unless you pass one explicitly
+- **Interior furniture (and several decorations) were blank/non-existent tiles.** Furniture was placed from A5 ids 1537-1547, but in the Inside tileset A5 is floor patterns — real furniture lives in the B/C object pages. Decorations across the Outside and Inside tilesets are now real object tile ids confirmed used by the ProjectR reference maps (so they always exist). Exact object semantics are best-effort (derived from default-tileset usage); multi-tile objects like trees are still placed as single decorative tiles
+
 ## [5.2.2] - 2026-06-15
 
 ### Fixed

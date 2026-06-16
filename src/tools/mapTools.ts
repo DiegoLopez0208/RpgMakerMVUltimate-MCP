@@ -5,7 +5,7 @@ import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
 
-import { generateTileLayoutV3, generateFromTemplate, THEMES as V3_THEMES, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
+import { generateTileLayoutV3, generateFromTemplate, THEMES as V3_THEMES, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 
 /**
@@ -70,12 +70,12 @@ async function getNextMapId(projectPath: string) {
 async function createMap(projectPath: string, params: CreateMapParams | CreateMapV3Params) {
     const width = params.width || 17;
     const height = params.height || 13;
-    const tilesetId = params.tilesetId || 1;
     const displayName = params.displayName || '';
     const bgmName = params.bgmName || '';
     const note = params.note || '';
     const name = params.name || '';
     const theme = params.theme || '';
+    const tilesetId = params.tilesetId || THEME_TILESET[theme] || 1;
 
     const mapId = await getNextMapId(projectPath);
 
@@ -145,13 +145,16 @@ async function createMap(projectPath: string, params: CreateMapParams | CreateMa
 async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     const width = params.width || 30;
     const height = params.height || 25;
-    const tilesetId = params.tilesetId || 1;
     const displayName = params.displayName || '';
     const bgmName = params.bgmName || '';
     const note = params.note || '';
     const name = params.name || '';
     const theme = params.theme || 'forest';
     const seed = params.seed;
+    // Pick the tileset whose tiles this theme emits (Outside/Inside/Dungeon/
+    // Overworld) unless the caller forces one — otherwise e.g. a town's Outside
+    // tiles land on the Overworld tileset and render as garbage.
+    const tilesetId = params.tilesetId || THEME_TILESET[theme] || 1;
 
     var v3opts = {
         seed: seed,
@@ -325,7 +328,7 @@ async function createMapBatch(projectPath: string, batchSpec: unknown[]) {
         var params: CreateMapV3Params = {
             width: (spec.width as number) || 30,
             height: (spec.height as number) || 25,
-            tilesetId: (spec.tilesetId as number) || 2,
+            tilesetId: (spec.tilesetId as number) || THEME_TILESET[(spec.theme as string) || 'forest'] || 2,
             displayName: (spec.displayName as string) || (spec.name as string) || '',
             name: (spec.name as string) || '',
             theme: (spec.theme as string) || 'forest',
