@@ -617,6 +617,10 @@ function carveDoorPath(data: number[], w: number, h: number, doorX: number, door
   }
 }
 
+// Outside_A3 roof autotile kinds that the reference maps actually use (each has
+// its matching wall at roof+8). Gives houses varied roof colours/styles.
+const ROOF_KINDS = [48, 50, 52, 54, 55, 64, 66, 68, 69, 70];
+
 // Build a coherent RPG-Maker house from autotiles: a multi-row roof (A3 roof
 // kind) over a wall strip (A3 wall-side kind), with a door opening at the
 // bottom-centre. The autotiler then shapes the roof eaves/peak and wall edges
@@ -682,7 +686,9 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
   const houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] = [];
 
   // Coherent RTP-style houses: autotiled A3 roof over A3 wall with a doorway.
-  // (Mining B/C building fragments produced incoherent half-buildings.)
+  // (Mining B/C building fragments produced incoherent half-buildings.) Roof
+  // kinds come from the two Outside_A3 building sets (roofs 48-55 / 64-71, each
+  // wall = roof+8) so houses vary in colour/style instead of all looking alike.
   for (let i = 0; i < numHouses * 3 && houses.length < numHouses; i++) {
     const hw = rng.nextInt(4, 7), hh = rng.nextInt(4, 6);
     const hx = rng.nextInt(2, w - hw - 2), hy = rng.nextInt(2, h - hh - 2);
@@ -691,7 +697,8 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
     for (const oh of houses)
       if (hx < oh.x + oh.w + 2 && hx + hw + 2 > oh.x && hy < oh.y + oh.h + 2 && hy + hh + 2 > oh.y) { overlap = true; break; }
     if (overlap) continue;
-    houses.push(buildAutotileHouse(data, w, h, hx, hy, hw, hh, ts.roof, ts.wallSide));
+    const roofKind = ROOF_KINDS[rng.nextInt(0, ROOF_KINDS.length - 1)];
+    houses.push(buildAutotileHouse(data, w, h, hx, hy, hw, hh, makeAutotileId(roofKind, 0), makeAutotileId(roofKind + 8, 0)));
   }
   // Connect every house door to the road so the town reads as planned.
   for (const ho of houses) carveDoorPath(data, w, h, ho.doorX!, ho.doorY!, ts.dirt, onRoad);
@@ -711,9 +718,14 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
   return { houses: houses };
 }
 
+// Inside-tileset A2 floor kinds the reference maps use (wood/carpet/tile variety).
+const INSIDE_FLOORS = [16, 18, 24, 40, 42];
+
 function generateInteriorTheme(data: number[], w: number, h: number, rng: PRNG): void {
   const ts = TILESETS.inside;
-  fillLayer(data, w, h, LAYER_GROUND1, ts.floor);
+  // Varied floor + optional rug so no two rooms feel identical.
+  const floor = makeAutotileId(INSIDE_FLOORS[rng.nextInt(0, INSIDE_FLOORS.length - 1)], 0);
+  fillLayer(data, w, h, LAYER_GROUND1, floor);
   fillRect(data, w, h, 0, 0, w - 1, 1, LAYER_UPPER1, ts.wallSide);
   fillRect(data, w, h, 0, 0, w - 1, 0, LAYER_UPPER2, ts.wallTop);
   fillRect(data, w, h, 0, h - 1, w - 1, h - 1, LAYER_UPPER1, ts.wallSide);
@@ -722,17 +734,25 @@ function generateInteriorTheme(data: number[], w: number, h: number, rng: PRNG):
   const doorX = Math.floor(w / 2);
   setTile(data, w, h, doorX, h - 1, LAYER_UPPER1, 0);
   setTile(data, w, h, doorX - 1, h - 1, LAYER_UPPER1, 0);
-  fillRect(data, w, h, 2, 2, w - 3, h - 3, LAYER_REGION, 0);
   setRegion(data, w, h, 2, 2, w - 3, h - 3, 1);
-  const cw = Math.max(2, Math.floor(w / 4)), ch = Math.max(2, Math.floor(h / 4));
-  const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
-  fillRect(data, w, h, cx - Math.floor(cw / 2), cy - Math.floor(ch / 2), cx + Math.floor(cw / 2), cy + Math.floor(ch / 2), LAYER_GROUND1, ts.carpet);
-  setTile(data, w, h, cx, cy, LAYER_UPPER2, ts.table);
-  setTile(data, w, h, cx - 2, cy, LAYER_UPPER2, ts.chair);
-  setTile(data, w, h, cx + 2, cy, LAYER_UPPER2, ts.chair);
-  setTile(data, w, h, 2, 2, LAYER_UPPER2, ts.bookshelf);
-  setTile(data, w, h, 3, 2, LAYER_UPPER2, ts.bookshelf);
-  setTile(data, w, h, w - 3, 2, LAYER_UPPER2, ts.bed);
+
+  if (rng.nextBool(0.6)) {
+    const rug = makeAutotileId([24, 40, 42][rng.nextInt(0, 2)], 0);
+    const cx = Math.floor(w / 2), cy = Math.floor(h / 2), cw = Math.max(1, Math.floor(w / 5)), ch = Math.max(1, Math.floor(h / 5));
+    fillRect(data, w, h, cx - cw, cy - ch, cx + cw, cy + ch, LAYER_GROUND1, rug);
+  }
+
+  // Furniture: real multi-tile prop objects, kept off the walls and the exit.
+  const nearEdgeOrExit = function (x: number, y: number) {
+    return x <= 1 || y <= 1 || x >= w - 1 || y >= h - 2 || (Math.abs(x - doorX) <= 1 && y >= h - 4);
+  };
+  if (hasStamps(_stampTileset, 'prop')) {
+    placeDecoStamps(data, w, h, rng, Math.max(3, Math.floor(w * h / 16)), ['prop'], nearEdgeOrExit);
+  } else {
+    setTile(data, w, h, Math.floor(w / 2), Math.floor(h / 2), LAYER_UPPER2, ts.table);
+    setTile(data, w, h, 2, 2, LAYER_UPPER2, ts.bookshelf);
+    setTile(data, w, h, w - 3, 2, LAYER_UPPER2, ts.bed);
+  }
 }
 
 function generateCastleTheme(data: number[], w: number, h: number, rng: PRNG): void {

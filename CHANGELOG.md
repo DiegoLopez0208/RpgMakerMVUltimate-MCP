@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.5.0] - 2026-06-16
+
+### Improved
+- **House & interior variety.** Town/village houses now pick from the two Outside_A3 building sets (10 roof kinds, each with its matching wall) so roofs vary in colour/style instead of all looking the same. Auto-generated house interiors now vary too: per-house room size, a random floor (wood/carpet/tile), an optional rug, and furniture placed as real multi-tile prop stamps — so no two houses feel identical. Verified in-game (varied red/brown/etc. roofs; differently-sized, differently-furnished interiors).
+
 ## [5.4.2] - 2026-06-16
 
 ### Improved

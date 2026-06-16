@@ -209,17 +209,20 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
 
     const interiors: { id: number; map: RpgMakerMap; name: string }[] = [];
     if (interiorsWanted) {
-        const IW = 11, IH = 9, exitX = Math.floor(IW / 2), exitY = IH - 2;
         const houses = tileResult.houses as { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
         for (let i = 0; i < houses.length; i++) {
             const ho = houses[i];
             const doorX = ho.doorX !== undefined ? ho.doorX : ho.x + Math.floor(ho.w / 2);
             const doorY = ho.doorY !== undefined ? ho.doorY : ho.y + ho.h - 1;
             const interiorId = mapId + 1 + i;
+            // Vary each interior's size + (via seed) floor/furniture so no two houses feel identical.
+            const iseed = (seed || 0) + 101 + i;
+            const IW = 9 + (iseed % 5), IH = 7 + ((iseed >> 2) % 4);
+            const exitX = Math.floor(IW / 2), exitY = IH - 2;
             // Exterior door (action button) → interior, landing one tile above the exit mat.
             tileResult.events.push(makeDoorEvent(tileResult.events.length, doorX, doorY, interiorId, exitX, exitY - 1));
             // Interior room + walk-on exit mat back to the street below the door.
-            const inner = generateTileLayoutV3(IW, IH, 'interior', { seed: (seed || 0) + 101 + i, addEvents: false });
+            const inner = generateTileLayoutV3(IW, IH, 'interior', { seed: iseed, addEvents: false });
             inner.events.push(makeTransferEvent(inner.events.length, exitX, exitY, mapId, doorX, doorY + 1, 1));
             interiors.push({ id: interiorId, map: makeMapObject(inner.data, IW, IH, inner.events, 3, ''), name: (name || 'Town') + ' House ' + (i + 1) });
         }
