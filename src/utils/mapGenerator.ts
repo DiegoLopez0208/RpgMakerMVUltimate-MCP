@@ -617,6 +617,24 @@ function carveDoorPath(data: number[], w: number, h: number, doorX: number, door
   }
 }
 
+// Build a coherent RPG-Maker house from autotiles: a multi-row roof (A3 roof
+// kind) over a wall strip (A3 wall-side kind), with a door opening at the
+// bottom-centre. The autotiler then shapes the roof eaves/peak and wall edges
+// — this is how real RTP exterior houses are made, far more coherent than
+// stamping B/C fragments. Returns the footprint + door tile.
+function buildAutotileHouse(data: number[], w: number, h: number, hx: number, hy: number, bw: number, bh: number, roof: number, wall: number): { x: number; y: number; w: number; h: number; doorX: number; doorY: number } {
+  const roofRows = Math.max(2, Math.ceil(bh * 0.55));
+  for (let y = 0; y < bh; y++)
+    for (let x = 0; x < bw; x++) {
+      setTile(data, w, h, hx + x, hy + y, LAYER_UPPER1, y < roofRows ? roof : wall);
+      setTile(data, w, h, hx + x, hy + y, LAYER_UPPER2, 0);
+      setShadow(data, w, h, hx + x, hy + y, 15);
+    }
+  const doorX = hx + Math.floor(bw / 2), doorY = hy + bh - 1;
+  setTile(data, w, h, doorX, doorY, LAYER_UPPER1, 0); // doorway (the door event sprite sits here)
+  return { x: hx, y: hy, w: bw, h: bh, doorX: doorX, doorY: doorY };
+}
+
 function generateForestTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise): void {
   const ts = TILESETS.outside;
   applyPerlinTerrain(data, w, h, perlin, ts, { scale: 0.06, waterThreshold: -0.25, deepThreshold: -0.45 });
@@ -661,34 +679,22 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
   setRegion(data, w, h, 0, 0, w - 1, h - 1, 1);
   const onRoad = function (x: number, y: number) { return Math.abs(x - roadX) <= 1 || Math.abs(y - roadY) <= 1; };
   const numHouses = Math.max(3, Math.floor(w * h / 150));
-  let houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
+  const houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] = [];
 
-  if (hasStamps(_stampTileset, 'house')) {
-    // Stamp real building objects from the reference maps (coherent, not generic
-    // autotile boxes). createMapV3 reads doorX/doorY for the enterable-house warp.
-    houses = placeHouseStamps(data, w, h, rng, numHouses, onRoad);
-    // Connect every house door to the road so the town reads as planned.
-    for (const ho of houses) carveDoorPath(data, w, h, ho.doorX !== undefined ? ho.doorX : ho.x + Math.floor(ho.w / 2), ho.doorY !== undefined ? ho.doorY : ho.y + ho.h - 1, ts.dirt, onRoad);
-  } else {
-    // Fallback: simple autotile-rect houses (projects without a stamp library).
-    houses = [];
-    for (let i = 0; i < numHouses; i++) {
-      const hw = rng.nextInt(4, 6), hh = rng.nextInt(3, 5);
-      const hx = rng.nextInt(2, w - hw - 2), hy = rng.nextInt(2, h - hh - 2);
-      if (onRoad(hx + Math.floor(hw / 2), hy + Math.floor(hh / 2))) continue;
-      let overlap = false;
-      for (let j = 0; j < houses.length; j++) {
-        const oh = houses[j];
-        if (hx < oh.x + oh.w + 1 && hx + hw + 1 > oh.x && hy < oh.y + oh.h + 1 && hy + hh + 1 > oh.y) { overlap = true; break; }
-      }
-      if (overlap) continue;
-      houses.push({ x: hx, y: hy, w: hw, h: hh });
-      fillRect(data, w, h, hx, hy, hx + hw - 1, hy, LAYER_UPPER1, ts.roof);
-      fillRect(data, w, h, hx, hy + 1, hx + hw - 1, hy + hh - 1, LAYER_UPPER1, ts.wallSide);
-      setTile(data, w, h, hx + Math.floor(hw / 2), hy + hh - 1, LAYER_UPPER1, 0);
-      for (let dy = hy; dy < hy + hh; dy++) for (let dx = hx; dx < hx + hw; dx++) setShadow(data, w, h, dx, dy, 15);
-    }
+  // Coherent RTP-style houses: autotiled A3 roof over A3 wall with a doorway.
+  // (Mining B/C building fragments produced incoherent half-buildings.)
+  for (let i = 0; i < numHouses * 3 && houses.length < numHouses; i++) {
+    const hw = rng.nextInt(4, 7), hh = rng.nextInt(4, 6);
+    const hx = rng.nextInt(2, w - hw - 2), hy = rng.nextInt(2, h - hh - 2);
+    if (onRoad(hx + Math.floor(hw / 2), hy + Math.floor(hh / 2))) continue;
+    let overlap = false;
+    for (const oh of houses)
+      if (hx < oh.x + oh.w + 2 && hx + hw + 2 > oh.x && hy < oh.y + oh.h + 2 && hy + hh + 2 > oh.y) { overlap = true; break; }
+    if (overlap) continue;
+    houses.push(buildAutotileHouse(data, w, h, hx, hy, hw, hh, ts.roof, ts.wallSide));
   }
+  // Connect every house door to the road so the town reads as planned.
+  for (const ho of houses) carveDoorPath(data, w, h, ho.doorX!, ho.doorY!, ts.dirt, onRoad);
 
   if (hasStamps(_stampTileset, 'tree') || hasStamps(_stampTileset, 'prop')) {
     // Decorate the grassy blocks (never on roads/paths), a bit denser to fill space.

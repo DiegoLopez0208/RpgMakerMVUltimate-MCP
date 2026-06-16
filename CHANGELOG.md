@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.4.2] - 2026-06-16
+
+### Improved
+- **Houses now look like real RPG Maker MV buildings.** The 5.4.0 approach of stamping mined B/C building *fragments* produced incoherent half-buildings and walled enclosures (verified by rendering the stamps in-game). Town/village houses are now constructed the way RTP maps actually build them: a multi-row **A3 roof autotile over an A3 wall strip with a doorway**, so the engine's autotiler shapes the roof eaves/peak and wall edges. Result (verified in-game): coherent red-roofed houses with a visible door, a dirt path to the road, and whole-tree decoration around them. Trees/props still use the mined multi-tile stamps (those render correctly).
+
 ## [5.4.1] - 2026-06-16
 
 ### Improved

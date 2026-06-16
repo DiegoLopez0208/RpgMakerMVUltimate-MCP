@@ -502,17 +502,19 @@ describe("object stamps (5.4.0: real buildings/trees, not single scattered tiles
     expect(getStamps(2, "house")[0].cells.length).toBeGreaterThan(4); // multi-tile object
   });
 
-  it("generated towns stamp real multi-tile buildings (with door anchors), not autotile boxes", async () => {
+  it("generated towns build coherent autotile houses (A3 roof+wall) with door anchors + paths, plus B/C tree decoration", async () => {
     const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
     const m: any = generateTileLayoutV3(40, 30, "town", { seed: 11, addEvents: false, tilesetId: 2 });
     expect(m.houses.length).toBeGreaterThan(0);
-    expect(m.houses[0].doorX).toBeGreaterThan(0); // stamp door anchor for the warp
-    let be = 0; // real B/C building/tree object tiles on the upper layers
+    expect(m.houses[0].doorX).toBeGreaterThan(0); // door anchor for the warp + carved path
+    let roof = 0, be = 0;
     for (const L of [2, 3]) for (let i = 0; i < m.width * m.height; i++) {
       const t = m.data[L * m.width * m.height + i];
-      if (t > 0 && t < 1536) be++;
+      if (t >= 4352 && t < 5888) roof++;       // A3 roof/wall autotiles = real houses
+      else if (t > 0 && t < 1536) be++;        // B/C tree/prop decoration
     }
-    expect(be).toBeGreaterThan(80); // many object tiles (buildings+trees), not a few scattered singles
+    expect(roof).toBeGreaterThan(40); // multiple coherent autotile buildings
+    expect(be).toBeGreaterThan(10);   // whole-tree decoration present
   });
 });
 
