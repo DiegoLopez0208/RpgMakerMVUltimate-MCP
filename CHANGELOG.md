@@ -1,5 +1,11 @@
 # Changelog
 
+## [5.2.4] - 2026-06-16
+
+### Fixed
+- **The MCP could write events referencing character sprites that don't exist, which fatally halts the game** with RPG Maker MV's full-screen "Loading Error: Failed to load img/characters/X.png" (this was the real cause behind reports of the project "throwing a data error" / maps "breaking everything"). Root cause found by replaying the actual agent session: the agent hand-authored chest events via `manage_map_event` with `characterName: "Chest"`, but the project ships `!Chest.png` — so the tool faithfully wrote a sprite the game can't load. Every map write now sanitizes event sprites against the project's `img/characters/`: it auto-corrects the RPG Maker object prefixes agents commonly miss (`Chest` → `!Chest`, etc.) and blanks (renders invisible — never crashes) anything it still can't resolve. Verified in-game: a generated cave with chests that previously froze on the Loading Error now loads and plays with visible chests
+- **The procedural generator's own chest sprite was wrong too** (`makeChestEvent` used `'Chest'`); fixed to `'!Chest'`. Generated NPCs, bosses and house doors — previously invisible (`characterName: ''`) — now use real sprites (`People1`, `Monster`, `!Door1`)
+
 ## [5.2.3] - 2026-06-15
 
 ### Fixed

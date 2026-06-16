@@ -121,7 +121,7 @@ async function createMap(projectPath: string, params: CreateMapParams | CreateMa
     };
 
     const mapPath = getMapPath(projectPath, mapId);
-    await writeJsonDirect(mapPath, map);
+    await writeMapJson(projectPath, mapPath, map);
 
     const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
     while (mapInfos.length <= mapId) mapInfos.push(null);
@@ -215,8 +215,8 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     }
 
     const mapPath = getMapPath(projectPath, mapId);
-    await writeJsonDirect(mapPath, map);
-    for (const it of interiors) await writeJsonDirect(getMapPath(projectPath, it.id), it.map);
+    await writeMapJson(projectPath, mapPath, map);
+    for (const it of interiors) await writeMapJson(projectPath, getMapPath(projectPath, it.id), it.map);
 
     const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
     const lastId = interiors.length > 0 ? interiors[interiors.length - 1].id : mapId;
@@ -448,7 +448,7 @@ async function fillMapLayer(projectPath: string, mapId: number, layer: number, t
   }
 
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return { mapId: numMapId, layer: numLayer, tileId: numTileId, filled: map.width * map.height };
 }
 
@@ -463,6 +463,36 @@ async function fillMapLayer(projectPath: string, mapId: number, layer: number, t
  *                           2=event touch, 3=autorun, 4=parallel
  * @param {Array} pages - Array of event page objects (optional, creates default page if omitted)
  */
+// RPG Maker MV halts the whole game with a fatal "Loading Error" screen if an
+// event references a character sprite file that doesn't exist (e.g. an agent
+// hand-authoring a chest with characterName "Chest" when the project ships
+// "!Chest"). The MCP must never persist a sprite that isn't on disk. This
+// validates each event image against img/characters/, auto-correcting the
+// RPG Maker object prefixes agents commonly miss ('!'/'$'), and blanking
+// (invisible, harmless) anything it still can't resolve.
+function resolveCharacterName(projectPath: string, name: string): string {
+  if (!name) return name; // '' = intentionally invisible, always safe
+  let files: string[];
+  try { files = readdirSync(projectPath + '/img/characters'); }
+  catch { return name; } // no folder to validate against — leave untouched
+  const set = new Set(files.filter(function (f) { return /\.png$/i.test(f); }).map(function (f) { return f.replace(/\.png$/i, ''); }));
+  if (set.has(name)) return name;
+  if (!name.startsWith('!') && set.has('!' + name)) return '!' + name;   // Chest -> !Chest
+  if (name.startsWith('!') && set.has(name.slice(1))) return name.slice(1);
+  if (!name.startsWith('$') && set.has('$' + name)) return '$' + name;
+  return ''; // unknown sprite -> invisible rather than a game-halting crash
+}
+
+function sanitizeEventImages(projectPath: string, event: MapEvent | null): void {
+  if (!event || !Array.isArray(event.pages)) return;
+  for (const pg of event.pages) {
+    const img = pg && (pg as EventPage).image;
+    if (img && typeof img.characterName === 'string') {
+      img.characterName = resolveCharacterName(projectPath, img.characterName);
+    }
+  }
+}
+
 async function createMapEvent(projectPath: string, mapId: number, x: number, y: number, name: string, trigger: number, pages: EventPage[]) {
   var numMapId = toNum(mapId, 'mapId');
   const map = await getMap(projectPath, numMapId) as RpgMakerMap;
@@ -499,11 +529,12 @@ async function createMapEvent(projectPath: string, mapId: number, x: number, y: 
     pages: pages
   };
 
+  sanitizeEventImages(projectPath, event as MapEvent);
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
 
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return event;
 }
 
@@ -524,9 +555,10 @@ async function updateMapEvent(projectPath: string, mapId: number, eventId: numbe
   }
 
   map.events[numEventId!] = Object.assign({}, map.events[numEventId!], fields) as MapEvent;
+  sanitizeEventImages(projectPath, map.events[numEventId!]);
 
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return map.events[numEventId!];
 }
 
@@ -550,7 +582,7 @@ async function addEventCommand(projectPath: string, mapId: number, eventId: numb
   commandList.splice(commandList.length - 1, 0, command);
 
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return { eventId: numEventId, pageIndex: numPageIndex, command: command, totalCommands: commandList.length };
 }
 
@@ -659,7 +691,7 @@ async function createNpc(projectPath: string, mapId: number, x: number, y: numbe
   map.events[newId] = event;
 
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return event;
 }
 
@@ -781,7 +813,7 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
   map.events[newId] = event;
 
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return event;
 }
 
@@ -844,7 +876,7 @@ async function createTeleportEvent(projectPath: string, mapId: number, x: number
   map.events[newId] = event;
 
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return event;
 }
 
@@ -904,7 +936,7 @@ async function createDoor(projectPath: string, mapId: number, x: number, y: numb
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return event;
 }
 
@@ -986,6 +1018,16 @@ async function readJsonDirect(filePath: string) {
     return JSON.parse(content.replace(/^\uFEFF/, '')) as unknown;
 }
 
+// Write a map to disk, first sanitizing every event sprite against the
+// project's img/characters/ so a missing graphic can never halt the game.
+// All map writes go through this; sanitizing is idempotent.
+async function writeMapJson(projectPath: string, filePath: string, map: RpgMakerMap) {
+  if (map && Array.isArray(map.events)) {
+    for (const e of map.events) sanitizeEventImages(projectPath, e as MapEvent | null);
+  }
+  await writeJsonDirect(filePath, map);
+}
+
 async function writeJsonDirect(filePath: string, data: unknown) {
   var backupPath = filePath + '.bak';
 
@@ -1007,7 +1049,7 @@ async function deleteMapEvent(projectPath: string, mapId: number, eventId: numbe
   var deleted = map.events[numEventId!];
   map.events[numEventId!] = null;
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return { deleted: deleted };
 }
 
@@ -1070,7 +1112,7 @@ async function createShop(projectPath: string, mapId: number, x: number, y: numb
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return event;
 }
 
@@ -1114,7 +1156,7 @@ async function createInn(projectPath: string, mapId: number, x: number, y: numbe
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return event;
 }
 
@@ -1158,7 +1200,7 @@ async function createBossEvent(projectPath: string, mapId: number, x: number, y:
   while (map.events.length <= newId) map.events.push(null);
   map.events[newId] = event;
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return event;
 }
 
@@ -1234,7 +1276,7 @@ async function createPuzzleSwitch(projectPath: string, mapId: number, x: number,
   while (map.events.length <= doorId) map.events.push(null);
   map.events[doorId] = doorEvent;
   const mapPath = getMapPath(projectPath, numMapId);
-  await writeJsonDirect(mapPath, map);
+  await writeMapJson(projectPath, mapPath, map);
   return { switchEvent: switchEvent, doorEvent: doorEvent };
 }
 

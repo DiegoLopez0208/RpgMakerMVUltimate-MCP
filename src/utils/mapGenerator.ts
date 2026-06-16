@@ -963,7 +963,8 @@ function makeNpcEvent(id: number, x: number, y: number, name: string): MapEvent 
     id: id, name: name || 'NPC', note: '', x: x, y: y,
     pages: [{
       conditions: defaultConditions(), directionFix: false,
-      image: { characterIndex: 0, characterName: '', direction: 2, pattern: 1, tileId: 0 },
+      // Visible NPC sprite (People1 has 8 villagers; vary by id). Was '' = invisible.
+      image: { characterIndex: id % 8, characterName: 'People1', direction: 2, pattern: 1, tileId: 0 },
       list: [
         { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
         { code: 401, indent: 0, parameters: ['...'] },
@@ -980,7 +981,7 @@ function makeChestEvent(id: number, x: number, y: number): MapEvent {
     id: id, name: 'Chest', note: '', x: x, y: y,
     pages: [{
       conditions: defaultConditions(), directionFix: true,
-      image: { characterIndex: 0, characterName: 'Chest', direction: 2, pattern: 0, tileId: 0 },
+      image: { characterIndex: 0, characterName: '!Chest', direction: 2, pattern: 0, tileId: 0 },
       list: [
         { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
         { code: 401, indent: 0, parameters: ['Found treasure!'] },
@@ -995,7 +996,7 @@ function makeChestEvent(id: number, x: number, y: number): MapEvent {
     }, {
       conditions: Object.assign({}, defaultConditions(), { selfSwitchCh: 'A', selfSwitchValid: true }),
       directionFix: true,
-      image: { characterIndex: 0, characterName: 'Chest', direction: 2, pattern: 1, tileId: 0 },
+      image: { characterIndex: 0, characterName: '!Chest', direction: 2, pattern: 1, tileId: 0 },
       list: [{ code: 0, indent: 0, parameters: [] as unknown[] }],
       moveFrequency: 3, moveRoute: { list: [{ code: 0, indent: 0, parameters: [] as unknown[] }], repeat: true, skippable: false, wait: false },
       moveSpeed: 2, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: false
@@ -1008,7 +1009,8 @@ function makeBossEvent(id: number, x: number, y: number, troopId: number = 1): M
     id: id, name: 'Boss', note: '', x: x, y: y,
     pages: [{
       conditions: defaultConditions(), directionFix: true,
-      image: { characterIndex: 0, characterName: '', direction: 2, pattern: 1, tileId: 0 },
+      // Visible boss sprite (Monster sheet). Was '' = invisible boss.
+      image: { characterIndex: (Math.max(1, troopId) - 1) % 8, characterName: 'Monster', direction: 2, pattern: 1, tileId: 0 },
       list: [
         { code: 301, indent: 0, parameters: [0, troopId || 1, 0, 1] },
         { code: 601, indent: 0, parameters: [] },
@@ -1060,7 +1062,7 @@ function makeDoorEvent(id: number, x: number, y: number, destMapId: number, dest
     id: id, name: 'Door to Map' + destMapId, note: '', x: x, y: y,
     pages: [{
       conditions: defaultConditions(), directionFix: true,
-      image: { characterIndex: 0, characterName: '', direction: 8, pattern: 1, tileId: 0 },
+      image: { characterIndex: 0, characterName: '!Door1', direction: 2, pattern: 1, tileId: 0 },
       list: [
         { code: 201, indent: 0, parameters: [0, destMapId, destX, destY, 0, 0] },
         { code: 0, indent: 0, parameters: [] }

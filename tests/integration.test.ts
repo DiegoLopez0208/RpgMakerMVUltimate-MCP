@@ -207,6 +207,25 @@ describe("manage_map_event", () => {
     expect(cond.parameters[1]).toContain("gold()");
   });
 
+  it("validates event sprites against img/characters so a missing graphic can't halt the game (5.2.4)", async () => {
+    // RPG Maker MV fatally errors if an event references a missing character
+    // sheet. Seed the fixture with the real ProjectR-style object sprite.
+    mkdirSync(path.join(projectDir, "img", "characters"), { recursive: true });
+    writeFileSync(path.join(projectDir, "img", "characters", "!Chest.png"), "x");
+    // Agent's exact failure: a hand-authored chest with characterName "Chest".
+    const ev = await dispatchTool("manage_map_event", {
+      action: "create", mapId: 1, x: 4, y: 4, name: "Chest",
+      pages: [{ image: { characterIndex: 0, characterName: "Chest", direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+    }) as any;
+    expect(ev.pages[0].image.characterName).toBe("!Chest"); // auto-corrected
+    // A truly unknown sprite is blanked (invisible) rather than left to crash.
+    const ev2 = await dispatchTool("manage_map_event", {
+      action: "create", mapId: 1, x: 6, y: 6, name: "Ghost",
+      pages: [{ image: { characterIndex: 0, characterName: "DoesNotExist", direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+    }) as any;
+    expect(ev2.pages[0].image.characterName).toBe("");
+  });
+
   it("update and delete work and report missing events", async () => {
     const ev = await dispatchTool("manage_map_event", { action: "create", mapId: 1, x: 5, y: 5, name: "Temp" }) as any;
     const moved = await dispatchTool("manage_map_event", { action: "update", mapId: 1, eventId: ev.id, fields: { x: 6 } }) as any;
