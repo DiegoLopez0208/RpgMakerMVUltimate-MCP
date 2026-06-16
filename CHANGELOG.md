@@ -1,5 +1,15 @@
 # Changelog
 
+## [5.4.0] - 2026-06-16
+
+### Fixed
+- **Maps placed generic houses and "random tiles everywhere".** The generator drew houses as plain autotile rectangles and scattered single decoration tiles, but RTP houses/trees are multi-tile objects — single tiles render as fragments. The generator now stamps **real multi-tile objects** (houses with door anchors, whole trees, props) mined from the reference maps, placed with spacing/collision and off roads. Verified in-game: towns have real buildings, forests have whole trees, no scattered fragments.
+- **Bundled knowledge wasn't shipped in built mode.** `postbuild` ran `cp -r knowledge dist/knowledge`, but `tsc` had already created `dist/knowledge/` (from `src/knowledge/`), so the data nested into `dist/knowledge/knowledge/` and never loaded (templates, and now stamps). Fixed to copy the contents into `dist/knowledge/`.
+
+### Added
+- **Object-stamp system**: `scripts/extract-stamps.mjs` mines `knowledge/stamps.json` (houses/trees/props per tileset, with door anchors); `src/utils/stamps.ts` loads and stamps them; the generator uses them with a graceful fallback for projects without a stamp library.
+- **Portable agent SKILL** at `skill/rpgmaker-mv-mcp/SKILL.md` (better-skills format) teaching any AI the correct, crash-free MCP workflow — installable into `~/.agents/skills` etc. Tool guidance (`get_project_context`) tightened with golden rules so agents stop hand-painting tiles and guessing IDs.
+
 ## [5.3.1] - 2026-06-16
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "rpgmaker-mv-mcp",
-  "version": "5.3.1",
+  "version": "5.4.0",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -9,7 +9,7 @@
     "dev": "tsx src/index.ts",
     "clean": "rimraf dist",
     "prebuild": "rimraf dist",
-    "postbuild": "cp -r knowledge dist/knowledge",
+    "postbuild": "mkdir -p dist/knowledge && cp -r knowledge/. dist/knowledge/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

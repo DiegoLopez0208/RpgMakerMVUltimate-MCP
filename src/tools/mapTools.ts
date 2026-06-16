@@ -159,7 +159,8 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     var v3opts = {
         seed: seed,
         addEvents: params.addEvents !== false,
-        transferPoints: params.transferPoints || []
+        transferPoints: params.transferPoints || [],
+        tilesetId: tilesetId
     };
 
     var tileResult = generateTileLayoutV3(width, height, theme, v3opts);
@@ -209,11 +210,11 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     const interiors: { id: number; map: RpgMakerMap; name: string }[] = [];
     if (interiorsWanted) {
         const IW = 11, IH = 9, exitX = Math.floor(IW / 2), exitY = IH - 2;
-        const houses = tileResult.houses as { x: number; y: number; w: number; h: number }[];
+        const houses = tileResult.houses as { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
         for (let i = 0; i < houses.length; i++) {
             const ho = houses[i];
-            const doorX = ho.x + Math.floor(ho.w / 2);
-            const doorY = ho.y + ho.h - 1;
+            const doorX = ho.doorX !== undefined ? ho.doorX : ho.x + Math.floor(ho.w / 2);
+            const doorY = ho.doorY !== undefined ? ho.doorY : ho.y + ho.h - 1;
             const interiorId = mapId + 1 + i;
             // Exterior door (action button) → interior, landing one tile above the exit mat.
             tileResult.events.push(makeDoorEvent(tileResult.events.length, doorX, doorY, interiorId, exitX, exitY - 1));

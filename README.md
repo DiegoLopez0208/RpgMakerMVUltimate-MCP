@@ -42,6 +42,15 @@ Add to your MCP config:
 }
 ```
 
+## Using it well (for any AI agent)
+
+A portable agent skill that teaches the correct, crash-free workflow lives at
+[`skill/rpgmaker-mv-mcp/SKILL.md`](skill/rpgmaker-mv-mcp/SKILL.md). Copy that
+folder into your agent's skills directory (e.g. `~/.agents/skills`,
+`~/.claude/skills`, `~/.opencode/skills`) so any model (Claude, DeepSeek, …)
+drives this MCP semantically — building maps with `generate_map` (which stamps
+real houses/trees and wires encounters) instead of hand-painting tiles.
+
 ## Tools (v5)
 
 | Tool | Purpose |

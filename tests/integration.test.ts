@@ -494,6 +494,28 @@ describe("engine grounding (5.3.0: enemies, encounters, command + asset correctn
   });
 });
 
+describe("object stamps (5.4.0: real buildings/trees, not single scattered tiles)", () => {
+  it("the mined stamp library has houses and trees for the Outside tileset", async () => {
+    const { hasStamps, getStamps } = await import("../src/utils/stamps.js");
+    expect(hasStamps(2, "house")).toBe(true);
+    expect(getStamps(2, "tree").length).toBeGreaterThan(0);
+    expect(getStamps(2, "house")[0].cells.length).toBeGreaterThan(4); // multi-tile object
+  });
+
+  it("generated towns stamp real multi-tile buildings (with door anchors), not autotile boxes", async () => {
+    const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
+    const m: any = generateTileLayoutV3(40, 30, "town", { seed: 11, addEvents: false, tilesetId: 2 });
+    expect(m.houses.length).toBeGreaterThan(0);
+    expect(m.houses[0].doorX).toBeGreaterThan(0); // stamp door anchor for the warp
+    let be = 0; // real B/C building/tree object tiles on the upper layers
+    for (const L of [2, 3]) for (let i = 0; i < m.width * m.height; i++) {
+      const t = m.data[L * m.width * m.height + i];
+      if (t > 0 && t < 1536) be++;
+    }
+    expect(be).toBeGreaterThan(80); // many object tiles (buildings+trees), not a few scattered singles
+  });
+});
+
 describe("manage_system", () => {
   it("sets and reads the game title", async () => {
     await dispatchTool("manage_system", { action: "set_title", title: "Mi Juego" });

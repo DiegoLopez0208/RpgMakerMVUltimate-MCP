@@ -2,6 +2,11 @@ import path from "path";
 import { readFile, access } from 'fs/promises';
 import type { MapEvent, TilesetConfig, GeneratorOptions, MapTemplate } from '../types/rpgmaker.js';
 import { applyAutotileShapes } from './autotile.js';
+import { pickStamp, stampObject, hasStamps, type StampCategory } from './stamps.js';
+
+// Tileset whose stamp library the current generation should use. Set by
+// generateTileLayoutV3 before running a theme generator (stamps are per-tileset).
+let _stampTileset = 2;
 
 // ─── mapGenerator.ts — RPG Maker MV Procedural Map Generator ───
 // Features: Perlin noise 2D, BSP dungeon, cellular automata caves,
@@ -546,19 +551,80 @@ function applyPerlinTerrain(data: number[], w: number, h: number, perlin: Perlin
     }
 }
 
+// Place real multi-tile building stamps, non-overlapping (with a 1-tile margin)
+// and avoiding `blocked` cells (e.g. roads). Returns each footprint + door.
+function placeHouseStamps(
+  data: number[], w: number, h: number, rng: PRNG, count: number, blocked?: (x: number, y: number) => boolean
+): { x: number; y: number; w: number; h: number; doorX: number; doorY: number }[] {
+  const houses: { x: number; y: number; w: number; h: number; doorX: number; doorY: number }[] = [];
+  const occ = new Uint8Array(w * h);
+  for (let attempt = 0; houses.length < count && attempt < count * 40; attempt++) {
+    const stamp = pickStamp(_stampTileset, 'house', rng);
+    if (!stamp) break;
+    if (stamp.w + 2 >= w || stamp.h + 2 >= h) continue;
+    const hx = rng.nextInt(1, w - stamp.w - 1);
+    const hy = rng.nextInt(1, h - stamp.h - 1);
+    let ok = true;
+    for (let yy = hy - 1; yy <= hy + stamp.h && ok; yy++)
+      for (let xx = hx - 1; xx <= hx + stamp.w && ok; xx++) {
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        if (occ[yy * w + xx] || (blocked && blocked(xx, yy))) ok = false;
+      }
+    if (!ok) continue;
+    const res = stampObject(data, w, h, hx, hy, stamp);
+    for (let yy = hy; yy < hy + stamp.h; yy++)
+      for (let xx = hx; xx < hx + stamp.w; xx++) { if (xx < w && yy < h) { occ[yy * w + xx] = 1; setShadow(data, w, h, xx, yy, 15); } }
+    const doorX = res.door ? res.door.x : hx + Math.floor(stamp.w / 2);
+    const doorY = res.door ? res.door.y : hy + stamp.h - 1;
+    houses.push({ x: hx, y: hy, w: stamp.w, h: stamp.h, doorX: doorX, doorY: doorY });
+  }
+  return houses;
+}
+
+// Scatter real multi-tile decoration stamps (trees/props), only where the upper
+// layers are empty and the cell isn't `blocked`. Replaces single-tile scatter.
+function placeDecoStamps(
+  data: number[], w: number, h: number, rng: PRNG, count: number,
+  cats: StampCategory[], blocked?: (x: number, y: number) => boolean
+): void {
+  const usable = cats.filter(function (c) { return hasStamps(_stampTileset, c); });
+  if (usable.length === 0) return;
+  for (let attempt = 0, placed = 0; placed < count && attempt < count * 25; attempt++) {
+    const stamp = pickStamp(_stampTileset, usable[rng.nextInt(0, usable.length - 1)], rng);
+    if (!stamp) continue;
+    const x = rng.nextInt(0, w - stamp.w), y = rng.nextInt(0, h - stamp.h);
+    let ok = true;
+    for (let yy = y; yy < y + stamp.h && ok; yy++)
+      for (let xx = x; xx < x + stamp.w && ok; xx++) {
+        if (getTile(data, w, h, xx, yy, LAYER_UPPER1) !== 0 || getTile(data, w, h, xx, yy, LAYER_UPPER2) !== 0) ok = false;
+        else if (blocked && blocked(xx, yy)) ok = false;
+      }
+    if (!ok) continue;
+    stampObject(data, w, h, x, y, stamp);
+    placed++;
+  }
+}
+
 function generateForestTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise): void {
   const ts = TILESETS.outside;
   applyPerlinTerrain(data, w, h, perlin, ts, { scale: 0.06, waterThreshold: -0.25, deepThreshold: -0.45 });
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
       const g = getTile(data, w, h, x, y, LAYER_GROUND1);
-      if (g === ts.grass && rng.nextBool(0.15))
-        setTile(data, w, h, x, y, LAYER_UPPER1, rng.nextBool() ? ts.tree : (rng.nextBool() ? ts.bush : ts.flower));
-      else if (g === ts.grass && rng.nextBool(0.03))
-        setTile(data, w, h, x, y, LAYER_UPPER1, ts.rock);
       if (g === ts.water) setRegion(data, w, h, x, y, 3);
       else if (g === ts.grass) setRegion(data, w, h, x, y, 1);
     }
+  // Whole multi-tile tree/rock objects on grass, not single scattered tiles.
+  const onWater = function (x: number, y: number) { return getTile(data, w, h, x, y, LAYER_GROUND1) !== ts.grass; };
+  if (hasStamps(_stampTileset, 'tree') || hasStamps(_stampTileset, 'prop')) {
+    placeDecoStamps(data, w, h, rng, Math.floor(w * h / 18), ['tree', 'tree', 'prop'], onWater);
+  } else {
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        if (getTile(data, w, h, x, y, LAYER_GROUND1) === ts.grass && rng.nextBool(0.12))
+          setTile(data, w, h, x, y, LAYER_UPPER1, rng.nextBool() ? ts.tree : (rng.nextBool() ? ts.bush : ts.flower));
+      }
+  }
   const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
   const cr = Math.max(3, Math.floor(Math.min(w, h) / 5));
   for (let dy = -cr; dy <= cr; dy++)
@@ -573,7 +639,7 @@ function generateForestTheme(data: number[], w: number, h: number, rng: PRNG, pe
     }
 }
 
-function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _perlin?: PerlinNoise): { houses: { x: number; y: number; w: number; h: number }[] } {
+function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _perlin?: PerlinNoise): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
   const ts = TILESETS.outside;
   fillLayer(data, w, h, LAYER_GROUND1, ts.grass);
   const roadX = Math.floor(w / 2);
@@ -581,34 +647,44 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
   fillRect(data, w, h, roadX - 1, 0, roadX + 1, h - 1, LAYER_GROUND1, ts.dirt);
   fillRect(data, w, h, 0, roadY - 1, w - 1, roadY + 1, LAYER_GROUND1, ts.dirt);
   setRegion(data, w, h, 0, 0, w - 1, h - 1, 1);
-  const houses: { x: number; y: number; w: number; h: number }[] = [];
+  const onRoad = function (x: number, y: number) { return Math.abs(x - roadX) <= 1 || Math.abs(y - roadY) <= 1; };
   const numHouses = Math.max(3, Math.floor(w * h / 150));
-  for (let i = 0; i < numHouses; i++) {
-    const hw = rng.nextInt(4, 6), hh = rng.nextInt(3, 5);
-    const hx = rng.nextInt(2, w - hw - 2);
-    const hy = rng.nextInt(2, h - hh - 2);
-    if (Math.abs(hx + hw / 2 - roadX) < 4 && Math.abs(hy + hh / 2 - roadY) < 4) continue;
-    let overlap = false;
-    for (let j = 0; j < houses.length; j++) {
-      const oh = houses[j];
-      if (hx < oh.x + oh.w + 1 && hx + hw + 1 > oh.x && hy < oh.y + oh.h + 1 && hy + hh + 1 > oh.y) { overlap = true; break; }
+  let houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
+
+  if (hasStamps(_stampTileset, 'house')) {
+    // Stamp real building objects from the reference maps (coherent, not generic
+    // autotile boxes). createMapV3 reads doorX/doorY for the enterable-house warp.
+    houses = placeHouseStamps(data, w, h, rng, numHouses, onRoad);
+  } else {
+    // Fallback: simple autotile-rect houses (projects without a stamp library).
+    houses = [];
+    for (let i = 0; i < numHouses; i++) {
+      const hw = rng.nextInt(4, 6), hh = rng.nextInt(3, 5);
+      const hx = rng.nextInt(2, w - hw - 2), hy = rng.nextInt(2, h - hh - 2);
+      if (onRoad(hx + Math.floor(hw / 2), hy + Math.floor(hh / 2))) continue;
+      let overlap = false;
+      for (let j = 0; j < houses.length; j++) {
+        const oh = houses[j];
+        if (hx < oh.x + oh.w + 1 && hx + hw + 1 > oh.x && hy < oh.y + oh.h + 1 && hy + hh + 1 > oh.y) { overlap = true; break; }
+      }
+      if (overlap) continue;
+      houses.push({ x: hx, y: hy, w: hw, h: hh });
+      fillRect(data, w, h, hx, hy, hx + hw - 1, hy, LAYER_UPPER1, ts.roof);
+      fillRect(data, w, h, hx, hy + 1, hx + hw - 1, hy + hh - 1, LAYER_UPPER1, ts.wallSide);
+      setTile(data, w, h, hx + Math.floor(hw / 2), hy + hh - 1, LAYER_UPPER1, 0);
+      for (let dy = hy; dy < hy + hh; dy++) for (let dx = hx; dx < hx + hw; dx++) setShadow(data, w, h, dx, dy, 15);
     }
-    if (overlap) continue;
-    houses.push({ x: hx, y: hy, w: hw, h: hh });
-    fillRect(data, w, h, hx, hy, hx + hw - 1, hy, LAYER_UPPER1, ts.roof);
-    fillRect(data, w, h, hx, hy + 1, hx + hw - 1, hy + hh - 1, LAYER_UPPER1, ts.wallSide);
-    const doorX = hx + Math.floor(hw / 2);
-    setTile(data, w, h, doorX, hy + hh - 1, LAYER_UPPER1, 0);
-    setTile(data, w, h, doorX, hy + hh - 1, LAYER_GROUND1, ts.dirt);
-    for (let dy = hy; dy < hy + hh; dy++)
-      for (let dx = hx; dx < hx + hw; dx++)
-        setShadow(data, w, h, dx, dy, 15);
   }
-  const decoTiles = [ts.well, ts.barrel, ts.sign, ts.lamp, ts.flower, ts.flower2];
-  for (let i = 0; i < Math.floor(w * h / 40); i++) {
-    const dx = rng.nextInt(0, w - 1), dy = rng.nextInt(0, h - 1);
-    if (getTile(data, w, h, dx, dy, LAYER_UPPER1) === 0)
-      setTile(data, w, h, dx, dy, LAYER_UPPER2, decoTiles[rng.nextInt(0, decoTiles.length - 1)]);
+
+  if (hasStamps(_stampTileset, 'tree') || hasStamps(_stampTileset, 'prop')) {
+    placeDecoStamps(data, w, h, rng, Math.floor(w * h / 70), ['tree', 'prop'], onRoad);
+  } else {
+    const decoTiles = [ts.well, ts.barrel, ts.sign, ts.lamp, ts.flower, ts.flower2];
+    for (let i = 0; i < Math.floor(w * h / 40); i++) {
+      const dx = rng.nextInt(0, w - 1), dy = rng.nextInt(0, h - 1);
+      if (getTile(data, w, h, dx, dy, LAYER_UPPER1) === 0)
+        setTile(data, w, h, dx, dy, LAYER_UPPER2, decoTiles[rng.nextInt(0, decoTiles.length - 1)]);
+    }
   }
   return { houses: houses };
 }
@@ -760,7 +836,7 @@ function generateRuinsTheme(data: number[], w: number, h: number, rng: PRNG, per
   }
 }
 
-function generateVillageTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise): { houses: { x: number; y: number; w: number; h: number }[] } {
+function generateVillageTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
   return generateTownTheme(data, w, h, rng, perlin);
 }
 
@@ -1108,12 +1184,15 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
   theme: string;
   width: number;
   height: number;
-  houses?: { x: number; y: number; w: number; h: number }[];
+  houses?: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
 } {
   const seed = opts.seed || Math.floor(Math.random() * 2147483647);
   const rng = new PRNG(seed);
   const perlin = new PerlinNoise(seed);
   const data = new Array(width * height * 6).fill(0) as number[];
+
+  // Stamps are per-tileset; use the caller's tilesetId or the theme's default.
+  _stampTileset = ((opts as Record<string, unknown>).tilesetId as number) || THEME_TILESET[theme] || 1;
 
   const themeMap: Record<string, (data: number[], w: number, h: number, rng: PRNG, ...args: unknown[]) => unknown> = {
     'forest': generateForestTheme as (data: number[], w: number, h: number, rng: PRNG, ...args: unknown[]) => unknown,
@@ -1152,7 +1231,7 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
   // town/village generators return the house rectangles; surface them so the
   // caller can wire up enterable-house doors and interiors.
   const houses = (genResult && typeof genResult === 'object' && 'houses' in (genResult as object))
-    ? (genResult as { houses: { x: number; y: number; w: number; h: number }[] }).houses
+    ? (genResult as { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] }).houses
     : undefined;
 
   // Border every autotile against its neighbours (shorelines, ground edges,
