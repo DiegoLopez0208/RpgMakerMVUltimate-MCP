@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.4.1] - 2026-06-16
+
+### Improved
+- **Smarter town layout.** Houses no longer float in empty grass disconnected from the streets: every house door is now linked to the nearest road by a carved dirt path, so the town reads as planned and every house is reachable. Decoration (trees/props) is a bit denser to fill the blocks but is kept off roads *and* off the door paths. Verified in-game.
+
 ## [5.4.0] - 2026-06-16
 
 ### Fixed

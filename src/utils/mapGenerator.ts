@@ -605,6 +605,18 @@ function placeDecoStamps(
   }
 }
 
+// Carve a walkable dirt path straight down from a house door to the nearest
+// road, so every house is reachable and the town reads as planned rather than
+// houses floating in empty grass. Clears decoration along the path.
+function carveDoorPath(data: number[], w: number, h: number, doorX: number, doorY: number, dirt: number, onRoad: (x: number, y: number) => boolean): void {
+  for (let y = doorY + 1; y < h && y <= doorY + 18; y++) {
+    setTile(data, w, h, doorX, y, LAYER_GROUND1, dirt);
+    setTile(data, w, h, doorX, y, LAYER_UPPER1, 0);
+    setTile(data, w, h, doorX, y, LAYER_UPPER2, 0);
+    if (onRoad(doorX, y)) break;
+  }
+}
+
 function generateForestTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise): void {
   const ts = TILESETS.outside;
   applyPerlinTerrain(data, w, h, perlin, ts, { scale: 0.06, waterThreshold: -0.25, deepThreshold: -0.45 });
@@ -655,6 +667,8 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
     // Stamp real building objects from the reference maps (coherent, not generic
     // autotile boxes). createMapV3 reads doorX/doorY for the enterable-house warp.
     houses = placeHouseStamps(data, w, h, rng, numHouses, onRoad);
+    // Connect every house door to the road so the town reads as planned.
+    for (const ho of houses) carveDoorPath(data, w, h, ho.doorX !== undefined ? ho.doorX : ho.x + Math.floor(ho.w / 2), ho.doorY !== undefined ? ho.doorY : ho.y + ho.h - 1, ts.dirt, onRoad);
   } else {
     // Fallback: simple autotile-rect houses (projects without a stamp library).
     houses = [];
@@ -677,7 +691,9 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
   }
 
   if (hasStamps(_stampTileset, 'tree') || hasStamps(_stampTileset, 'prop')) {
-    placeDecoStamps(data, w, h, rng, Math.floor(w * h / 70), ['tree', 'prop'], onRoad);
+    // Decorate the grassy blocks (never on roads/paths), a bit denser to fill space.
+    const offPaths = function (x: number, y: number) { return onRoad(x, y) || getTile(data, w, h, x, y, LAYER_GROUND1) === ts.dirt; };
+    placeDecoStamps(data, w, h, rng, Math.floor(w * h / 45), ['tree', 'prop', 'prop'], offPaths);
   } else {
     const decoTiles = [ts.well, ts.barrel, ts.sign, ts.lamp, ts.flower, ts.flower2];
     for (let i = 0; i < Math.floor(w * h / 40); i++) {
