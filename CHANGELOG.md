@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.2.2] - 2026-06-15
+
+### Fixed
+- **Town/village roads (and other outdoor ground) rendered as water.** In the `outside`, `sf_outside` and `magic_exterior` tilesets, ground types (`dirt`, `stone`, `sand`, `darkGrass`, `concrete`, `metal`, `asphalt`) used autotile kinds below 16, which resolve to the A1 *animated-water* sheet — so dirt roads, pavement and sand all rendered as water. They now use real A2 ground kinds, verified against the ProjectR reference tileset (id 2): k16 grass, k18 dirt/road, k17/24/32/34/40 for the rest. (Water/oasis/beach features that are intentionally A1 are unchanged.)
+
 ## [5.2.1] - 2026-06-15
 
 ### Fixed

@@ -375,6 +375,19 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
     expect(a4Match / a4Total).toBeGreaterThan(0.65);   // A4 tall walls ~70% (heuristic)
   });
 
+  it("town/village roads are A2 ground, not A1 water (5.2.2: outside.dirt resolved to the water sheet)", async () => {
+    const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
+    for (const theme of ["town", "village"]) {
+      const m: any = generateTileLayoutV3(30, 25, theme, { seed: 5, addEvents: false });
+      let a1Water = 0;
+      for (let i = 0; i < m.width * m.height; i++) {
+        const id = m.data[i]; // ground layer
+        if (id >= 2048 && id < 2816) a1Water++; // A1 animated-water sheet
+      }
+      expect(a1Water, theme).toBe(0); // these themes have no water features
+    }
+  });
+
   it("generated maps no longer render ground as flat shape-0 (beach has shorelines)", async () => {
     const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
     const m: any = generateTileLayoutV3(40, 30, "beach", { seed: 3, addEvents: false });

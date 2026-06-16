@@ -213,9 +213,13 @@ const TILESETS: Record<string, Record<string, number>> = {
   },
   outside: {
     water: 2048, deepWater: makeAutotileId(1, 0),
-    grass: 2816, dirt: makeAutotileId(8, 0), stone: makeAutotileId(6, 0),
-    sand: makeAutotileId(10, 0), darkGrass: makeAutotileId(2, 0),
-    lava: makeAutotileId(4, 0), swampWater: makeAutotileId(14, 0),
+    // Ground types are A2 autotile kinds (16-47), NOT low kinds — kinds < 16
+    // resolve to the A1 animated-water sheet, which is why dirt roads rendered
+    // as water. Kinds verified against the ProjectR Outside tileset (id 2):
+    // k16 grass, k18 dirt/road, plus k17/24/32 for other ground.
+    grass: makeAutotileId(16, 0), dirt: makeAutotileId(18, 0), stone: makeAutotileId(32, 0),
+    sand: makeAutotileId(24, 0), darkGrass: makeAutotileId(17, 0),
+    lava: makeAutotileId(20, 0), swampWater: 2048,
     wallSide: makeAutotileId(8, 0, 4352), wallTop: 4352,
     roof: 4352, roof2: makeAutotileId(1, 0, 4352), roof3: makeAutotileId(2, 0, 4352),
     tree: 1538, bush: 1539, flower: 1540, rock: 1541, pillar: 1536, stump: 1537,
@@ -242,8 +246,8 @@ const TILESETS: Record<string, Record<string, number>> = {
     bones: 1540, crate: 1541, barrel: 1542, crystal: 1543
   },
   sf_outside: {
-    water: 2048, grass: 2816, concrete: makeAutotileId(6, 0),
-    metal: makeAutotileId(8, 0), asphalt: makeAutotileId(10, 0),
+    water: 2048, grass: makeAutotileId(16, 0), concrete: makeAutotileId(32, 0),
+    metal: makeAutotileId(34, 0), asphalt: makeAutotileId(40, 0),
     wallSide: makeAutotileId(8, 0, 4352), wallTop: makeAutotileId(0, 0, 4352),
     roof: makeAutotileId(0, 0, 4352),
     lamp: 1536, sign: 1537, vehicle: 1538, container: 1539,
@@ -259,7 +263,7 @@ const TILESETS: Record<string, Record<string, number>> = {
     sifiDeco: 512, sifiDeco2: 513
   },
   magic_exterior: {
-    water: 2048, grass: 2816, dirt: makeAutotileId(8, 0), stone: makeAutotileId(6, 0),
+    water: 2048, grass: makeAutotileId(16, 0), dirt: makeAutotileId(18, 0), stone: makeAutotileId(32, 0),
     wallSide: makeAutotileId(8, 0, 4352), wallTop: 4352,
     roof: 4352, roof2: makeAutotileId(1, 0, 4352),
     tree: 1538, bush: 1539, flower: 1540, rock: 1541,
