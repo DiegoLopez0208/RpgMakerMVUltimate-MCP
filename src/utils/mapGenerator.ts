@@ -2,7 +2,7 @@ import path from "path";
 import { readFile, access } from 'fs/promises';
 import type { MapEvent, TilesetConfig, GeneratorOptions, MapTemplate } from '../types/rpgmaker.js';
 import { applyAutotileShapes } from './autotile.js';
-import { pickStamp, stampObject, hasStamps, type StampCategory } from './stamps.js';
+import { pickStamp, stampObject, hasStamps, getStamps, type StampCategory, type Stamp } from './stamps.js';
 
 // Tileset whose stamp library the current generation should use. Set by
 // generateTileLayoutV3 before running a theme generator (stamps are per-tileset).
@@ -398,11 +398,15 @@ function generateBSPDungeon(data: number[], w: number, h: number, rng: PRNG, ts:
   const rooms = root.getRooms();
   const corridors = root.getCorridors(rng);
 
+  // Floor-texture variation breaks the flat stone (a key anti-"flat-map" trick):
+  // sprinkle a darker/moss floor across room tiles.
+  const altFloor = ts.darkFloor || ts.brickFloor || floorTile;
   for (let ri = 0; ri < rooms.length; ri++) {
     const r = rooms[ri];
     fillRect(data, w, h, r.x, r.y, r.x + r.w - 1, r.y + r.h - 1, LAYER_GROUND1, floorTile);
     for (let ry = r.y; ry < r.y + r.h; ry++)
       for (let rx = r.x; rx < r.x + r.w; rx++) {
+        if (altFloor !== floorTile && rng.nextBool(0.08)) setTile(data, w, h, rx, ry, LAYER_GROUND1, altFloor);
         setTile(data, w, h, rx, ry, LAYER_UPPER1, 0);
         setRegion(data, w, h, rx, ry, 1);
       }
@@ -431,29 +435,37 @@ function generateBSPDungeon(data: number[], w: number, h: number, rng: PRNG, ts:
   }
 
   // Per-room features so rooms don't all feel identical: a columned hall, a
-  // water pool, or scattered dungeon props (real multi-tile stamps when present,
-  // single A5 objects otherwise). Features avoid the room's centre cross so
-  // corridors stay traversable.
-  const decoTiles = [ts.torch, ts.rock, ts.crystal, ts.bones, ts.barrel, ts.chest].filter(Boolean);
+  // water pool, or scattered dungeon props (real multi-tile stamps). Features
+  // avoid the room's centre cross so corridors stay traversable.
   for (let ri = 0; ri < rooms.length; ri++) {
     const r = rooms[ri];
     const x0 = r.x + 1, y0 = r.y + 1, x1 = r.x + r.w - 2, y1 = r.y + r.h - 2;
     if (x1 < x0 || y1 < y0) continue;
+    // Real, coherent dungeon props (mined upright objects: torches/statues/
+    // pillars). A5 tiles are floor-material, so we use full prop stamps placed
+    // against walls — the way RPG Maker dungeons are decorated.
+    const hasProps = getStamps(_stampTileset, 'prop').length > 0;
+    // Props flanking the top wall for an "inhabited", lit feel.
+    if (hasProps && r.w >= 5) {
+      for (let tx = r.x + 1; tx < r.x + r.w - 1; tx += 4) {
+        const p = pickFullProp(rng);
+        if (p && p.w <= 2) tryStampProp(data, w, h, tx, r.y, p);
+      }
+    }
     const feature = rng.nextInt(0, 3);
-    if (feature === 0 && r.w >= 5 && r.h >= 5 && ts.pillar) {
-      // Columned hall: pillars at the corners + wall midpoints (never the centre).
-      for (const [px, py] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]] as [number, number][]) setTile(data, w, h, px, py, LAYER_UPPER2, ts.pillar);
+    if (feature === 0 && r.w >= 6 && r.h >= 6 && hasProps) {
+      // Columned hall: matching props standing at the four inner corners.
+      const p = pickFullProp(rng);
+      if (p) for (const [px, py] of [[x0, y1], [x1, y1]] as [number, number][]) tryStampProp(data, w, h, px, py, p);
     } else if (feature === 1 && r.w >= 7 && r.h >= 7) {
       // Small water pool in a corner (room stays walkable around it).
       fillRect(data, w, h, x0, y0, x0 + 1, y0 + 1, LAYER_GROUND1, ts.water || 2048);
-    } else if (decoTiles.length > 0) {
-      // Scattered dungeon objects — the known A5 props (torch/rock/crystal/
-      // bones/barrel/chest), not mined stamps (ts4 stamps can carry blank tiles).
-      const n = rng.nextInt(1, 3);
+    } else if (hasProps) {
+      // Scattered props clustered toward a corner (not random across the floor).
+      const n = rng.nextInt(1, 2);
       for (let d = 0; d < n; d++) {
-        const px = rng.nextInt(x0, x1), py = rng.nextInt(y0, y1);
-        if (Math.abs(px - r.cx) <= 1 && Math.abs(py - r.cy) <= 1) continue; // keep the centre clear
-        if (getTile(data, w, h, px, py, LAYER_UPPER2) === 0) setTile(data, w, h, px, py, LAYER_UPPER2, decoTiles[rng.nextInt(0, decoTiles.length - 1)]);
+        const p = pickFullProp(rng);
+        if (p) tryStampProp(data, w, h, rng.nextBool() ? x0 : x1, rng.nextBool() ? y1 : y0 + p.h - 1, p);
       }
     }
   }
@@ -531,13 +543,17 @@ function generateCellularCave(data: number[], w: number, h: number, rng: PRNG, t
       }
     }
 
-  const decoTiles = [ts.rock, ts.crystal, ts.bones, ts.torch].filter(Boolean);
-  for (let y = 1; y < h - 1; y++)
-    for (let x = 1; x < w - 1; x++) {
-      if (grid[y][x] === 0 && decoTiles.length > 0 && rng.nextBool(0.06)) {
-        setTile(data, w, h, x, y, LAYER_UPPER2, decoTiles[rng.nextInt(0, decoTiles.length - 1)]);
-      }
+  // Scatter real prop stamps in open cave floor (against a rock above so the
+  // object reads correctly), instead of flat single A5 tiles.
+  if (getStamps(_stampTileset, 'prop').length > 0) {
+    const target = Math.floor(w * h / 60);
+    for (let attempt = 0, placed = 0; placed < target && attempt < target * 20; attempt++) {
+      const x = rng.nextInt(1, w - 2), y = rng.nextInt(2, h - 2);
+      if (grid[y][x] !== 0 || grid[y - 1][x] !== 1) continue; // floor with rock behind
+      const p = pickFullProp(rng);
+      if (p && tryStampProp(data, w, h, x, y, p)) placed++;
     }
+  }
 
   return { grid: grid };
 }
@@ -618,6 +634,31 @@ function placeDecoStamps(
     stampObject(data, w, h, x, y, stamp);
     placed++;
   }
+}
+
+// Pick a "full" prop stamp — one whose footprint is completely filled with real
+// tiles (a coherent upright object: torch, statue, pillar, crate). Dungeons need
+// these instead of single A5 tiles, which are floor-material (they render as flat
+// or blank squares, never as objects).
+function pickFullProp(rng: PRNG): Stamp | null {
+  const arr = getStamps(_stampTileset, 'prop').filter(function (s) {
+    return s.cells.length >= s.w * s.h && s.cells.every(function (c) { return c.t > 0; });
+  });
+  if (arr.length === 0) return null;
+  return arr[rng.nextInt(0, arr.length - 1)];
+}
+
+// Stamp a prop so its BASE sits at (bx, by) and its body extends upward against
+// the wall behind it (how RPG Maker dungeon props are placed). Returns true if
+// it fit on empty upper-layer cells.
+function tryStampProp(data: number[], w: number, h: number, bx: number, by: number, stamp: Stamp): boolean {
+  const x = bx, y = by - stamp.h + 1;
+  if (x < 0 || y < 0 || x + stamp.w > w || y + stamp.h > h) return false;
+  for (let yy = y; yy < y + stamp.h; yy++)
+    for (let xx = x; xx < x + stamp.w; xx++)
+      if (getTile(data, w, h, xx, yy, LAYER_UPPER1) !== 0 || getTile(data, w, h, xx, yy, LAYER_UPPER2) !== 0) return false;
+  stampObject(data, w, h, x, y, stamp);
+  return true;
 }
 
 // Carve a walkable dirt path straight down from a house door to the nearest
@@ -738,6 +779,16 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
       const dx = rng.nextInt(0, w - 1), dy = rng.nextInt(0, h - 1);
       if (getTile(data, w, h, dx, dy, LAYER_UPPER1) === 0)
         setTile(data, w, h, dx, dy, LAYER_UPPER2, decoTiles[rng.nextInt(0, decoTiles.length - 1)]);
+    }
+  }
+  // Variation tiles: scatter small flowers/grass detail on open grass to break
+  // the flat green (a standard anti-"flat-map" mapping trick).
+  const detail = [ts.flower, ts.flower2].filter(Boolean);
+  if (detail.length > 0) {
+    for (let i = 0; i < Math.floor(w * h / 22); i++) {
+      const dx = rng.nextInt(0, w - 1), dy = rng.nextInt(0, h - 1);
+      if (getTile(data, w, h, dx, dy, LAYER_GROUND1) === ts.grass && getTile(data, w, h, dx, dy, LAYER_UPPER1) === 0 && getTile(data, w, h, dx, dy, LAYER_UPPER2) === 0)
+        setTile(data, w, h, dx, dy, LAYER_UPPER2, detail[rng.nextInt(0, detail.length - 1)]);
     }
   }
   return { houses: houses };

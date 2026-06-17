@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.8.0] - 2026-06-17
+
+### Improved
+- **Production-quality map detail (informed by RPG Maker mapping tutorials).** Three anti-"flat map" passes:
+  - **Floor-texture variation** in dungeons: room floors now get a sparse moss/dark-floor sprinkle so stone no longer reads as one flat slab.
+  - **Outdoor ground detail** in towns: small flowers/grass details scattered across open grass break the flat green.
+  - **Real dungeon props instead of A5 floor tiles.** Dungeon & cave decoration now uses mined multi-tile **prop stamps** (upright torches/statues/pillars/crates placed against walls and clustered in corners), filtered to fully-filled footprints. This fixes stray **black/flat squares** that came from placing single A5 tiles (which are floor-material, not objects). Verified in-game (no black tiles; coherent props; less flat floors/grass).
+
 ## [5.7.0] - 2026-06-17
 
 ### Improved
