@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.6.0] - 2026-06-17
+
+### Added
+- **Building types with purpose + smart interiors.** Town/village now generate a mix of **homes, shops and inns**. Each gets a thematic interior: a *smart floor* chosen for the room type (wood for homes, carpet for inns, stone/tile for shops — no more jarring random floors), type-appropriate furniture, and a fitting occupant — a **functional shopkeeper** (opens a real shop with the project's items), an **innkeeper** that fully heals the party, or a resident with dialogue. Interiors are named by type (Shop/Inn/House). Verified in-game.
+
 ## [5.5.0] - 2026-06-16
 
 ### Improved

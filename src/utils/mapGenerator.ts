@@ -718,14 +718,25 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
   return { houses: houses };
 }
 
-// Inside-tileset A2 floor kinds the reference maps use (wood/carpet/tile variety).
-const INSIDE_FLOORS = [16, 18, 24, 40, 42];
+// Inside-tileset A2 floor kinds the reference maps use, grouped by what reads
+// right for each room type (verified in-game): 16/40/43 = wood, 18 = carpet,
+// 24/42 = stone/tile. The floor is chosen by room type, not blindly random.
+const FLOOR_BY_ROOM: Record<string, number[]> = {
+  home: [16, 40, 43],
+  shop: [24, 42, 16],
+  inn: [18, 43, 16],
+  library: [18, 16],
+};
+// Room type for the current interior generation (set by generateTileLayoutV3).
+let _interiorRoom = 'home';
 
 function generateInteriorTheme(data: number[], w: number, h: number, rng: PRNG): void {
   const ts = TILESETS.inside;
-  // Varied floor + optional rug so no two rooms feel identical.
-  const floor = makeAutotileId(INSIDE_FLOORS[rng.nextInt(0, INSIDE_FLOORS.length - 1)], 0);
-  fillLayer(data, w, h, LAYER_GROUND1, floor);
+  const room = _interiorRoom;
+  // Smart floor: chosen to fit the room type (wood for homes, carpet for inns,
+  // stone/tile for shops), not a blind random pick.
+  const floors = FLOOR_BY_ROOM[room] || FLOOR_BY_ROOM.home;
+  fillLayer(data, w, h, LAYER_GROUND1, makeAutotileId(floors[rng.nextInt(0, floors.length - 1)], 0));
   fillRect(data, w, h, 0, 0, w - 1, 1, LAYER_UPPER1, ts.wallSide);
   fillRect(data, w, h, 0, 0, w - 1, 0, LAYER_UPPER2, ts.wallTop);
   fillRect(data, w, h, 0, h - 1, w - 1, h - 1, LAYER_UPPER1, ts.wallSide);
@@ -736,22 +747,33 @@ function generateInteriorTheme(data: number[], w: number, h: number, rng: PRNG):
   setTile(data, w, h, doorX - 1, h - 1, LAYER_UPPER1, 0);
   setRegion(data, w, h, 2, 2, w - 3, h - 3, 1);
 
-  if (rng.nextBool(0.6)) {
-    const rug = makeAutotileId([24, 40, 42][rng.nextInt(0, 2)], 0);
+  // A rug only really suits a home/inn; shops keep a clean floor.
+  if (room !== 'shop' && rng.nextBool(0.6)) {
+    const rug = makeAutotileId([18, 24][rng.nextInt(0, 1)], 0);
     const cx = Math.floor(w / 2), cy = Math.floor(h / 2), cw = Math.max(1, Math.floor(w / 5)), ch = Math.max(1, Math.floor(h / 5));
     fillRect(data, w, h, cx - cw, cy - ch, cx + cw, cy + ch, LAYER_GROUND1, rug);
   }
 
-  // Furniture: real multi-tile prop objects, kept off the walls and the exit.
+  // Thematic named furniture per room type (real B/C object tiles), then a few
+  // prop stamps for richness — all kept off the walls and the exit.
+  const occupied = function (x: number, y: number) { return getTile(data, w, h, x, y, LAYER_UPPER1) !== 0 || getTile(data, w, h, x, y, LAYER_UPPER2) !== 0; };
+  const put = function (x: number, y: number, t: number) { if (x > 1 && x < w - 2 && y > 1 && y < h - 2 && !occupied(x, y)) setTile(data, w, h, x, y, LAYER_UPPER2, t); };
+  if (room === 'shop') {
+    for (let x = 3; x < w - 3; x++) put(x, 2, ts.bookshelf);   // back-wall shelves/stock
+    put(Math.floor(w / 2), Math.floor(h / 2), ts.table);        // counter
+  } else if (room === 'inn') {
+    for (let bx = 2; bx + 1 < w - 2; bx += 3) { put(bx, 2, ts.bed); put(bx, h - 4, ts.bed); }
+    put(w - 3, Math.floor(h / 2), ts.table);
+  } else { // home / library
+    put(w - 3, 2, ts.bed);
+    put(Math.floor(w / 2), Math.floor(h / 2), ts.table);
+    put(2, 2, ts.bookshelf); put(3, 2, ts.bookshelf);
+  }
   const nearEdgeOrExit = function (x: number, y: number) {
     return x <= 1 || y <= 1 || x >= w - 1 || y >= h - 2 || (Math.abs(x - doorX) <= 1 && y >= h - 4);
   };
   if (hasStamps(_stampTileset, 'prop')) {
-    placeDecoStamps(data, w, h, rng, Math.max(3, Math.floor(w * h / 16)), ['prop'], nearEdgeOrExit);
-  } else {
-    setTile(data, w, h, Math.floor(w / 2), Math.floor(h / 2), LAYER_UPPER2, ts.table);
-    setTile(data, w, h, 2, 2, LAYER_UPPER2, ts.bookshelf);
-    setTile(data, w, h, w - 3, 2, LAYER_UPPER2, ts.bed);
+    placeDecoStamps(data, w, h, rng, Math.max(2, Math.floor(w * h / 22)), ['prop'], nearEdgeOrExit);
   }
 }
 
@@ -1235,6 +1257,7 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
 
   // Stamps are per-tileset; use the caller's tilesetId or the theme's default.
   _stampTileset = ((opts as Record<string, unknown>).tilesetId as number) || THEME_TILESET[theme] || 1;
+  _interiorRoom = ((opts as Record<string, unknown>).roomType as string) || 'home';
 
   const themeMap: Record<string, (data: number[], w: number, h: number, rng: PRNG, ...args: unknown[]) => unknown> = {
     'forest': generateForestTheme as (data: number[], w: number, h: number, rng: PRNG, ...args: unknown[]) => unknown,

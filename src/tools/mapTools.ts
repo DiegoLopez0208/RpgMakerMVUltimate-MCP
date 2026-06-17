@@ -210,21 +210,29 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     const interiors: { id: number; map: RpgMakerMap; name: string }[] = [];
     if (interiorsWanted) {
         const houses = tileResult.houses as { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
+        // Item IDs the shop can sell (if the project has any).
+        let shopItemIds: number[] = [];
+        try { shopItemIds = (await readJson(projectPath, 'Items.json') as unknown[]).map(function (it, i) { return it ? i : 0; }).filter(Boolean).slice(0, 4); } catch (_) { /* none */ }
         for (let i = 0; i < houses.length; i++) {
             const ho = houses[i];
             const doorX = ho.doorX !== undefined ? ho.doorX : ho.x + Math.floor(ho.w / 2);
             const doorY = ho.doorY !== undefined ? ho.doorY : ho.y + ho.h - 1;
             const interiorId = mapId + 1 + i;
-            // Vary each interior's size + (via seed) floor/furniture so no two houses feel identical.
+            // Mix of building types with purpose (one inn, every 3rd a shop, rest homes).
+            const roomType = i === 0 ? 'inn' : (i % 3 === 1 ? 'shop' : 'home');
+            const label = roomType === 'shop' ? 'Shop' : roomType === 'inn' ? 'Inn' : 'House';
+            // Vary each interior's size + (via seed) floor/furniture so no two feel identical.
             const iseed = (seed || 0) + 101 + i;
             const IW = 9 + (iseed % 5), IH = 7 + ((iseed >> 2) % 4);
             const exitX = Math.floor(IW / 2), exitY = IH - 2;
             // Exterior door (action button) → interior, landing one tile above the exit mat.
             tileResult.events.push(makeDoorEvent(tileResult.events.length, doorX, doorY, interiorId, exitX, exitY - 1));
-            // Interior room + walk-on exit mat back to the street below the door.
-            const inner = generateTileLayoutV3(IW, IH, 'interior', { seed: iseed, addEvents: false });
+            // Interior room (themed floor/furniture) + walk-on exit mat back to the street.
+            const inner = generateTileLayoutV3(IW, IH, 'interior', { seed: iseed, addEvents: false, roomType: roomType });
             inner.events.push(makeTransferEvent(inner.events.length, exitX, exitY, mapId, doorX, doorY + 1, 1));
-            interiors.push({ id: interiorId, map: makeMapObject(inner.data, IW, IH, inner.events, 3, ''), name: (name || 'Town') + ' House ' + (i + 1) });
+            // A fitting occupant: shopkeeper (functional shop), innkeeper (free rest), or resident.
+            inner.events.push(makeInteriorOccupant(inner.events.length, Math.floor(IW / 2), 3, roomType, shopItemIds));
+            interiors.push({ id: interiorId, map: makeMapObject(inner.data, IW, IH, inner.events, 3, ''), name: (name || 'Town') + ' ' + label + ' ' + (i + 1) });
         }
     }
 
@@ -276,6 +284,40 @@ function makeMapObject(data: number[], width: number, height: number, events: (M
         scrollType: 0, specifyBattleback: false,
         tilesetId: tilesetId, data: data, events: events
     };
+}
+
+// A fitting occupant for a generated interior: a functional shopkeeper, an
+// innkeeper who fully heals the party, or a resident with a line of dialogue —
+// so houses have purpose, not just furniture.
+function makeInteriorOccupant(id: number, x: number, y: number, roomType: string, shopItemIds: number[]): MapEvent {
+  const msg = function (txt: string): EventCommand[] {
+    const m = cmd.message(txt, '', 0);
+    return m.filter(function (c, i) { return !(c.code === 0 && i === m.length - 1); }); // drop trailing terminator
+  };
+  const term: EventCommand = { code: 0, indent: 0, parameters: [] };
+  let list: EventCommand[];
+  let nm: string;
+  if (roomType === 'shop' && shopItemIds.length > 0) {
+    nm = 'Shopkeeper';
+    const goods = shopItemIds.map(function (iid) { return [0, iid, 0, 0] as [number, number, number, number]; });
+    list = msg('Welcome! Take a look at my wares.').concat(cmd.shopProcessing(goods, false), [term]);
+  } else if (roomType === 'inn') {
+    nm = 'Innkeeper';
+    list = msg('Welcome to the inn — rest and recover!').concat(cmd.recoverAll(0), msg('Sleep well, traveler.'), [term]);
+  } else {
+    nm = 'Resident';
+    list = msg(roomType === 'shop' ? 'Come back when I have stock to sell.' : 'Welcome to our home, traveler.').concat([term]);
+  }
+  return {
+    id: id, name: nm, note: '', x: x, y: y,
+    pages: [{
+      conditions: createDefaultConditions(), directionFix: false,
+      image: { characterIndex: id % 8, characterName: 'People1', direction: 2, pattern: 1, tileId: 0 },
+      list: list, moveFrequency: 3,
+      moveRoute: { list: [{ code: 0, parameters: [] }], repeat: true, skippable: false, wait: false },
+      moveSpeed: 2, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: false
+    }]
+  } as unknown as MapEvent;
 }
 
 /**
