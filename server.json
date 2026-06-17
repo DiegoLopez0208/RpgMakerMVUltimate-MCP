@@ -6,7 +6,7 @@
     "url": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP",
     "source": "github"
   },
-  "version": "5.6.0",
+  "version": "5.7.0",
   "categories": [
     "developer-tools",
     "gaming"
@@ -22,7 +22,7 @@
     {
       "registryType": "npm",
       "identifier": "rpgmaker-mv-mcp",
-      "version": "5.6.0",
+      "version": "5.7.0",
       "transport": {
         "type": "stdio"
       },

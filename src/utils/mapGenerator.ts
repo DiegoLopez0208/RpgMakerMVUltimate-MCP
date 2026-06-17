@@ -430,15 +430,30 @@ function generateBSPDungeon(data: number[], w: number, h: number, rng: PRNG, ts:
       }
   }
 
-  const decoTiles = [ts.pillar, ts.torch, ts.rock, ts.crystal, ts.bones, ts.barrel].filter(Boolean);
+  // Per-room features so rooms don't all feel identical: a columned hall, a
+  // water pool, or scattered dungeon props (real multi-tile stamps when present,
+  // single A5 objects otherwise). Features avoid the room's centre cross so
+  // corridors stay traversable.
+  const decoTiles = [ts.torch, ts.rock, ts.crystal, ts.bones, ts.barrel, ts.chest].filter(Boolean);
   for (let ri = 0; ri < rooms.length; ri++) {
     const r = rooms[ri];
-    if (decoTiles.length > 0) {
-      const numDeco = rng.nextInt(0, Math.min(4, Math.floor(r.w * r.h / 8)));
-      for (let d = 0; d < numDeco; d++) {
-        const dx = rng.nextInt(r.x + 1, r.x + r.w - 2);
-        const dy = rng.nextInt(r.y + 1, r.y + r.h - 2);
-        setTile(data, w, h, dx, dy, LAYER_UPPER2, decoTiles[rng.nextInt(0, decoTiles.length - 1)]);
+    const x0 = r.x + 1, y0 = r.y + 1, x1 = r.x + r.w - 2, y1 = r.y + r.h - 2;
+    if (x1 < x0 || y1 < y0) continue;
+    const feature = rng.nextInt(0, 3);
+    if (feature === 0 && r.w >= 5 && r.h >= 5 && ts.pillar) {
+      // Columned hall: pillars at the corners + wall midpoints (never the centre).
+      for (const [px, py] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]] as [number, number][]) setTile(data, w, h, px, py, LAYER_UPPER2, ts.pillar);
+    } else if (feature === 1 && r.w >= 7 && r.h >= 7) {
+      // Small water pool in a corner (room stays walkable around it).
+      fillRect(data, w, h, x0, y0, x0 + 1, y0 + 1, LAYER_GROUND1, ts.water || 2048);
+    } else if (decoTiles.length > 0) {
+      // Scattered dungeon objects — the known A5 props (torch/rock/crystal/
+      // bones/barrel/chest), not mined stamps (ts4 stamps can carry blank tiles).
+      const n = rng.nextInt(1, 3);
+      for (let d = 0; d < n; d++) {
+        const px = rng.nextInt(x0, x1), py = rng.nextInt(y0, y1);
+        if (Math.abs(px - r.cx) <= 1 && Math.abs(py - r.cy) <= 1) continue; // keep the centre clear
+        if (getTile(data, w, h, px, py, LAYER_UPPER2) === 0) setTile(data, w, h, px, py, LAYER_UPPER2, decoTiles[rng.nextInt(0, decoTiles.length - 1)]);
       }
     }
   }
@@ -681,7 +696,17 @@ function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _per
   fillRect(data, w, h, roadX - 1, 0, roadX + 1, h - 1, LAYER_GROUND1, ts.dirt);
   fillRect(data, w, h, 0, roadY - 1, w - 1, roadY + 1, LAYER_GROUND1, ts.dirt);
   setRegion(data, w, h, 0, 0, w - 1, h - 1, 1);
-  const onRoad = function (x: number, y: number) { return Math.abs(x - roadX) <= 1 || Math.abs(y - roadY) <= 1; };
+  // Central plaza/marketplace at the crossroad (a town focal point) with a
+  // landmark prop at each corner, off the through-paths.
+  const pr = 3;
+  fillRect(data, w, h, roadX - pr, roadY - pr, roadX + pr, roadY + pr, LAYER_GROUND1, ts.dirt);
+  if (hasStamps(_stampTileset, 'prop')) {
+    for (const [px, py] of [[roadX - pr + 1, roadY - pr + 1], [roadX + pr - 1, roadY - pr + 1], [roadX - pr + 1, roadY + pr - 1], [roadX + pr - 1, roadY + pr - 1]] as [number, number][]) {
+      const s = pickStamp(_stampTileset, 'prop', rng);
+      if (s) stampObject(data, w, h, px, py, s);
+    }
+  }
+  const onRoad = function (x: number, y: number) { return Math.abs(x - roadX) <= pr || Math.abs(y - roadY) <= pr; };
   const numHouses = Math.max(3, Math.floor(w * h / 150));
   const houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] = [];
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.7.0] - 2026-06-17
+
+### Improved
+- **Town plaza + dungeon room variety** (informed by RPG Maker town-mapping guides). Towns now open onto a central paved **plaza/marketplace** at the crossroad with landmark props at its corners — a proper town focal point instead of a bare cross. Dungeon rooms now vary per room: a **columned hall** (corner pillars), a small **water pool**, or scattered dungeon objects (torches/crates/bones/chests) — using only known-good A5 objects so no stray/black tiles. Verified in-game.
+
 ## [5.6.0] - 2026-06-17
 
 ### Added
