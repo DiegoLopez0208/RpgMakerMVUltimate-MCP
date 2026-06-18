@@ -42,14 +42,38 @@ Add to your MCP config:
 }
 ```
 
-## Using it well (for any AI agent)
+## Agent Skill (recommended for any AI agent)
 
-A portable agent skill that teaches the correct, crash-free workflow lives at
-[`skill/rpgmaker-mv-mcp/SKILL.md`](skill/rpgmaker-mv-mcp/SKILL.md). Copy that
-folder into your agent's skills directory (e.g. `~/.agents/skills`,
-`~/.claude/skills`, `~/.opencode/skills`) so any model (Claude, DeepSeek, …)
-drives this MCP semantically — building maps with `generate_map` (which stamps
-real houses/trees and wires encounters) instead of hand-painting tiles.
+A portable agent skill teaches any model (Claude, DeepSeek, …) the correct,
+crash-free workflow — building maps with `generate_map` (which stamps real
+houses/trees and wires encounters) instead of hand-painting tiles or guessing
+IDs. It lives at [`skill/rpgmaker-mv-mcp/SKILL.md`](skill/rpgmaker-mv-mcp/SKILL.md)
+and works with the [Agent Skills](https://agentskills.io) standard.
+
+### Install the skill
+
+**One-liner (no clone needed)** — pull just the skill folder into your agent's
+skills directory with [`degit`](https://github.com/Rich-Harris/degit):
+
+```bash
+# Claude Code / Claude.ai (custom skills)
+npx degit DiegoLopez0208/RpgMakerMVUltimate-MCP/skill/rpgmaker-mv-mcp ~/.claude/skills/rpgmaker-mv-mcp
+
+# opencode
+npx degit DiegoLopez0208/RpgMakerMVUltimate-MCP/skill/rpgmaker-mv-mcp ~/.opencode/skills/rpgmaker-mv-mcp
+
+# generic agents
+npx degit DiegoLopez0208/RpgMakerMVUltimate-MCP/skill/rpgmaker-mv-mcp ~/.agents/skills/rpgmaker-mv-mcp
+```
+
+**From a clone** (if you already have the repo):
+
+```bash
+cp -r skill/rpgmaker-mv-mcp ~/.claude/skills/      # or ~/.opencode/skills/ , ~/.agents/skills/
+```
+
+The skill is also listed in
+[awesome-claude-skills](https://github.com/travisvn/awesome-claude-skills).
 
 ## Tools (v5)
 

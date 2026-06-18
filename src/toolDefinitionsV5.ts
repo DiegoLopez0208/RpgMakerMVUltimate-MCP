@@ -95,7 +95,7 @@ export const TOOL_DEFINITIONS_V5 = [
   },
   {
     name: 'generate_map',
-    description: 'Create a new map file (next free map ID, registered in MapInfos.json; both files written immediately). `mode` selects the generator: "blank" makes an empty map you paint later (edit_map fill_layer); "themed" generates a simple tile layout for a theme using the tileset\'s real tiles; "procedural" is the full generator (Perlin noise terrain, BSP dungeons, cellular caves, themed events auto-placed; same seed + params = same map; 21 themes incl. snow, volcano, sewer, space_interior); "batch" generates several procedural maps in one call from `batch` specs; "duplicate" copies an existing map (transfer events still point at their ORIGINAL destinations — review them); "template" instantiates one of the 106 bundled reference maps by templateId (list them with get_project_context detail "templates"). Returns {mapId, ...} — procedural also returns the seed; batch returns all mapIds keyed for edit_map "connect". Fails with an error on unknown theme/template or unwritable files.',
+    description: 'Create a new map file (next free map ID, registered in MapInfos.json; both files written immediately). `mode` selects the generator: "blank" makes an empty map you paint later (edit_map fill_layer); "themed" generates a simple tile layout for a theme using the tileset\'s real tiles; "procedural" is the full generator — for themes with matching RTP reference templates (town, dungeon, interior, castle, world, etc.) it CLONES a hand-authored template from the 106 bundled maps (real 3D buildings, walls, furniture), auto-picking the closest size; for themes without templates (beach, swamp, etc.) it generates procedurally (Perlin terrain, BSP dungeons, cellular caves). Same seed + params = same map. Pass templateId to force a specific template, or useTemplate:false to force procedural. 21 themes incl. snow, volcano, sewer, space_interior; "batch" generates several procedural maps in one call from `batch` specs; "duplicate" copies an existing map (transfer events still point at their ORIGINAL destinations — review them); "template" instantiates one of the 106 bundled reference maps by templateId (list them with get_project_context detail "templates"). Returns {mapId, ...} — procedural also returns the seed; batch returns all mapIds keyed for edit_map "connect". Fails with an error on unknown theme/template or unwritable files.',
     annotations: { title: 'Generate map', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     inputSchema: {
       type: 'object',
@@ -116,8 +116,9 @@ export const TOOL_DEFINITIONS_V5 = [
         note: { type: 'string', description: 'Free-form note field for plugin metadata' },
         batch: { type: 'array', description: 'mode "batch" only: one spec per map [{key, name, theme, width, height, tilesetId, seed, parentId}]; key is echoed back to match returned mapIds', items: { type: 'object' } },
         sourceMapId: { ...ID_TYPE, description: 'mode "duplicate" only: existing map ID to copy (unchanged by the operation)' },
-        templateId: { ...ID_TYPE, description: 'mode "template" only: bundled template ID from get_project_context detail "templates"' },
-        keepEvents: { type: 'boolean', description: 'mode "template" only: also copy the template\'s events (default true)' }
+        templateId: { ...ID_TYPE, description: 'mode "template": bundled template ID. mode "procedural": OPTIONAL — force a specific template ID (from get_project_context detail "templates") instead of auto-picking by theme+size' },
+        keepEvents: { type: 'boolean', description: 'mode "template" only: also copy the template\'s events (default true)' },
+        useTemplate: { type: 'boolean', description: 'procedural: when true (default), clone an RTP template for themes that have one (town, dungeon, interior, etc.) instead of generating procedurally. Set false to force procedural generation even when templates exist' }
       },
       required: []
     }

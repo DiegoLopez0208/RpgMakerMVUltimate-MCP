@@ -1,5 +1,24 @@
 # Changelog
 
+## [5.9.0] - 2026-06-17
+
+### Fixed
+- **Generated events landed inside walls/water.** `generateEvents` placed chests, bosses and NPCs at `rng.nextInt(3,w-4)` with no passability check, so a dungeon chest could sit in a wall and a town NPC in a pond. Events are now walkability-gated: a new `isPlaceableFloor`/`findFloorTile` scans for a region-1 (walkable floor) tile with empty upper layers. The dungeon boss now targets the BSP boss-room centre (region 2) instead of a fixed `(w*0.75, h*0.25)` corner that was often a wall. Verified in-game: chests/bosses/NPCs stand on real floor.
+- **`carveDoorPath` plowed through neighbouring buildings.** The door-to-road path carved straight down ≤18 tiles overwriting whatever was in the column, so a house placed below another could be sliced through. It now stops at the road OR at any placed object (non-empty upper layer) instead of carving through it.
+- **`makeAutotileId` silently resolved a falsy sheet base to the A1 water sheet.** The `(sheetBase || 2048)` fallback meant passing `0`/`undefined` produced animated-water tiles with no error — the original cause of the "maps made of water" bug. It now throws on a non-positive sheet base; the intentional 2-arg default (2048) still works.
+- **Generated NPCs said "...".** Town/village/dungeon/interior NPCs now speak themed dialogue (welcome, warnings, inn/shop flavour) picked per theme, so maps read like a real game.
+
+### Improved
+- **Towns are no longer a rigid plus-sign.** The symmetric central cross + square plaza read as a sign-of-the-cross with boxes around it. Roads are now an organic network: a main cross offset off-centre plus 1-2 spur lanes, and the plaza is an irregular blob whose edge is warped by Perlin. Verified: a 34×28 town yields ≥3 distinct road columns and rows (was 1 of each).
+- **Houses are no longer identical boxes.** `buildAutotileHouse` now picks from three footprints — plain rectangle, L-shape (notched corner) and wide manor (taller roof) — with an off-centre door and an optional front fence, so a town is a mix of cottages, wings and manors instead of samey little rectangles. Verified in-game (varied 4–6-wide roofs, L-notches, offset doors).
+- **Forest clearing is no longer a perfect circle.** The centred round dirt patch read as a bullseye. It is now an irregular blob whose radius is warped by Perlin, with a campfire landmark (well tile + flanking stumps) so the clearing is a focal point.
+- **Outdoor decoration clumps into groves.** A new `placeDecoClusters` places trees/props in clumps around seed points (the way real vegetation grows) alongside the even scatter, so forests have dense copses and open grass instead of a uniform sprinkle.
+- **Perlin noise is normalized to map size.** Hardcoded frequencies (forest 0.06, world 0.03, …) barely completed one noise period on a small map, producing near-uniform single-biome slabs. A `noiseScale(base,w,h) = base * 30/min(w,h)` is now applied to every Perlin terrain theme, so small procedural maps vary and large ones stay broad.
+- **Procedural generation now receives the project's real scanned tiles.** `createMapV3` (the `generate_map mode:"procedural"` path) didn't pass `availableTiles`, so custom tilesets always hit the decoration fallback. It now scans the tileset (like `createMap`) and the forest fallback prefers the project's real decoration tiles; when no stamp library exists, trees are omitted rather than emitted as broken single-tile fragments.
+
+### Added
+- Pretty-maps regression suite (6 tests): `makeAutotileId` footgun, `noiseScale` normalization, dungeon chest/boss walkability, themed NPC dialogue, organic town road network, house generation. Helpers `makeAutotileId`, `noiseScale`, `isPlaceableFloor`, `findFloorTile` exported for testing.
+
 ## [5.8.0] - 2026-06-17
 
 ### Improved

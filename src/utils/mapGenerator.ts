@@ -8,6 +8,12 @@ import { pickStamp, stampObject, hasStamps, getStamps, type StampCategory, type 
 // generateTileLayoutV3 before running a theme generator (stamps are per-tileset).
 let _stampTileset = 2;
 
+// Real scanned tiles for the active project's tileset (optional, set by
+// generateTileLayoutV3 when the caller passes availableTiles). Used by theme
+// fallbacks so custom tilesets don't emit blank/garbage decoration.
+interface AvailableTiles { ground?: number[]; water?: number[]; decoration?: number[]; }
+let _availableTiles: AvailableTiles | undefined;
+
 // ─── mapGenerator.ts — RPG Maker MV Procedural Map Generator ───
 // Features: Perlin noise 2D, BSP dungeon, cellular automata caves,
 // parametric seed, 20+ themes, automatic event generation,
@@ -202,7 +208,12 @@ function setRegion(data: number[], w: number, h: number, x1: number, y1: number,
 // dropped, so every floor/wall collapsed to base 2048 (A1 animated water) and
 // interiors/dungeons rendered as water. It is now honored.
 function makeAutotileId(kind: number, shape: number = 0, sheetBase: number = 2048): number {
-  return (sheetBase || 2048) + kind * 48 + (shape || 0);
+  // Reject a falsy sheetBase explicitly instead of silently falling back to the
+  // A1 animated-water sheet (2048) — that fallback is what once turned every
+  // floor/wall into water. The 2-arg default (2048) is intentional and stays.
+  if (!Number.isFinite(sheetBase) || sheetBase <= 0)
+    throw new Error('makeAutotileId: invalid sheetBase=' + sheetBase + ' (kind=' + kind + '); pass an explicit autotile sheet base (A1=2048, A2=2816, A3=4352, A4=5888).');
+  return sheetBase + kind * 48 + (Number.isFinite(shape) ? shape : 0);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -240,7 +251,10 @@ const TILESETS: Record<string, Record<string, number>> = {
   inside: {
     floor: makeAutotileId(0, 0, 2816), carpet: makeAutotileId(2, 0, 2816),
     woodFloor: makeAutotileId(4, 0, 2816), tileFloor: makeAutotileId(6, 0, 2816),
-    wallSide: makeAutotileId(0, 0, 5888), wallTop: makeAutotileId(1, 0, 5888),
+    // A4 wall kinds: even = wall-top (cap), odd = wall-side (face). Reference
+    // interior maps (House templates) use kind 19 (wall-side) for house walls —
+    // kind 0 is a floor-like top, which rendered as a flat slab, not a wall.
+    wallSide: makeAutotileId(19, 0, 5888), wallTop: makeAutotileId(18, 0, 5888),
     // Interior furniture lives in the B/C object pages, NOT A5 (which is floor
     // patterns) — the old A5 ids 1537-1547 were blank cells, so furniture
     // rendered as nothing. Remapped to real object tiles the ProjectR Inside
@@ -253,7 +267,10 @@ const TILESETS: Record<string, Record<string, number>> = {
   dungeon: {
     floor: makeAutotileId(0, 0, 2816), darkFloor: makeAutotileId(2, 0, 2816),
     brickFloor: makeAutotileId(4, 0, 2816),
-    wallSide: makeAutotileId(0, 0, 5888), wallTop: makeAutotileId(1, 0, 5888),
+    // A4 wall-side = odd kind (the vertical face). Reference cave maps use kind
+    // 1; kind 0 is the wall-TOP (a floor-like cap), which made dungeon walls
+    // read as flat slabs instead of stone faces.
+    wallSide: makeAutotileId(1, 0, 5888), wallTop: makeAutotileId(0, 0, 5888),
     wallDark: makeAutotileId(2, 0, 5888), wallStone: makeAutotileId(4, 0, 5888),
     water: 2048, lava: makeAutotileId(4, 0),
     pillar: 1536, rock: 1537, torch: 1538, chest: 1539,
@@ -271,7 +288,7 @@ const TILESETS: Record<string, Record<string, number>> = {
   sf_inside: {
     floor: makeAutotileId(0, 0, 2816), metalFloor: makeAutotileId(2, 0, 2816),
     tileFloor: makeAutotileId(4, 0, 2816),
-    wallSide: makeAutotileId(0, 0, 5888), wallTop: makeAutotileId(1, 0, 5888),
+    wallSide: makeAutotileId(1, 0, 5888), wallTop: makeAutotileId(0, 0, 5888),
     screen: 1536, console: 1537, locker: 1538, bed: 1539,
     table: 1540, chair: 1541, door: 1542, vent: 1543,
     sifiDeco: 512, sifiDeco2: 513
@@ -286,7 +303,7 @@ const TILESETS: Record<string, Record<string, number>> = {
   },
   space_interior: {
     floor: makeAutotileId(0, 0, 2816), metalFloor: makeAutotileId(2, 0, 2816),
-    wallSide: makeAutotileId(0, 0, 5888), wallTop: makeAutotileId(1, 0, 5888),
+    wallSide: makeAutotileId(1, 0, 5888), wallTop: makeAutotileId(0, 0, 5888),
     screen: 1536, console: 1537, locker: 1538, bed: 1539,
     table: 1540, chair: 1541, door: 1542, vent: 1543,
     sifiPanel: 512, sifiMonitor: 513, sifiTank: 514, sifiCore: 515
@@ -379,12 +396,12 @@ function generateBSPDungeon(data: number[], w: number, h: number, rng: PRNG, ts:
 
   const floorTile = ts.floor || 2816;
   const wallTile = ts.wallSide || 5888;
-  const wallTopTile = ts.wallTop || makeAutotileId(1, 0, 5888);
-
+  // RPGMV A4 walls render their own pseudo-3D (top cap + side face + corners)
+  // from a SINGLE ground-layer tile via the 48 autotile shapes. The reference
+  // dungeon maps place walls on the ground layer ONLY — the upper layer is
+  // empty. Previously we also filled the upper layer with wallTop on every
+  // cell, which overlaid a floating cap and made the map read as "destroyed".
   fillRect(data, w, h, 0, 0, w - 1, h - 1, LAYER_GROUND1, wallTile);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++)
-      setTile(data, w, h, x, y, LAYER_UPPER1, wallTopTile);
 
   const root = new BSPNode(wallThick, wallThick, w - wallThick * 2, h - wallThick * 2);
   for (let i = 0; i < depth; i++) {
@@ -496,7 +513,9 @@ function generateCellularCave(data: number[], w: number, h: number, rng: PRNG, t
 
   const floorTile = ts.floor || 2816;
   const wallTile = ts.wallSide || makeAutotileId(0, 0, 5888);
-  const wallTopTile = ts.wallTop || makeAutotileId(1, 0, 5888);
+  // A4 walls go on the ground layer only (the engine renders the 3D wall from
+  // the single tile). Upper layer stays empty for wall cells — filling it with
+  // a wallTop cap made cave walls read as "destroyed".
 
   let grid: number[][] = [];
   for (let y = 0; y < h; y++) {
@@ -538,8 +557,8 @@ function generateCellularCave(data: number[], w: number, h: number, rng: PRNG, t
         setTile(data, w, h, x, y, LAYER_UPPER1, 0);
         setRegion(data, w, h, x, y, 1);
       } else {
+        // Wall: ground-layer A4 only (renders its own 3D). Upper stays 0.
         setTile(data, w, h, x, y, LAYER_GROUND1, wallTile);
-        setTile(data, w, h, x, y, LAYER_UPPER1, wallTopTile);
       }
     }
 
@@ -562,8 +581,20 @@ function generateCellularCave(data: number[], w: number, h: number, rng: PRNG, t
 // THEME GENERATORS (20+ themes)
 // ════════════════════════════════════════════════════════════════
 
+// Normalize a Perlin frequency to the map size: a 30-tile map uses `base` as-is,
+// smaller maps get proportionally higher frequency (so noise still varies across
+// the few tiles) and larger maps get lower (so features stay broad). Without this
+// a small procedural map is a near-uniform single-biome slab because the hardcoded
+// scale barely completes one noise period. Clamped so extreme aspect ratios don't
+// blow up.
+function noiseScale(base: number, w: number, h: number): number {
+  const m = Math.max(8, Math.min(w, h));
+  return base * (30 / m);
+}
+
 function applyPerlinTerrain(data: number[], w: number, h: number, perlin: PerlinNoise, ts: Record<string, number>, opts: GeneratorOptions = {}): void {
-  const scale: number = (opts as Record<string, number>).scale || 0.08;
+  const baseScale: number = (opts as Record<string, number>).scale || 0.08;
+  const scale = noiseScale(baseScale, w, h); // size-normalized so small maps vary
   const waterThreshold: number = (opts as Record<string, number>).waterThreshold || -0.2;
   const deepThreshold: number = (opts as Record<string, number>).deepThreshold || -0.4;
   const sandThreshold: number = (opts as Record<string, number>).sandThreshold || -0.05;
@@ -584,14 +615,25 @@ function applyPerlinTerrain(data: number[], w: number, h: number, perlin: Perlin
 
 // Place real multi-tile building stamps, non-overlapping (with a 1-tile margin)
 // and avoiding `blocked` cells (e.g. roads). Returns each footprint + door.
+// Prefers SMALLER stamps (they fit more easily on a dense town grid) but still
+// picks a larger one occasionally for variety. More attempts than before so a
+// town fills with real buildings instead of falling back to flat autotile boxes.
 function placeHouseStamps(
   data: number[], w: number, h: number, rng: PRNG, count: number, blocked?: (x: number, y: number) => boolean
 ): { x: number; y: number; w: number; h: number; doorX: number; doorY: number }[] {
   const houses: { x: number; y: number; w: number; h: number; doorX: number; doorY: number }[] = [];
   const occ = new Uint8Array(w * h);
-  for (let attempt = 0; houses.length < count && attempt < count * 40; attempt++) {
-    const stamp = pickStamp(_stampTileset, 'house', rng);
-    if (!stamp) break;
+  // Sort stamps by area (smallest first) so they fit on a tight town grid, but
+  // keep some larger ones in the mix for visual variety.
+  const allStamps = getStamps(_stampTileset, 'house').slice().sort(function (a, b) { return (a.w * a.h) - (b.w * b.h); });
+  if (allStamps.length === 0) return houses;
+  for (let attempt = 0; houses.length < count && attempt < count * 60; attempt++) {
+    // 70% chance of a small stamp (first half), 30% a larger one — variety.
+    const idx = rng.nextBool(0.7)
+      ? rng.nextInt(0, Math.max(0, Math.floor(allStamps.length / 2) - 1))
+      : rng.nextInt(0, allStamps.length - 1);
+    const stamp = allStamps[idx];
+    if (!stamp) continue;
     if (stamp.w + 2 >= w || stamp.h + 2 >= h) continue;
     const hx = rng.nextInt(1, w - stamp.w - 1);
     const hy = rng.nextInt(1, h - stamp.h - 1);
@@ -636,6 +678,36 @@ function placeDecoStamps(
   }
 }
 
+// Like placeDecoStamps but clusters decorations into natural groves: pick a few
+// seed points, then place several stamps tightly around each so trees/props
+// clump (the way real vegetation grows) instead of an even random sprinkle.
+function placeDecoClusters(
+  data: number[], w: number, h: number, rng: PRNG, groves: number, perGrove: number,
+  cats: StampCategory[], blocked?: (x: number, y: number) => boolean
+): void {
+  const usable = cats.filter(function (c) { return hasStamps(_stampTileset, c); });
+  if (usable.length === 0) return;
+  for (let g = 0; g < groves; g++) {
+    const gx = rng.nextInt(2, w - 3), gy = rng.nextInt(2, h - 3);
+    for (let p = 0, placed = 0, attempts = 0; placed < perGrove && attempts < perGrove * 12; attempts++) {
+      const stamp = pickStamp(_stampTileset, usable[rng.nextInt(0, usable.length - 1)], rng);
+      if (!stamp) break;
+      // Bias placement near the grove centre (Gaussian-ish via summed randoms).
+      const x = Math.max(0, Math.min(w - stamp.w, gx + rng.nextInt(-2, 2) - Math.floor(stamp.w / 2)));
+      const y = Math.max(0, Math.min(h - stamp.h, gy + rng.nextInt(-2, 2) - Math.floor(stamp.h / 2)));
+      let ok = true;
+      for (let yy = y; yy < y + stamp.h && ok; yy++)
+        for (let xx = x; xx < x + stamp.w && ok; xx++) {
+          if (getTile(data, w, h, xx, yy, LAYER_UPPER1) !== 0 || getTile(data, w, h, xx, yy, LAYER_UPPER2) !== 0) ok = false;
+          else if (blocked && blocked(xx, yy)) ok = false;
+        }
+      if (!ok) continue;
+      stampObject(data, w, h, x, y, stamp);
+      placed++;
+    }
+  }
+}
+
 // Pick a "full" prop stamp — one whose footprint is completely filled with real
 // tiles (a coherent upright object: torch, statue, pillar, crate). Dungeons need
 // these instead of single A5 tiles, which are floor-material (they render as flat
@@ -663,13 +735,18 @@ function tryStampProp(data: number[], w: number, h: number, bx: number, by: numb
 
 // Carve a walkable dirt path straight down from a house door to the nearest
 // road, so every house is reachable and the town reads as planned rather than
-// houses floating in empty grass. Clears decoration along the path.
+// houses floating in empty grass. Stops at the road OR at any placed object
+// (house/deco/tree) blocking the column — previously it overwrote whatever was
+// in the way, plowing straight through a neighbouring building.
 function carveDoorPath(data: number[], w: number, h: number, doorX: number, doorY: number, dirt: number, onRoad: (x: number, y: number) => boolean): void {
   for (let y = doorY + 1; y < h && y <= doorY + 18; y++) {
+    if (onRoad(doorX, y)) break; // reached the road — connected, done
+    // An obstacle (non-empty upper layer = a placed house/tree/prop) blocks the
+    // path. Stop instead of carving through it.
+    if (getTile(data, w, h, doorX, y, LAYER_UPPER1) !== 0 || getTile(data, w, h, doorX, y, LAYER_UPPER2) !== 0) break;
     setTile(data, w, h, doorX, y, LAYER_GROUND1, dirt);
     setTile(data, w, h, doorX, y, LAYER_UPPER1, 0);
     setTile(data, w, h, doorX, y, LAYER_UPPER2, 0);
-    if (onRoad(doorX, y)) break;
   }
 }
 
@@ -678,20 +755,41 @@ function carveDoorPath(data: number[], w: number, h: number, doorX: number, door
 const ROOF_KINDS = [48, 50, 52, 54, 55, 64, 66, 68, 69, 70];
 
 // Build a coherent RPG-Maker house from autotiles: a multi-row roof (A3 roof
-// kind) over a wall strip (A3 wall-side kind), with a door opening at the
-// bottom-centre. The autotiler then shapes the roof eaves/peak and wall edges
-// — this is how real RTP exterior houses are made, far more coherent than
-// stamping B/C fragments. Returns the footprint + door tile.
-function buildAutotileHouse(data: number[], w: number, h: number, hx: number, hy: number, bw: number, bh: number, roof: number, wall: number): { x: number; y: number; w: number; h: number; doorX: number; doorY: number } {
-  const roofRows = Math.max(2, Math.ceil(bh * 0.55));
+// kind) over a wall strip (A3 wall-side kind), with a door opening near the
+// bottom. The autotiler then shapes the roof eaves/peak and wall edges.
+// `style` adds footprint variety so a town isn't all identical boxes:
+//   0 = plain rectangle (the classic RTP cottage)
+//   1 = L-shape (notch the top-right corner — reads as an extension/wing)
+//   2 = wide manor (broader + taller roof, a wealthier building)
+// `fenceTile` (optional, a confirmed B/C object id) lays a front fence/garden
+// edge along the bottom for a tended look. Door is offset from centre by `doorBias`
+// so doors aren't all identically centred. Returns the footprint + door tile.
+function buildAutotileHouse(data: number[], w: number, h: number, hx: number, hy: number, bw: number, bh: number, roof: number, wall: number, style: number = 0, fenceTile?: number, doorBias: number = 0): { x: number; y: number; w: number; h: number; doorX: number; doorY: number } {
+  // Wider manors get a taller roof so they read as bigger buildings.
+  const roofRows = style === 2 ? Math.max(3, Math.ceil(bh * 0.7)) : Math.max(2, Math.ceil(bh * 0.55));
+  // L-shape: omit the top-right quadrant (an inset wing). Kept small so the
+  // autotiler still closes the roof around it.
+  const notch = style === 1 ? { x: hx + Math.floor(bw * 0.6), y: hy, w: bw - Math.floor(bw * 0.6), h: Math.floor(bh * 0.45) } : null;
   for (let y = 0; y < bh; y++)
     for (let x = 0; x < bw; x++) {
+      if (notch && x >= notch.x - hx && y < notch.h) continue; // carved-out corner
       setTile(data, w, h, hx + x, hy + y, LAYER_UPPER1, y < roofRows ? roof : wall);
       setTile(data, w, h, hx + x, hy + y, LAYER_UPPER2, 0);
       setShadow(data, w, h, hx + x, hy + y, 15);
     }
-  const doorX = hx + Math.floor(bw / 2), doorY = hy + bh - 1;
+  // Door near bottom-centre, with an optional off-centre bias for variety.
+  const doorX = Math.max(hx + 1, Math.min(hx + bw - 2, hx + Math.floor(bw / 2) + doorBias));
+  const doorY = hy + bh - 1;
   setTile(data, w, h, doorX, doorY, LAYER_UPPER1, 0); // doorway (the door event sprite sits here)
+  // Front fence/garden edge along the bottom row (skipping the door tile).
+  if (fenceTile) {
+    for (let x = 0; x < bw; x++) {
+      if (hx + x === doorX) continue;
+      const fy = hy + bh;
+      if (fy < h && getTile(data, w, h, hx + x, fy, LAYER_UPPER1) === 0 && getTile(data, w, h, hx + x, fy, LAYER_UPPER2) === 0)
+        setTile(data, w, h, hx + x, fy, LAYER_UPPER2, fenceTile);
+    }
+  }
   return { x: hx, y: hy, w: bw, h: bh, doorX: doorX, doorY: doorY };
 }
 
@@ -707,90 +805,217 @@ function generateForestTheme(data: number[], w: number, h: number, rng: PRNG, pe
   // Whole multi-tile tree/rock objects on grass, not single scattered tiles.
   const onWater = function (x: number, y: number) { return getTile(data, w, h, x, y, LAYER_GROUND1) !== ts.grass; };
   if (hasStamps(_stampTileset, 'tree') || hasStamps(_stampTileset, 'prop')) {
-    placeDecoStamps(data, w, h, rng, Math.floor(w * h / 18), ['tree', 'tree', 'prop'], onWater);
+    // A few natural groves (clumped trees) plus a lighter even scatter, so the
+    // forest has dense copses and open grass rather than a uniform sprinkle.
+    placeDecoClusters(data, w, h, rng, Math.max(2, Math.floor(Math.min(w, h) / 8)), 4, ['tree', 'prop'], onWater);
+    placeDecoStamps(data, w, h, rng, Math.floor(w * h / 28), ['tree', 'prop'], onWater);
   } else {
+    // No stamp library: scatter only SMALL objects (flowers/bushes) as single
+    // tiles — a single tree tile renders as a broken fragment, so we omit trees
+    // rather than emit ugliness. Prefer the project's real scanned decoration
+    // tiles when available, else the verified RTP ids.
+    const small = (_availableTiles && _availableTiles.decoration && _availableTiles.decoration.length)
+      ? _availableTiles.decoration
+      : [ts.bush, ts.flower, ts.flower2].filter(Boolean);
     for (let y = 0; y < h; y++)
       for (let x = 0; x < w; x++) {
         if (getTile(data, w, h, x, y, LAYER_GROUND1) === ts.grass && rng.nextBool(0.12))
-          setTile(data, w, h, x, y, LAYER_UPPER1, rng.nextBool() ? ts.tree : (rng.nextBool() ? ts.bush : ts.flower));
+          setTile(data, w, h, x, y, LAYER_UPPER1, small[rng.nextInt(0, small.length - 1)]);
       }
   }
+  // An irregular, natural clearing near the centre (NOT a perfect circle —
+  // that read as a bullseye). Modulate by Perlin so the clearing edge is
+  // organic, and stamp a landmark (campfire/ruins) so the clearing has a focal
+  // point instead of being empty dirt.
   const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
   const cr = Math.max(3, Math.floor(Math.min(w, h) / 5));
-  for (let dy = -cr; dy <= cr; dy++)
-    for (let dx = -cr; dx <= cr; dx++) {
+  const cs = noiseScale(0.12, w, h);
+  for (let dy = -cr - 1; dy <= cr + 1; dy++)
+    for (let dx = -cr - 1; dx <= cr + 1; dx++) {
       const rx = cx + dx, ry = cy + dy;
-      if (dx * dx + dy * dy < cr * cr) {
+      if (rx < 0 || ry < 0 || rx >= w || ry >= h) continue;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      // Perlin warps the radius so the clearing edge is wavy, not circular.
+      const warp = perlin.noise2d(rx * cs, ry * cs) * cr * 0.4;
+      if (dist < cr + warp) {
         setTile(data, w, h, rx, ry, LAYER_GROUND1, ts.dirt);
         setTile(data, w, h, rx, ry, LAYER_UPPER1, 0);
         setTile(data, w, h, rx, ry, LAYER_UPPER2, 0);
         setRegion(data, w, h, rx, ry, 1);
       }
     }
+  // Landmark at the clearing centre: a campfire (well tile doubles as a hearth)
+  // flanked by stumps, so the clearing reads as a rest stop / landmark.
+  if (getTile(data, w, h, cx, cy, LAYER_GROUND1) === ts.dirt) {
+    setTile(data, w, h, cx, cy, LAYER_UPPER2, ts.well || 107);
+    if (ts.stump) { setTile(data, w, h, cx - 1, cy + 1, LAYER_UPPER2, ts.stump); setTile(data, w, h, cx + 1, cy + 1, LAYER_UPPER2, ts.stump); }
+  }
 }
 
-function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _perlin?: PerlinNoise): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
-  const ts = TILESETS.outside;
-  fillLayer(data, w, h, LAYER_GROUND1, ts.grass);
-  const roadX = Math.floor(w / 2);
-  const roadY = Math.floor(h / 2);
-  fillRect(data, w, h, roadX - 1, 0, roadX + 1, h - 1, LAYER_GROUND1, ts.dirt);
-  fillRect(data, w, h, 0, roadY - 1, w - 1, roadY + 1, LAYER_GROUND1, ts.dirt);
-  setRegion(data, w, h, 0, 0, w - 1, h - 1, 1);
-  // Central plaza/marketplace at the crossroad (a town focal point) with a
-  // landmark prop at each corner, off the through-paths.
-  const pr = 3;
-  fillRect(data, w, h, roadX - pr, roadY - pr, roadX + pr, roadY + pr, LAYER_GROUND1, ts.dirt);
-  if (hasStamps(_stampTileset, 'prop')) {
-    for (const [px, py] of [[roadX - pr + 1, roadY - pr + 1], [roadX + pr - 1, roadY - pr + 1], [roadX - pr + 1, roadY + pr - 1], [roadX + pr - 1, roadY + pr - 1]] as [number, number][]) {
-      const s = pickStamp(_stampTileset, 'prop', rng);
-      if (s) stampObject(data, w, h, px, py, s);
+// RTP template selection: each theme maps to one or more template categories
+// whose tileset matches. The generator loads the full 106-template index and
+// auto-picks the closest-sized template for the requested map dimensions. This
+// gives every theme access to ALL bundled RTP reference maps, not just a
+// hardcoded subset. Pass `templateId` in opts to force a specific template, or
+// `useTemplate:false` to skip cloning and generate procedurally.
+const THEME_CATEGORIES: Record<string, string[]> = {
+  world: ['world'],
+  town: ['town', 'exterior'],
+  village: ['town', 'exterior'],
+  castle: ['castle'],
+  forest: ['exterior'],
+  beach: ['exterior'],
+  desert: ['exterior'],
+  swamp: ['exterior'],
+  snow: ['exterior'],
+  ruins: ['exterior'],
+  harbor: ['exterior'],
+  magic_forest: ['exterior'],
+  interior: ['interior', 'town'],
+  magic_interior: ['interior'],
+  dungeon: ['dungeon'],
+  cave: ['dungeon'],
+  fortress: ['dungeon', 'castle'],
+  sewer: ['dungeon'],
+  volcano: ['dungeon'],
+  space_exterior: ['town', 'modern', 'exterior'],
+  space_interior: ['interior', 'modern']
+};
+
+// B/C door tile ids in the RTP Outside sheets (B-sheet positions that render as
+// wooden doors). Used to detect house entrances in a cloned town/exterior
+// template so we can wire enterable-interior door events to them.
+const DOOR_TILES = new Set([62, 63, 64, 68]);
+
+// Clone a real RTP template into `data`, cropped/padded to the requested (w, h).
+// `templateId` forces a specific template; otherwise the closest-sized template
+// matching the theme's categories is auto-picked from the full 106-template
+// index. Returns detected door positions (for town/exterior themes) or null if
+// no template is available.
+async function cloneTemplateForTheme(data: number[], w: number, h: number, theme: string, templateId?: number): Promise<{ x: number; y: number }[] | null> {
+  const idxPath = path.join(import.meta.dirname, "..", "knowledge", "map-templates.json");
+  let idx: { id: number; category: string; theme: string; width: number; height: number; tilesetId: number }[];
+  try {
+    await access(idxPath);
+    idx = JSON.parse(await readFile(idxPath, "utf8")) as typeof idx;
+  } catch {
+    return null; // no knowledge dir → fall back to procedural
+  }
+  // Pick the template: explicit override, or auto-pick by category + closest area.
+  let picked: { id: number; width: number; height: number } | null = null;
+  if (templateId) {
+    const found = idx.find(function (t) { return t.id === templateId; });
+    if (found) picked = { id: found.id, width: found.width, height: found.height };
+  }
+  if (!picked) {
+    const cats = THEME_CATEGORIES[theme] || [];
+    const candidates = idx.filter(function (t) { return cats.indexOf(t.category) >= 0; });
+    if (candidates.length === 0) return null;
+    const target = w * h;
+    let bestDiff = Infinity;
+    for (const t of candidates) {
+      const diff = Math.abs(t.width * t.height - target);
+      if (diff < bestDiff) { bestDiff = diff; picked = { id: t.id, width: t.width, height: t.height }; }
     }
   }
-  const onRoad = function (x: number, y: number) { return Math.abs(x - roadX) <= pr || Math.abs(y - roadY) <= pr; };
-  const numHouses = Math.max(3, Math.floor(w * h / 150));
-  const houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] = [];
+  if (!picked) return null;
+  const fn = "Map" + String(picked.id).padStart(3, "0") + ".json";
+  const fp = path.join(import.meta.dirname, "..", "knowledge", "maps", fn);
+  try {
+    await access(fp);
+  } catch {
+    return null;
+  }
+  const map = JSON.parse(await readFile(fp, "utf8")) as { width: number; height: number; data: number[] };
+  const tw = map.width, th = map.height;
+  // Copy tile data, cropping/padding to (w, h).
+  for (let layer = 0; layer < 6; layer++) {
+    for (let y = 0; y < Math.min(h, th); y++) {
+      for (let x = 0; x < Math.min(w, tw); x++) {
+        const srcIdx = (layer * th + y) * tw + x;
+        const dstIdx = (layer * h + y) * w + x;
+        data[dstIdx] = map.data[srcIdx];
+      }
+    }
+  }
+  // Detect door positions for town/exterior themes (enterable-house wiring).
+  // For interior/dungeon themes, doors are part of the template's tile layout
+  // already — no detection needed.
+  const cats = THEME_CATEGORIES[theme] || [];
+  const isExterior = cats.indexOf('town') >= 0 || cats.indexOf('exterior') >= 0;
+  const doors: { x: number; y: number }[] = [];
+  if (isExterior) {
+    for (let y = 0; y < Math.min(h, th); y++)
+      for (let x = 0; x < Math.min(w, tw); x++) {
+        const t = map.data[(3 * th + y) * tw + x];
+        if (DOOR_TILES.has(t)) doors.push({ x: x, y: y });
+      }
+  }
+  // Tag walkable tiles as region 1 (for event placement). Walls (A4 >=5888) and
+  // water (A1 2048-2096) are excluded.
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const g = data[(0 * h + y) * w + x];
+      if (g >= 5888 || (g >= 2048 && g <= 2096)) continue;
+      setRegion(data, w, h, x, y, 1);
+    }
+  return doors;
+}
 
-  // Coherent RTP-style houses: autotiled A3 roof over A3 wall with a doorway.
-  // (Mining B/C building fragments produced incoherent half-buildings.) Roof
-  // kinds come from the two Outside_A3 building sets (roofs 48-55 / 64-71, each
-  // wall = roof+8) so houses vary in colour/style instead of all looking alike.
-  for (let i = 0; i < numHouses * 3 && houses.length < numHouses; i++) {
-    const hw = rng.nextInt(4, 7), hh = rng.nextInt(4, 6);
-    const hx = rng.nextInt(2, w - hw - 2), hy = rng.nextInt(2, h - hh - 2);
+function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, perlin?: PerlinNoise): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
+  const ts = TILESETS.outside;
+  fillLayer(data, w, h, LAYER_GROUND1, ts.grass);
+  setRegion(data, w, h, 0, 0, w - 1, h - 1, 1);
+  const houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] = [];
+  // NOTE: this function is sync, but cloneTownTemplate is async. The async path
+  // is handled by generateTileLayoutV3 (which awaits templates). This sync body
+  // is the FALLBACK when no template is available: a simple organic layout with
+  // autotile houses (roof + wall, properly proportioned). It is rarely hit
+  // because the template clone succeeds for any project with the bundled knowledge.
+  // Organic road network: a main cross offset off-centre, plus 1-2 short branches.
+  const roadX = Math.floor(w / 2) + rng.nextInt(-2, 2);
+  const roadY = Math.floor(h / 2) + rng.nextInt(-2, 2);
+  type Rect = { x1: number; y1: number; x2: number; y2: number };
+  const roads: Rect[] = [
+    { x1: roadX - 1, y1: 0, x2: roadX + 1, y2: h - 1 },
+    { x1: 0, y1: roadY - 1, x2: w - 1, y2: roadY + 1 }
+  ];
+  const numBranches = rng.nextInt(1, 2);
+  for (let b = 0; b < numBranches; b++) {
+    if (rng.nextBool()) {
+      const bx = rng.nextInt(Math.floor(w * 0.2), Math.floor(w * 0.8));
+      roads.push({ x1: bx, y1: roadY - 1, x2: bx, y2: rng.nextBool() ? h - 1 : 0 });
+    } else {
+      const by = rng.nextInt(Math.floor(h * 0.2), Math.floor(h * 0.8));
+      roads.push({ x1: roadX - 1, y1: by, x2: rng.nextBool() ? w - 1 : 0, y2: by });
+    }
+  }
+  const onRoad = function (x: number, y: number): boolean {
+    for (let i = 0; i < roads.length; i++) {
+      const r = roads[i];
+      if (x >= r.x1 - 1 && x <= r.x2 + 1 && y >= r.y1 - 1 && y <= r.y2 + 1) return true;
+    }
+    return false;
+  };
+  for (let i = 0; i < roads.length; i++) {
+    const r = roads[i];
+    fillRect(data, w, h, r.x1, r.y1, r.x2, r.y2, LAYER_GROUND1, ts.dirt);
+  }
+  const numHouses = Math.max(3, Math.floor(w * h / 150));
+  // Fallback autotile houses — fixed proportions: 2 roof rows + 3+ wall rows
+  // (was 55% roof = only 1-2 wall rows, which read as "techo sin paredes").
+  for (let i = 0; i < numHouses * 4 && houses.length < numHouses; i++) {
+    const hw = rng.nextInt(4, 7), hh = rng.nextInt(5, 7); // taller so walls show
+    const hx = rng.nextInt(2, w - hw - 2), hy = rng.nextInt(2, h - hh - 3);
     if (onRoad(hx + Math.floor(hw / 2), hy + Math.floor(hh / 2))) continue;
     let overlap = false;
     for (const oh of houses)
       if (hx < oh.x + oh.w + 2 && hx + hw + 2 > oh.x && hy < oh.y + oh.h + 2 && hy + hh + 2 > oh.y) { overlap = true; break; }
     if (overlap) continue;
     const roofKind = ROOF_KINDS[rng.nextInt(0, ROOF_KINDS.length - 1)];
-    houses.push(buildAutotileHouse(data, w, h, hx, hy, hw, hh, makeAutotileId(roofKind, 0), makeAutotileId(roofKind + 8, 0)));
+    houses.push(buildAutotileHouse(data, w, h, hx, hy, hw, hh, makeAutotileId(roofKind, 0), makeAutotileId(roofKind + 8, 0), 0, undefined, 0));
   }
-  // Connect every house door to the road so the town reads as planned.
   for (const ho of houses) carveDoorPath(data, w, h, ho.doorX!, ho.doorY!, ts.dirt, onRoad);
-
-  if (hasStamps(_stampTileset, 'tree') || hasStamps(_stampTileset, 'prop')) {
-    // Decorate the grassy blocks (never on roads/paths), a bit denser to fill space.
-    const offPaths = function (x: number, y: number) { return onRoad(x, y) || getTile(data, w, h, x, y, LAYER_GROUND1) === ts.dirt; };
-    placeDecoStamps(data, w, h, rng, Math.floor(w * h / 45), ['tree', 'prop', 'prop'], offPaths);
-  } else {
-    const decoTiles = [ts.well, ts.barrel, ts.sign, ts.lamp, ts.flower, ts.flower2];
-    for (let i = 0; i < Math.floor(w * h / 40); i++) {
-      const dx = rng.nextInt(0, w - 1), dy = rng.nextInt(0, h - 1);
-      if (getTile(data, w, h, dx, dy, LAYER_UPPER1) === 0)
-        setTile(data, w, h, dx, dy, LAYER_UPPER2, decoTiles[rng.nextInt(0, decoTiles.length - 1)]);
-    }
-  }
-  // Variation tiles: scatter small flowers/grass detail on open grass to break
-  // the flat green (a standard anti-"flat-map" mapping trick).
-  const detail = [ts.flower, ts.flower2].filter(Boolean);
-  if (detail.length > 0) {
-    for (let i = 0; i < Math.floor(w * h / 22); i++) {
-      const dx = rng.nextInt(0, w - 1), dy = rng.nextInt(0, h - 1);
-      if (getTile(data, w, h, dx, dy, LAYER_GROUND1) === ts.grass && getTile(data, w, h, dx, dy, LAYER_UPPER1) === 0 && getTile(data, w, h, dx, dy, LAYER_UPPER2) === 0)
-        setTile(data, w, h, dx, dy, LAYER_UPPER2, detail[rng.nextInt(0, detail.length - 1)]);
-    }
-  }
   return { houses: houses };
 }
 
@@ -813,14 +1038,19 @@ function generateInteriorTheme(data: number[], w: number, h: number, rng: PRNG):
   // stone/tile for shops), not a blind random pick.
   const floors = FLOOR_BY_ROOM[room] || FLOOR_BY_ROOM.home;
   fillLayer(data, w, h, LAYER_GROUND1, makeAutotileId(floors[rng.nextInt(0, floors.length - 1)], 0));
-  fillRect(data, w, h, 0, 0, w - 1, 1, LAYER_UPPER1, ts.wallSide);
-  fillRect(data, w, h, 0, 0, w - 1, 0, LAYER_UPPER2, ts.wallTop);
-  fillRect(data, w, h, 0, h - 1, w - 1, h - 1, LAYER_UPPER1, ts.wallSide);
-  fillRect(data, w, h, 0, 2, 0, h - 3, LAYER_UPPER1, ts.wallSide);
-  fillRect(data, w, h, w - 1, 2, w - 1, h - 3, LAYER_UPPER1, ts.wallSide);
+  // RTP interior walls sit on the GROUND layer (the A4 tile renders its own
+  // pseudo-3D top cap + side face). The upper layers stay empty for walls so
+  // objects/furniture can be placed against them. Previously walls were on the
+  // upper layer with a wallTop on upper2, which floated above the floor and
+  // read as "destroyed".
+  const wall = ts.wallSide;
+  fillRect(data, w, h, 0, 0, w - 1, 1, LAYER_GROUND1, wall);          // top wall (2 rows)
+  fillRect(data, w, h, 0, h - 1, w - 1, h - 1, LAYER_GROUND1, wall);  // bottom wall
+  fillRect(data, w, h, 0, 2, 0, h - 3, LAYER_GROUND1, wall);          // left wall
+  fillRect(data, w, h, w - 1, 2, w - 1, h - 3, LAYER_GROUND1, wall);  // right wall
   const doorX = Math.floor(w / 2);
-  setTile(data, w, h, doorX, h - 1, LAYER_UPPER1, 0);
-  setTile(data, w, h, doorX - 1, h - 1, LAYER_UPPER1, 0);
+  setTile(data, w, h, doorX, h - 1, LAYER_GROUND1, makeAutotileId(floors[rng.nextInt(0, floors.length - 1)], 0)); // doorway = floor
+  setTile(data, w, h, doorX - 1, h - 1, LAYER_GROUND1, makeAutotileId(floors[rng.nextInt(0, floors.length - 1)], 0));
   setRegion(data, w, h, 2, 2, w - 3, h - 3, 1);
 
   // A rug only really suits a home/inn; shops keep a clean floor.
@@ -908,7 +1138,7 @@ function generateDesertTheme(data: number[], w: number, h: number, rng: PRNG, pe
   fillLayer(data, w, h, LAYER_GROUND1, ts.sand || ts.dirt);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
-      const v = perlin.fbm(x * 0.05, y * 0.05, 3);
+      const v = perlin.fbm(x * noiseScale(0.05, w, h), y * noiseScale(0.05, w, h), 3);
       if (v > 0.35) setTile(data, w, h, x, y, LAYER_GROUND1, ts.stone);
       if (rng.nextBool(0.04))
         setTile(data, w, h, x, y, LAYER_UPPER1, rng.nextBool() ? ts.rock : ts.stump);
@@ -936,7 +1166,7 @@ function generateSwampTheme(data: number[], w: number, h: number, rng: PRNG, per
   const ts = TILESETS.outside;
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
-      const v = perlin.fbm(x * 0.07, y * 0.07, 4);
+      const v = perlin.fbm(x * noiseScale(0.07, w, h), y * noiseScale(0.07, w, h), 4);
       if (v < -0.1) { setTile(data, w, h, x, y, LAYER_GROUND1, ts.swampWater || ts.water); setRegion(data, w, h, x, y, 3); }
       else if (v < 0.1) { setTile(data, w, h, x, y, LAYER_GROUND1, ts.dirt); setRegion(data, w, h, x, y, 1); setShadow(data, w, h, x, y, 15); }
       else { setTile(data, w, h, x, y, LAYER_GROUND1, ts.darkGrass || ts.grass); setRegion(data, w, h, x, y, 1); setShadow(data, w, h, x, y, 15); }
@@ -953,7 +1183,7 @@ function generateRuinsTheme(data: number[], w: number, h: number, rng: PRNG, per
   fillLayer(data, w, h, LAYER_GROUND1, ts.stone);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
-      const v = perlin.fbm(x * 0.1, y * 0.1, 3);
+      const v = perlin.fbm(x * noiseScale(0.1, w, h), y * noiseScale(0.1, w, h), 3);
       if (v > 0.2) setTile(data, w, h, x, y, LAYER_GROUND1, ts.dirt);
     }
   for (let y = 0; y < h; y++)
@@ -993,7 +1223,7 @@ function generateSnowTheme(data: number[], w: number, h: number, rng: PRNG, perl
   fillLayer(data, w, h, LAYER_GROUND1, ts.stone);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
-      const v = perlin.fbm(x * 0.06, y * 0.06, 4);
+      const v = perlin.fbm(x * noiseScale(0.06, w, h), y * noiseScale(0.06, w, h), 4);
       if (v < -0.15) { setTile(data, w, h, x, y, LAYER_GROUND1, ts.water); setRegion(data, w, h, x, y, 3); }
       else { setTile(data, w, h, x, y, LAYER_GROUND1, ts.stone); setRegion(data, w, h, x, y, 1); }
     }
@@ -1021,7 +1251,7 @@ function generateVolcanoTheme(data: number[], w: number, h: number, rng: PRNG, p
   fillLayer(data, w, h, LAYER_GROUND1, ts.darkFloor || ts.floor);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
-      const v = perlin.fbm(x * 0.08, y * 0.08, 4);
+      const v = perlin.fbm(x * noiseScale(0.08, w, h), y * noiseScale(0.08, w, h), 4);
       if (v < -0.3) { setTile(data, w, h, x, y, LAYER_GROUND1, ts.lava); setRegion(data, w, h, x, y, 4); }
       else if (rng.nextBool(0.04))
         setTile(data, w, h, x, y, LAYER_UPPER1, ts.rock);
@@ -1072,13 +1302,14 @@ function generateMagicInteriorTheme(data: number[], w: number, h: number, rng: P
 function generateSpaceInteriorTheme(data: number[], w: number, h: number, rng: PRNG): void {
   const ts = TILESETS.space_interior;
   fillLayer(data, w, h, LAYER_GROUND1, ts.metalFloor);
-  fillRect(data, w, h, 0, 0, w - 1, 1, LAYER_UPPER1, ts.wallSide);
-  fillRect(data, w, h, 0, h - 1, w - 1, h - 1, LAYER_UPPER1, ts.wallSide);
-  fillRect(data, w, h, 0, 0, 0, h - 1, LAYER_UPPER1, ts.wallSide);
-  fillRect(data, w, h, w - 1, 0, w - 1, h - 1, LAYER_UPPER1, ts.wallSide);
+  // Walls on the ground layer (A4 renders its own 3D); upper stays empty.
+  fillRect(data, w, h, 0, 0, w - 1, 1, LAYER_GROUND1, ts.wallSide);
+  fillRect(data, w, h, 0, h - 1, w - 1, h - 1, LAYER_GROUND1, ts.wallSide);
+  fillRect(data, w, h, 0, 0, 0, h - 1, LAYER_GROUND1, ts.wallSide);
+  fillRect(data, w, h, w - 1, 0, w - 1, h - 1, LAYER_GROUND1, ts.wallSide);
   setRegion(data, w, h, 1, 1, w - 2, h - 2, 1);
   const doorX = Math.floor(w / 2);
-  setTile(data, w, h, doorX, h - 1, LAYER_UPPER1, 0);
+  setTile(data, w, h, doorX, h - 1, LAYER_GROUND1, ts.metalFloor); // doorway
   let deco = [ts.console, ts.screen, ts.locker, ts.sifiPanel, ts.sifiMonitor, ts.sifiTank, ts.sifiCore];
   deco = deco.filter(Boolean);
   for (let i = 0; i < Math.floor(w * h / 20); i++) {
@@ -1093,7 +1324,7 @@ function generateSpaceExteriorTheme(data: number[], w: number, h: number, rng: P
   fillLayer(data, w, h, LAYER_GROUND1, ts.metal);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
-      const v = perlin.fbm(x * 0.1, y * 0.1, 3);
+      const v = perlin.fbm(x * noiseScale(0.1, w, h), y * noiseScale(0.1, w, h), 3);
       if (v > 0.2) setTile(data, w, h, x, y, LAYER_GROUND1, ts.asphalt);
       else if (v < -0.2) setTile(data, w, h, x, y, LAYER_GROUND1, ts.concrete);
       setRegion(data, w, h, x, y, 1);
@@ -1110,7 +1341,7 @@ function generateWorldTheme(data: number[], w: number, h: number, _rng: PRNG, pe
   const ts = TILESETS.overworld;
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
-      const v = perlin.fbm(x * 0.03, y * 0.03, 5, 2.0, 0.5);
+      const v = perlin.fbm(x * noiseScale(0.03, w, h), y * noiseScale(0.03, w, h), 5, 2.0, 0.5);
       if (v < -0.3) setTile(data, w, h, x, y, LAYER_GROUND1, ts.deepWater);
       else if (v < -0.1) setTile(data, w, h, x, y, LAYER_GROUND1, ts.water);
       else if (v < 0.05) setTile(data, w, h, x, y, LAYER_GROUND1, ts.ground);
@@ -1123,7 +1354,74 @@ function generateWorldTheme(data: number[], w: number, h: number, _rng: PRNG, pe
 // EVENT GENERATION
 // ════════════════════════════════════════════════════════════════
 
-function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: GeneratorOptions = {}): (MapEvent | null)[] {
+// ════════════════════════════════════════════════════════════════
+// EVENT PLACEMENT HELPERS (walkability-gated)
+// ════════════════════════════════════════════════════════════════
+// Events must land on a walkable floor tile, never inside a wall, water, or a
+// placed object. Every theme tags its walkable floor with region id 1 (town
+// grass/roads, dungeon/cave room+corridor floors, interior floors) and water
+// with region 3, so "region === 1 AND both upper layers empty" is a reliable
+// placeability test across all themes that generate events.
+
+function isPlaceableFloor(data: number[], w: number, h: number, x: number, y: number): boolean {
+  if (x < 1 || x >= w - 1 || y < 1 || y >= h - 1) return false;
+  const region = data[(LAYER_REGION * h + y) * w + x];
+  if (region !== 1) return false;
+  return getTile(data, w, h, x, y, LAYER_UPPER1) === 0 && getTile(data, w, h, x, y, LAYER_UPPER2) === 0;
+}
+
+// Find a walkable floor tile by rejection sampling. `preferX/preferY` is the
+// ideal spot (used as the first candidate); falls back to random sampling and
+// finally to the preferred coord even if non-ideal (so a map with no region-1
+// tiles still gets an event rather than losing it). Returns null only if the
+// preferred coord is out of bounds.
+function findFloorTile(data: number[], w: number, h: number, rng: PRNG, preferX: number, preferY: number): { x: number; y: number } | null {
+  const px = Math.max(1, Math.min(w - 2, preferX | 0));
+  const py = Math.max(1, Math.min(h - 2, preferY | 0));
+  if (isPlaceableFloor(data, w, h, px, py)) return { x: px, y: py };
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const x = rng.nextInt(1, w - 2), y = rng.nextInt(1, h - 2);
+    if (isPlaceableFloor(data, w, h, x, y)) return { x: x, y: y };
+  }
+  // Last resort: a non-floor tile is still better than dropping the event
+  // entirely (the engine won't crash on an event sitting on a wall — it just
+  // can't be stepped on). Prefer the original coord.
+  return { x: px, y: py };
+}
+
+// Themed NPC dialogue lines (replaces the placeholder "..."). Picked to match
+// the event's context so generated maps read like a real game.
+const NPC_DIALOGUES: Record<string, string[]> = {
+  town: [
+    'Welcome to our town, traveler. The shops are open all day.',
+    'Beware the dungeons to the east — monsters grow bolder each night.',
+    'The inn is warm and the beds are cheap. You look like you need rest.',
+    'I hear a terrible foe lurks deep in the cave. Be careful.',
+    'Our merchant has fresh potions today. Stock up before you venture out!'
+  ],
+  village: [
+    'Peaceful here, isn\'t it? We don\'t see many adventurers.',
+    'If you\'re heading to the forest, watch for wolves at dusk.',
+    'The elder lives by the well. He knows the old stories.',
+    'Trade with us! We have tools you won\'t find in the city.'
+  ],
+  dungeon: [
+    'You shouldn\'t be here... but since you are, the chest is real.',
+    'These halls have been abandoned for a hundred years.',
+    'Turn back. The deeper rooms hold things no blade can cut.'
+  ],
+  cave: [
+    'Damp, dark, and full of bats. Watch your step.',
+    'There\'s treasure here, but the guardians never sleep.'
+  ]
+};
+
+function pickDialogue(theme: string, rng: PRNG): string {
+  const lines = NPC_DIALOGUES[theme] || NPC_DIALOGUES.town;
+  return lines[rng.nextInt(0, lines.length - 1)];
+}
+
+function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: GeneratorOptions = {}, data?: number[]): (MapEvent | null)[] {
   // RPG Maker MV event arrays are 1-indexed: index 0 is null and the first real
   // event has id 1. The id MUST match the array index — events.push uses
   // events.length as the id below, so starting from [null] yields id 1 at
@@ -1146,24 +1444,36 @@ function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: Ge
   if (theme === 'dungeon' || theme === 'cave' || theme === 'fortress' || theme === 'sewer' || theme === 'volcano') {
     const numChests = rng.nextInt(1, 3);
     for (let i = 0; i < numChests; i++) {
-      const cx = rng.nextInt(3, w - 4), cy = rng.nextInt(3, h - 4);
-      events.push(makeChestEvent(events.length, cx, cy));
+      // Place chests on a real floor tile (region 1, not inside a wall/water).
+      // Was: rng.nextInt(3, w-4) with no check — chests could land in walls.
+      const spot = data
+        ? findFloorTile(data, w, h, rng, rng.nextInt(3, w - 4), rng.nextInt(3, h - 4))
+        : { x: rng.nextInt(3, w - 4), y: rng.nextInt(3, h - 4) };
+      if (spot) events.push(makeChestEvent(events.length, spot.x, spot.y));
     }
-    const bossX = Math.floor(w * 0.75), bossY = Math.floor(h * 0.25);
-    events.push(makeBossEvent(events.length, bossX, bossY, 1));
+    // Boss: prefer the dungeon's boss room centre (region 2, set by the BSP
+    // generator); fall back to a floor tile scan. Was fixed at (w*0.75, h*0.25)
+    // which could sit inside a wall.
+    const bossRoom = (opts as Record<string, unknown>).bossRoom as { cx: number; cy: number } | undefined;
+    const bossPrefer = bossRoom ? { x: bossRoom.cx, y: bossRoom.cy } : { x: Math.floor(w * 0.75), y: Math.floor(h * 0.25) };
+    const bossSpot = data ? findFloorTile(data, w, h, rng, bossPrefer.x, bossPrefer.y) : bossPrefer;
+    if (bossSpot) events.push(makeBossEvent(events.length, bossSpot.x, bossSpot.y, 1));
   }
 
   if (theme === 'town' || theme === 'village') {
     const npcNames = ['Merchant', 'Guard', 'Elder', 'Child', 'Traveler', 'Scholar', 'Blacksmith', 'Healer'];
     const numNpcs = rng.nextInt(2, 5);
     for (let i = 0; i < numNpcs; i++) {
-      const nx = rng.nextInt(3, w - 4), ny = rng.nextInt(3, h - 4);
-      events.push(makeNpcEvent(events.length, nx, ny, npcNames[i % npcNames.length]));
+      const spot = data
+        ? findFloorTile(data, w, h, rng, rng.nextInt(3, w - 4), rng.nextInt(3, h - 4))
+        : { x: rng.nextInt(3, w - 4), y: rng.nextInt(3, h - 4) };
+      if (spot) events.push(makeNpcEvent(events.length, spot.x, spot.y, npcNames[i % npcNames.length], pickDialogue(theme, rng)));
     }
   }
 
   if (theme === 'interior' || theme === 'magic_interior' || theme === 'space_interior') {
-    events.push(makeNpcEvent(events.length, Math.floor(w / 2) + 1, Math.floor(h / 2), 'Inhabitant'));
+    const spot = data ? findFloorTile(data, w, h, rng, Math.floor(w / 2) + 1, Math.floor(h / 2)) : { x: Math.floor(w / 2) + 1, y: Math.floor(h / 2) };
+    if (spot) events.push(makeNpcEvent(events.length, spot.x, spot.y, 'Inhabitant', pickDialogue('town', rng)));
   }
 
   for (let i = 0; i < teleportPositions.length; i++) {
@@ -1174,7 +1484,8 @@ function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: Ge
   return events;
 }
 
-function makeNpcEvent(id: number, x: number, y: number, name: string): MapEvent {
+function makeNpcEvent(id: number, x: number, y: number, name: string, dialogue?: string): MapEvent {
+  const line = dialogue || '...';
   return {
     id: id, name: name || 'NPC', note: '', x: x, y: y,
     pages: [{
@@ -1183,7 +1494,7 @@ function makeNpcEvent(id: number, x: number, y: number, name: string): MapEvent 
       image: { characterIndex: id % 8, characterName: 'People1', direction: 2, pattern: 1, tileId: 0 },
       list: [
         { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
-        { code: 401, indent: 0, parameters: ['...'] },
+        { code: 401, indent: 0, parameters: [line] },
         { code: 0, indent: 0, parameters: [] }
       ],
       moveFrequency: 3, moveRoute: { list: [{ code: 0, indent: 0, parameters: [] as unknown[] }], repeat: true, skippable: false, wait: false },
@@ -1317,7 +1628,7 @@ const THEME_TILESET: Record<string, number> = {
   world: 1
 };
 
-function generateTileLayoutV3(width: number, height: number, theme: string, opts: GeneratorOptions = {}, _unused1?: unknown, _unused2?: unknown): {
+async function generateTileLayoutV3(width: number, height: number, theme: string, opts: GeneratorOptions = {}, _unused1?: unknown, _unused2?: unknown): Promise<{
   data: number[];
   events: (MapEvent | null)[];
   seed: number;
@@ -1325,7 +1636,7 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
   width: number;
   height: number;
   houses?: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
-} {
+}> {
   const seed = opts.seed || Math.floor(Math.random() * 2147483647);
   const rng = new PRNG(seed);
   const perlin = new PerlinNoise(seed);
@@ -1334,6 +1645,36 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
   // Stamps are per-tileset; use the caller's tilesetId or the theme's default.
   _stampTileset = ((opts as Record<string, unknown>).tilesetId as number) || THEME_TILESET[theme] || 1;
   _interiorRoom = ((opts as Record<string, unknown>).roomType as string) || 'home';
+  // Real scanned tiles for the active project's tileset (optional). When stamps
+  // are unavailable, themes fall back to these instead of the hardcoded RTP
+  // table, so custom tilesets don't emit blank/garbage decoration.
+  _availableTiles = (opts as Record<string, unknown>).availableTiles as AvailableTiles | undefined;
+
+  // ── Template cloning: for themes that have matching RTP reference templates,
+  // clone a hand-authored map (real 3D buildings, walls, furniture) instead of
+  // generating procedurally. The procedural stamps were mined fragments that
+  // looked broken; templates are the real thing. Auto-picks the closest-sized
+  // template by theme category from the full 106-template index. Override with
+  // opts.templateId, or opt out with opts.useTemplate === false.
+  const useTpl = (opts as Record<string, unknown>).useTemplate !== false;
+  const tplId = (opts as Record<string, unknown>).templateId as number | undefined;
+  if (useTpl && THEME_CATEGORIES[theme]) {
+    const doors = await cloneTemplateForTheme(data, width, height, theme, tplId);
+    if (doors) {
+      // For town/village (exterior themes), convert detected door positions
+      // into house footprints so createMapV3 can wire enterable interiors.
+      const isTownLike = theme === 'town' || theme === 'village';
+      const houses = isTownLike
+        ? doors.map(function (d) { return { x: d.x, y: Math.max(0, d.y - 4), w: 5, h: 5, doorX: d.x, doorY: d.y }; })
+        : undefined;
+      if ((opts as Record<string, unknown>).autotile !== false) {
+        applyAutotileShapes(data, width, height);
+      }
+      const events = generateEvents(width, height, rng, theme, opts, data);
+      return { data: data, events: events, seed: seed, theme: theme, width: width, height: height, houses: houses };
+    }
+    // Template clone failed (no knowledge dir / unknown id) → fall through to procedural.
+  }
 
   const themeMap: Record<string, (data: number[], w: number, h: number, rng: PRNG, ...args: unknown[]) => unknown> = {
     'forest': generateForestTheme as (data: number[], w: number, h: number, rng: PRNG, ...args: unknown[]) => unknown,
@@ -1370,10 +1711,16 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
     fillLayer(data, width, height, LAYER_GROUND1, 2816);
   }
   // town/village generators return the house rectangles; surface them so the
-  // caller can wire up enterable-house doors and interiors.
-  const houses = (genResult && typeof genResult === 'object' && 'houses' in (genResult as object))
-    ? (genResult as { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] }).houses
+  // caller can wire up enterable-house doors and interiors. Dungeon themes
+  // return the boss room so event placement can target it instead of a fixed
+  // corner that may be a wall.
+  const genObj = (genResult && typeof genResult === 'object') ? genResult as Record<string, unknown> : null;
+  const houses = genObj && 'houses' in genObj
+    ? (genObj.houses as { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[])
     : undefined;
+  if (genObj && 'bossRoom' in genObj) {
+    (opts as Record<string, unknown>).bossRoom = genObj.bossRoom;
+  }
 
   // Border every autotile against its neighbours (shorelines, ground edges,
   // roof/wall corners). Generators lay tiles down at shape 0; without this the
@@ -1383,7 +1730,7 @@ function generateTileLayoutV3(width: number, height: number, theme: string, opts
     applyAutotileShapes(data, width, height);
   }
 
-  const events = generateEvents(width, height, rng, theme, opts);
+  const events = generateEvents(width, height, rng, theme, opts, data);
 
   return {
     data: data,
@@ -1462,7 +1809,7 @@ async function generateMap(opts: GeneratorOptions = {}): Promise<{
   if (method === "template" && optsExtra.templateId) {
     return await generateFromTemplate(optsExtra.templateId as number, opts);
   }
-  return generateTileLayoutV3(
+  return await generateTileLayoutV3(
     optsExtra.width as number,
     optsExtra.height as number,
     optsExtra.theme as string,
@@ -1482,3 +1829,5 @@ export { THEME_TILESET };
 export { TILESETS };
 export { PerlinNoise };
 export { PRNG };
+// Pretty-maps helpers (5.9.0): exported for unit/regression tests.
+export { makeAutotileId, noiseScale, isPlaceableFloor, findFloorTile };

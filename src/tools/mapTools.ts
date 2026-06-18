@@ -89,12 +89,12 @@ async function createMap(projectPath: string, params: CreateMapParams | CreateMa
                 (tilesetConfig.availableTiles.decoration && tilesetConfig.availableTiles.decoration.length > 0)
             );
             if (hasTiles) {
-                tileResult = generateTileLayoutV3(width, height, theme, tilesetConfig);
+                tileResult = await generateTileLayoutV3(width, height, theme, tilesetConfig);
             } else {
-                tileResult = generateTileLayoutV3(width, height, theme);
+                tileResult = await generateTileLayoutV3(width, height, theme);
             }
         } catch (_) {
-            tileResult = generateTileLayoutV3(width, height, theme);
+            tileResult = await generateTileLayoutV3(width, height, theme);
         }
     } else {
         tileResult = { data: new Array(width * height * 6).fill(0) };
@@ -156,14 +156,25 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     // tiles land on the Overworld tileset and render as garbage.
     const tilesetId = params.tilesetId || THEME_TILESET[theme] || 1;
 
-    var v3opts = {
+    var v3opts: Record<string, unknown> = {
         seed: seed,
         addEvents: params.addEvents !== false,
         transferPoints: params.transferPoints || [],
-        tilesetId: tilesetId
+        tilesetId: tilesetId,
+        templateId: (params as Record<string, unknown>).templateId,
+        useTemplate: (params as Record<string, unknown>).useTemplate
     };
 
-    var tileResult = generateTileLayoutV3(width, height, theme, v3opts);
+    // Scan the project's real tileset tiles (same path createMap uses) and pass
+    // them in, so the procedural generator can fall back to real object tiles on
+    // projects whose tilesets differ from the hardcoded RTP table. Without this,
+    // a custom tileset's decoration fallback emitted single A5 fragments.
+    try {
+        var tsCfg = await getTileIdsForTileset(projectPath, tilesetId);
+        if (tsCfg && tsCfg.availableTiles) v3opts.availableTiles = tsCfg.availableTiles;
+    } catch (_) { /* scan optional — generator falls back to its built-in table */ }
+
+    var tileResult = await generateTileLayoutV3(width, height, theme, v3opts);
 
     var map: RpgMakerMap = {
         autoplayBgm: bgmName ? true : false,
@@ -223,16 +234,32 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
             const label = roomType === 'shop' ? 'Shop' : roomType === 'inn' ? 'Inn' : 'House';
             // Vary each interior's size + (via seed) floor/furniture so no two feel identical.
             const iseed = (seed || 0) + 101 + i;
-            const IW = 9 + (iseed % 5), IH = 7 + ((iseed >> 2) % 4);
+            // INTERIORS FROM RTP TEMPLATES: instead of generating a procedural
+            // interior (which looked ugly — flat walls, random furniture), clone
+            // a real hand-authored RTP interior map. These have proper 3D A4
+            // walls, coherent furniture, and a real door/exit. Picked by room
+            // type so a shop is a shop, an inn is an inn, a home is a home.
+            const INTERIOR_TEMPLATES: Record<string, number[]> = {
+                home: [33, 34],          // House 1 (19x15), House 2 (21x17)
+                shop: [39, 40, 41],      // Weapon Shop, Armor Shop, Item Shop
+                inn: [42, 43]            // Inn 1F (21x20), Inn 2F (17x15)
+            };
+            const tids = INTERIOR_TEMPLATES[roomType] || INTERIOR_TEMPLATES.home;
+            const templateId = tids[iseed % tids.length];
+            const tpl = await generateFromTemplate(templateId, {});
+            const IW = tpl ? tpl.width : (9 + (iseed % 5));
+            const IH = tpl ? tpl.height : (7 + ((iseed >> 2) % 4));
             const exitX = Math.floor(IW / 2), exitY = IH - 2;
             // Exterior door (action button) → interior, landing one tile above the exit mat.
             tileResult.events.push(makeDoorEvent(tileResult.events.length, doorX, doorY, interiorId, exitX, exitY - 1));
-            // Interior room (themed floor/furniture) + walk-on exit mat back to the street.
-            const inner = generateTileLayoutV3(IW, IH, 'interior', { seed: iseed, addEvents: false, roomType: roomType });
-            inner.events.push(makeTransferEvent(inner.events.length, exitX, exitY, mapId, doorX, doorY + 1, 1));
+            // Build the interior map from the RTP template tiles + add the exit
+            // mat + occupant. Template tiles already include walls/furniture/door.
+            const innerEvents: (MapEvent | null)[] = tpl && tpl.events && tpl.events.length > 0 ? tpl.events.slice() : [null];
+            innerEvents.push(makeTransferEvent(innerEvents.length, exitX, exitY, mapId, doorX, doorY + 1, 1));
             // A fitting occupant: shopkeeper (functional shop), innkeeper (free rest), or resident.
-            inner.events.push(makeInteriorOccupant(inner.events.length, Math.floor(IW / 2), 3, roomType, shopItemIds));
-            interiors.push({ id: interiorId, map: makeMapObject(inner.data, IW, IH, inner.events, 3, ''), name: (name || 'Town') + ' ' + label + ' ' + (i + 1) });
+            innerEvents.push(makeInteriorOccupant(innerEvents.length, Math.floor(IW / 2), 3, roomType, shopItemIds));
+            const innerData = tpl ? tpl.data : (await generateTileLayoutV3(IW, IH, 'interior', { seed: iseed, addEvents: false, roomType: roomType })).data;
+            interiors.push({ id: interiorId, map: makeMapObject(innerData, IW, IH, innerEvents, 3, ''), name: (name || 'Town') + ' ' + label + ' ' + (i + 1) });
         }
     }
 
