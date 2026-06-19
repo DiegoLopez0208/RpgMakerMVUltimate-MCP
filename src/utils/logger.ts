@@ -2,7 +2,7 @@ import type { LogLevel } from '../types/rpgmaker.js';
 
 const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
-var currentLevel = (process.env.LOG_LEVEL || 'info') as LogLevel;
+let currentLevel = (process.env.LOG_LEVEL || 'info') as LogLevel;
 
 function timestamp() {
   return new Date().toISOString();
@@ -10,7 +10,7 @@ function timestamp() {
 
 function log(level: LogLevel, message: string, data?: unknown) {
   if (LEVELS[level] < LEVELS[currentLevel]) return;
-  var prefix = '[' + timestamp() + '] [' + level.toUpperCase() + ']';
+  const prefix = '[' + timestamp() + '] [' + level.toUpperCase() + ']';
   if (data !== undefined) {
     console.error(prefix, message, typeof data === 'object' ? JSON.stringify(data) : data);
   } else {

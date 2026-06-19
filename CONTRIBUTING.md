@@ -1,4 +1,4 @@
-# Contributing
+# Contributing to RPG Maker MV Ultimate MCP
 
 ## Setup
 
@@ -8,37 +8,116 @@ cd RpgMakerMVUltimate-MCP
 npm install
 ```
 
-## Style
+## Technology Stack
 
-- **CommonJS only** — no TypeScript, no ESM imports
-- **No build step** — everything runs directly with Node.js
-- **No comments** — let the code speak for itself (JSDoc on public functions is OK)
-- **var** over **let/const** is acceptable in existing files; new code can use either
-- 2-space indentation
+- **TypeScript** — all source is in `src/**/*.ts`
+- **ESM** — native ES modules (`import`/`export`)
+- **Node.js 18+** — required for `fs/promises`, `import.meta`, etc.
+- **Vitest** — test framework (`npm test`)
+- **No build step** — TypeScript runs via `tsx` or `ts-node` in development
 
-## Adding a Tool
+## Code Style
 
-1. Create/extend the tool module in `tools/`
-2. Add the tool definition to `TOOL_DEFINITIONS` in `server.js`
-3. Add the handler case in `handleToolCall` in `server.js`
-4. Test with a real RPG Maker MV project
+- **`const`/`let`** — `var` is legacy; use `const` by default, `let` only when rebinding
+- **Async I/O** — prefer `fs/promises` (`readFile`, `readdir`) over sync variants
+- **2-space indentation**
+- **Comments** — minimal but necessary: explain *why*, not *what*. JSDoc on public APIs is encouraged
+- **No `any`** — use strict types; `unknown` with narrowing is preferred
 
-## Adding a Knowledge File
+## Architecture
 
-1. Add the JSON file to `knowledge/`
-2. Update `knowledge/README.md`
-3. Reference it from the tool that needs it
+### Dual Tool System
+
+The server exposes tools through **two parallel systems**:
+
+1. **Legacy tools** (`server.ts`) — direct function dispatch via `executeTool()`
+2. **v5 tools** (`v5Router.ts`) — higher-level routing with richer parameters
+
+When adding a tool, you usually need to update **both**.
+
+### Adding a Map Tool
+
+1. **Implement** in `src/tools/mapTools.ts` (or `systemTools.ts`, `projectTools.ts`, etc.)
+2. **Export** it at the bottom of the file
+3. **Wire legacy handler** in `src/server.ts` `handleToolCall` switch
+4. **Wire v5 router** in `src/v5Router.ts` `routeV5Tool` switch (if it maps to a v5 tool name)
+5. **Add tool definition** in `src/toolDefinitions.ts` (legacy) and/or `src/toolDefinitionsV5.ts` (v5)
+6. **Write tests** in `tests/integration.test.ts` following TDD: RED → GREEN → refactor
+
+### Adding a System / Project Tool
+
+Same pattern as map tools, but implement in `src/tools/systemTools.ts` or `src/tools/projectTools.ts`.
+
+### Database Tools
+
+Database operations use the CRUD helper (`src/utils/crudHelper.ts`). For a new entity:
+
+1. Create the typed interface in `src/types/rpgmaker.ts`
+2. Use `createCrud(entityName, factoryFn)` in your tool module
+3. Export wrapped functions
 
 ## Testing
 
-There is no test framework. Verify changes by:
+```bash
+# Run all tests
+npm test
 
-1. `node -e "require('./server.js')"` — server loads without crash
-2. `node -e "require('./tools/YOUR_TOOL')"` — module loads
-3. Test against a real project with `RPGMAKER_PROJECT_PATH` set
+# Run with more memory (integration tests load large fixtures)
+node --max-old-space-size=8192 ./node_modules/.bin/vitest run
+
+# Type-check without emitting
+npx tsc --noEmit
+```
+
+### Test Patterns
+
+- Integration tests live in `tests/integration.test.ts`
+- Validation tests live in `tests/validation.test.ts`
+- Each test creates a temporary project under `/tmp/rpgmv-test-XXXXXX`
+- Use `dispatchTool("tool_name", args)` to exercise the full stack
+- Clean up is automatic via `afterAll(() => rmSync(projectDir, { recursive: true }))`
+
+### TDD Workflow
+
+1. Write the **failing test** first (RED)
+2. Implement the **smallest change** to make it pass (GREEN)
+3. **Refactor** if needed while keeping tests green
+4. Capture both test output and real-surface evidence in the durable notepad
+
+## State & Mutability
+
+- **Never use module-level mutable state** for per-request data (e.g., tileset context during map generation). Pass state through function parameters or context objects
+- Module-level caches (e.g., `Map<number, T>`) are OK if they're read-only after initialization
+
+## File Organization
+
+```
+src/
+  server.ts          — MCP server entry, legacy tool dispatch, getProjectContext
+  v5Router.ts        — v5 tool routing, parameter transformation
+  toolDefinitions.ts — Legacy tool JSON schemas
+  toolDefinitionsV5.ts — v5 tool JSON schemas
+  types/rpgmaker.ts  — Shared TypeScript interfaces
+  tools/             — Tool implementations (map, system, project, enemy, skill, asset, tileset)
+  utils/             — Shared utilities (mapGenerator, autotile, validation, security, etc.)
+  data/              — Static data (engine defaults, tileset tables)
+  knowledge/         — Bundled reference maps and stamp libraries
+tests/
+  integration.test.ts — End-to-end tests
+  validation.test.ts  — Schema validation tests
+```
 
 ## Pull Requests
 
 - Keep PRs focused — one feature or fix per PR
-- Update CHANGELOG.md under "Unreleased"
-- Ensure `node server.js` starts without errors
+- Update `CHANGELOG.md` under "Unreleased"
+- Ensure `npx tsc --noEmit` passes
+- Ensure `npm test` passes (all suites)
+- If adding a tool, include integration tests
+
+## Common Pitfalls
+
+- **Forgetting v5 routing** — a legacy tool works but the v5 alias fails
+- **Missing exports** — function implemented but not exported from the tool module
+- **Sync I/O in async paths** — prefer `readFile` over `readFileSync` in async functions
+- **Module-level state leaks** — concurrent requests can corrupt shared mutable variables

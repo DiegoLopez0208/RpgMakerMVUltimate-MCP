@@ -24,7 +24,7 @@ export const CreateMapSchema = z.object({
   bgmName: z.string().optional(),
   displayName: z.string().max(100).optional(),
   note: z.string().optional(),
-  theme: z.enum(["forest", "dungeon", "town", "castle", "cave", "village", "swamp", "desert", "ruins", "interior", "beach"]).optional(),
+  theme: z.enum(["forest", "dungeon", "town", "castle", "cave", "village", "swamp", "desert", "ruins", "interior", "beach", "snow", "harbor", "volcano", "sewer", "fortress", "magic_forest", "magic_interior", "space_interior", "space_exterior", "world"]).optional(),
 });
 
 export const CreateNpcSchema = z.object({

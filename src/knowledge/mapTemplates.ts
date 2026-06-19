@@ -13,8 +13,8 @@ export interface MapTemplate {
   height: number;
   eventCount: number;
 }
-var _index: MapTemplate[] | null = null;
-var _mapsDir: string = "";
+let _index: MapTemplate[] | null = null;
+let _mapsDir: string = "";
 export function getTemplatesDir(): string {
   if (!_mapsDir) {
     _mapsDir = path.join(__dirname, "..", "..", "knowledge", "maps");
@@ -23,7 +23,7 @@ export function getTemplatesDir(): string {
 }
 export async function loadIndex(): Promise<MapTemplate[]> {
   if (_index) return _index;
-  var idxPath = path.join(__dirname, "..", "..", "knowledge", "map-templates.json");
+  const idxPath = path.join(__dirname, "..", "..", "knowledge", "map-templates.json");
   try {
     await access(idxPath);
     _index = JSON.parse(await readFile(idxPath, "utf8")) as MapTemplate[];
@@ -31,7 +31,7 @@ export async function loadIndex(): Promise<MapTemplate[]> {
   return _index;
 }
 export async function search(category?: string, theme?: string): Promise<MapTemplate[]> {
-  var idx = await loadIndex();
+  const idx = await loadIndex();
   return idx.filter(function(t) {
     if (category && t.category !== category) return false;
     if (theme && t.theme !== theme) return false;
@@ -39,8 +39,8 @@ export async function search(category?: string, theme?: string): Promise<MapTemp
   });
 }
 export async function loadMapData(templateId: number): Promise<MapData | null> {
-  var fn = "Map" + String(templateId).padStart(3, "0") + ".json";
-  var fp = path.join(getTemplatesDir(), fn);
+  const fn = "Map" + String(templateId).padStart(3, "0") + ".json";
+  const fp = path.join(getTemplatesDir(), fn);
   try {
     await access(fp);
     return JSON.parse(await readFile(fp, "utf8")) as MapData;

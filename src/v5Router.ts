@@ -263,8 +263,33 @@ async function editMap(executeTool: ExecuteTool, args: Record<string, any>) {
         encounters: requireArg(args, 'encounters', 'edit_map action "set_encounters"'),
         encounterStep: args.encounterStep
       });
+    case 'fill_rect':
+      return executeTool('fill_map_rect', {
+        mapId: requireArg(args, 'mapId', 'edit_map action "fill_rect"'),
+        layer: requireArg(args, 'layer', 'edit_map action "fill_rect"'),
+        x1: requireArg(args, 'x1', 'edit_map action "fill_rect"'),
+        y1: requireArg(args, 'y1', 'edit_map action "fill_rect"'),
+        x2: requireArg(args, 'x2', 'edit_map action "fill_rect"'),
+        y2: requireArg(args, 'y2', 'edit_map action "fill_rect"'),
+        tileId: requireArg(args, 'tileId', 'edit_map action "fill_rect"')
+      });
+    case 'set_tile':
+      return executeTool('set_map_tile', {
+        mapId: requireArg(args, 'mapId', 'edit_map action "set_tile"'),
+        layer: requireArg(args, 'layer', 'edit_map action "set_tile"'),
+        x: requireArg(args, 'x', 'edit_map action "set_tile"'),
+        y: requireArg(args, 'y', 'edit_map action "set_tile"'),
+        tileId: requireArg(args, 'tileId', 'edit_map action "set_tile"')
+      });
+    case 'replace_tile':
+      return executeTool('replace_map_tile', {
+        mapId: requireArg(args, 'mapId', 'edit_map action "replace_tile"'),
+        layer: requireArg(args, 'layer', 'edit_map action "replace_tile"'),
+        oldTileId: requireArg(args, 'oldTileId', 'edit_map action "replace_tile"'),
+        newTileId: requireArg(args, 'newTileId', 'edit_map action "replace_tile"')
+      });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: fill_layer, set_display_names, organize_tree, connect, set_encounters');
+      throw new Error('Unknown action "' + action + '". Valid actions: fill_layer, fill_rect, set_tile, replace_tile, set_display_names, organize_tree, connect, set_encounters');
   }
 }
 
@@ -387,7 +412,8 @@ async function analyzeImage(executeTool: ExecuteTool, args: Record<string, any>)
 export const V5_TOOL_NAMES = [
   'query_database', 'create_database_entry', 'update_database_entry', 'delete_database_entry',
   'query_map', 'generate_map', 'edit_map', 'manage_map_event',
-  'manage_system', 'get_project_context', 'set_project_path', 'analyze_image'
+  'manage_system', 'get_project_context', 'set_project_path', 'analyze_image',
+  'list_plugins', 'get_plugin_status', 'toggle_plugin'
 ];
 
 export async function routeV5Tool(executeTool: ExecuteTool, projectPath: string, name: string, args: Record<string, any>): Promise<unknown> {
@@ -401,6 +427,9 @@ export async function routeV5Tool(executeTool: ExecuteTool, projectPath: string,
     case 'edit_map': return editMap(executeTool, args);
     case 'manage_map_event': return manageMapEvent(executeTool, args);
     case 'manage_system': return manageSystem(executeTool, args);
+    case 'list_plugins': return executeTool('list_plugins', {});
+    case 'get_plugin_status': return executeTool('get_plugin_status', {});
+    case 'toggle_plugin': return executeTool('toggle_plugin', { pluginName: requireArg(args, 'pluginName', 'toggle_plugin'), enabled: requireArg(args, 'enabled', 'toggle_plugin') });
     case 'get_project_context': return getProjectContextV5(executeTool, args);
     case 'set_project_path': return executeTool('set_project_path', { path: requireArg(args, 'path', 'set_project_path') });
     case 'analyze_image': return analyzeImage(executeTool, args);

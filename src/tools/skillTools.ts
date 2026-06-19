@@ -18,7 +18,7 @@ async function createSkill(projectPath: string, params: SkillParams) {
   const skills = await readJson(projectPath, 'Skills.json') as unknown[];
   const newId = nextId(skills);
 
-  var damage = params.damage || {
+  const damage = params.damage || {
     type: 0,
     elementId: 0,
     formula: '0',
@@ -26,11 +26,11 @@ async function createSkill(projectPath: string, params: SkillParams) {
     critical: false
   };
 
-  var hitType = params.hitType !== undefined ? params.hitType :
+  const hitType = params.hitType !== undefined ? params.hitType :
     (damage.type === 1 || damage.type === 5 ? 1 : 2);
 
   // ?? instead of || so legitimate falsy values (iconIndex 0, scope 0, successRate 0) survive
-  var newSkill = {
+  const newSkill = {
     id: newId,
     name: params.name ?? '',
     description: params.description ?? '',
@@ -178,7 +178,7 @@ async function deleteSkill(projectPath: string, id: number) {
   if (id < 0 || id >= skills.length || skills[id] === null) {
     throw new Error('Skill with ID ' + id + ' not found');
   }
-  var deleted = skills[id];
+  const deleted = skills[id];
   skills[id] = null;
   await writeJson(projectPath, 'Skills.json', skills);
   return { deleted: deleted };

@@ -1,4 +1,5 @@
 import { readJson, writeJson } from '../utils/fileHandler.js';
+import { readdir } from 'fs/promises';
 
 async function getSystem(projectPath: string) {
   return await readJson(projectPath, 'System.json');
@@ -61,6 +62,33 @@ async function updateStartingPosition(projectPath: string, mapId: number, x: num
   return { startMapId: mapId, startX: x, startY: y };
 }
 
+async function listPlugins(projectPath: string) {
+  const pluginsDir = projectPath + '/js/plugins';
+  try {
+    const files = await readdir(pluginsDir);
+    return files.filter(function (f) { return f.endsWith('.js'); }).map(function (f) { return f.replace(/\.js$/, ''); });
+  } catch {
+    return [];
+  }
+}
+
+async function getPluginStatus(projectPath: string) {
+  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
+  return (system.plugins || []) as Array<Record<string, unknown>>;
+}
+
+async function togglePlugin(projectPath: string, pluginName: string, enabled: boolean) {
+  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
+  const plugins = (system.plugins || []) as Array<Record<string, unknown>>;
+  const plugin = plugins.find(function (p) { return p && p.name === pluginName; });
+  if (!plugin) {
+    throw new Error('Plugin "' + pluginName + '" not found in System.json. Install it in js/plugins/ first, then add it to System.json.');
+  }
+  plugin.status = enabled;
+  await writeJson(projectPath, 'System.json', system);
+  return { pluginName, enabled };
+}
+
 export { getSystem };
 export { getSwitches };
 export { getVariables };
@@ -69,3 +97,6 @@ export { setVariableName };
 export { getGameTitle };
 export { updateGameTitle };
 export { updateStartingPosition };
+export { listPlugins };
+export { getPluginStatus };
+export { togglePlugin };

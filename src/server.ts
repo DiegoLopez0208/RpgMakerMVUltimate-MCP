@@ -44,7 +44,7 @@ import { routeV5Tool, V5_TOOL_NAMES } from './v5Router.js';
 const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
 
 // Single-flight queue for tool executions (see CallTool handler)
-var toolCallQueue: Promise<void> = Promise.resolve();
+let toolCallQueue: Promise<void> = Promise.resolve();
 
 // Zod validation applied before dispatch, keyed by (legacy) tool name.
 // v5 tools route through these same legacy names, so validation applies to both.
@@ -113,6 +113,21 @@ async function getProjectContext(projectPath: string) {
     }
   }
 
+  async function listAudio(dir: string) {
+    const fullDir = path.join(projectPath, 'audio', dir);
+    try {
+      await access(fullDir);
+      const files = await readdir(fullDir);
+      const names = files
+        .filter(function(f) { return f.endsWith('.ogg') || f.endsWith('.m4a'); })
+        .map(function(f) { return f.replace(/\.(ogg|m4a)$/, ''); });
+      // Deduplicate when both .ogg and .m4a variants exist
+      return [...new Set(names)];
+    } catch {
+      return [];
+    }
+  }
+
   const [
     systemRaw, mapInfosRaw, actorsRaw, itemsRaw, weaponsRaw, armorsRaw,
     skillsRaw, enemiesRaw, troopsRaw, statesRaw, tilesetsRaw, commonEventsRaw
@@ -122,33 +137,34 @@ async function getProjectContext(projectPath: string) {
     readJson('Troops.json'), readJson('States.json'), readJson('Tilesets.json'), readJson('CommonEvents.json')
   ]);
 
-  var system = systemRaw || {};
-  var mapInfos = mapInfosRaw || [];
-  var actors = actorsRaw || [];
-  var items = itemsRaw || [];
-  var weapons = weaponsRaw || [];
-  var armors = armorsRaw || [];
-  var skills = skillsRaw || [];
-  var enemies = enemiesRaw || [];
-  var troops = troopsRaw || [];
-  var states = statesRaw || [];
-  var tilesets = tilesetsRaw || [];
-  var commonEvents = commonEventsRaw || [];
+  const system = systemRaw || {};
+  const mapInfos = mapInfosRaw || [];
+  const actors = actorsRaw || [];
+  const items = itemsRaw || [];
+  const weapons = weaponsRaw || [];
+  const armors = armorsRaw || [];
+  const skills = skillsRaw || [];
+  const enemies = enemiesRaw || [];
+  const troops = troopsRaw || [];
+  const states = statesRaw || [];
+  const tilesets = tilesetsRaw || [];
+  const commonEvents = commonEventsRaw || [];
 
-  var maps = (mapInfos as unknown[]).filter(function(m: unknown) { return m !== null; }).map(function(m: unknown) { var r = m as RpgMakerDbEntry; return { id: r.id, name: r.name, parentId: (m as Record<string, unknown>).parentId }; });
-  var actorList = (actors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { var r = a as RpgMakerDbEntry; return { id: r.id, name: r.name, classId: (a as Record<string, unknown>).classId, initialLevel: (a as Record<string, unknown>).initialLevel }; });
-  var itemList = (items as unknown[]).filter(function(i: unknown) { return i !== null; }).map(function(i: unknown) { var r = i as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (i as Record<string, unknown>).iconIndex, price: (i as Record<string, unknown>).price, itypeId: (i as Record<string, unknown>).itypeId }; });
-  var weaponList = (weapons as unknown[]).filter(function(w: unknown) { return w !== null; }).map(function(w: unknown) { var r = w as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (w as Record<string, unknown>).iconIndex, price: (w as Record<string, unknown>).price, wtypeId: (w as Record<string, unknown>).wtypeId }; });
-  var armorList = (armors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { var r = a as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (a as Record<string, unknown>).iconIndex, price: (a as Record<string, unknown>).price, atypeId: (a as Record<string, unknown>).atypeId }; });
-  var skillList = (skills as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { var r = s as RpgMakerDbEntry; return { id: r.id, name: r.name, mpCost: (s as Record<string, unknown>).mpCost, scope: (s as Record<string, unknown>).scope, stypeId: (s as Record<string, unknown>).stypeId }; });
-  var enemyList = (enemies as unknown[]).filter(function(e: unknown) { return e !== null; }).map(function(e: unknown) { var r = e as RpgMakerDbEntry; return { id: r.id, name: r.name, battlerName: (e as Record<string, unknown>).battlerName }; });
-  var troopList = (troops as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { var r = t as RpgMakerDbEntry; return { id: r.id, name: r.name, members: ((t as Record<string, unknown>).members as unknown[] || []).map(function(m: unknown) { return { enemyId: (m as Record<string, number>).enemyId, x: (m as Record<string, number>).x, y: (m as Record<string, number>).y }; }) }; });
-  var stateList = (states as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { var r = s as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (s as Record<string, unknown>).iconIndex, restriction: (s as Record<string, unknown>).restriction }; });
-  var tilesetList = (tilesets as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { var r = t as RpgMakerDbEntry; return { id: r.id, name: r.name, mode: (t as Record<string, unknown>).mode, tilesetNames: (t as Record<string, unknown>).tilesetNames }; });
-  var ceList = (commonEvents as unknown[]).filter(function(c: unknown) { return c !== null; }).map(function(c: unknown) { var r = c as RpgMakerDbEntry; return { id: r.id, name: r.name, trigger: (c as Record<string, unknown>).trigger, switchId: (c as Record<string, unknown>).switchId }; });
+  const maps = (mapInfos as unknown[]).filter(function(m: unknown) { return m !== null; }).map(function(m: unknown) { const r = m as RpgMakerDbEntry; return { id: r.id, name: r.name, parentId: (m as Record<string, unknown>).parentId }; });
+  const actorList = (actors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { const r = a as RpgMakerDbEntry; return { id: r.id, name: r.name, classId: (a as Record<string, unknown>).classId, initialLevel: (a as Record<string, unknown>).initialLevel }; });
+  const itemList = (items as unknown[]).filter(function(i: unknown) { return i !== null; }).map(function(i: unknown) { const r = i as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (i as Record<string, unknown>).iconIndex, price: (i as Record<string, unknown>).price, itypeId: (i as Record<string, unknown>).itypeId }; });
+  const weaponList = (weapons as unknown[]).filter(function(w: unknown) { return w !== null; }).map(function(w: unknown) { const r = w as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (w as Record<string, unknown>).iconIndex, price: (w as Record<string, unknown>).price, wtypeId: (w as Record<string, unknown>).wtypeId }; });
+  const armorList = (armors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { const r = a as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (a as Record<string, unknown>).iconIndex, price: (a as Record<string, unknown>).price, atypeId: (a as Record<string, unknown>).atypeId }; });
+  const skillList = (skills as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { const r = s as RpgMakerDbEntry; return { id: r.id, name: r.name, mpCost: (s as Record<string, unknown>).mpCost, scope: (s as Record<string, unknown>).scope, stypeId: (s as Record<string, unknown>).stypeId }; });
+  const enemyList = (enemies as unknown[]).filter(function(e: unknown) { return e !== null; }).map(function(e: unknown) { const r = e as RpgMakerDbEntry; return { id: r.id, name: r.name, battlerName: (e as Record<string, unknown>).battlerName }; });
+  const troopList = (troops as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { const r = t as RpgMakerDbEntry; return { id: r.id, name: r.name, members: ((t as Record<string, unknown>).members as unknown[] || []).map(function(m: unknown) { return { enemyId: (m as Record<string, number>).enemyId, x: (m as Record<string, number>).x, y: (m as Record<string, number>).y }; }) }; });
+  const stateList = (states as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { const r = s as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (s as Record<string, unknown>).iconIndex, restriction: (s as Record<string, unknown>).restriction }; });
+  const tilesetList = (tilesets as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { const r = t as RpgMakerDbEntry; return { id: r.id, name: r.name, mode: (t as Record<string, unknown>).mode, tilesetNames: (t as Record<string, unknown>).tilesetNames }; });
+  const ceList = (commonEvents as unknown[]).filter(function(c: unknown) { return c !== null; }).map(function(c: unknown) { const r = c as RpgMakerDbEntry; return { id: r.id, name: r.name, trigger: (c as Record<string, unknown>).trigger, switchId: (c as Record<string, unknown>).switchId }; });
 
-  const [characters, faces, enemySprites, battlers, pictures] = await Promise.all([
-    listPngs('characters'), listPngs('faces'), listPngs('enemies'), listPngs('battlers'), listPngs('pictures')
+  const [characters, faces, enemySprites, battlers, pictures, bgm, bgs, se, me] = await Promise.all([
+    listPngs('characters'), listPngs('faces'), listPngs('enemies'), listPngs('battlers'), listPngs('pictures'),
+    listAudio('bgm'), listAudio('bgs'), listAudio('se'), listAudio('me')
   ]);
 
   return {
@@ -176,21 +192,27 @@ async function getProjectContext(projectPath: string) {
       enemies: enemySprites,
       battlers: battlers,
       pictures: pictures
+    },
+    audio: {
+      bgm: bgm,
+      bgs: bgs,
+      se: se,
+      me: me
     }
   };
 }
 
 async function validateMap(projectPath: string, mapId: number) {
   const map = await mapTools.getMap(projectPath, mapId) as RpgMakerMap;
-  var issues = [];
-  var w = map.width;
-  var h = map.height;
+  const issues = [];
+  const w = map.width;
+  const h = map.height;
 
   // Check tile IDs
   if (map.data) {
-    for (var i = 0; i < map.data.length; i++) {
-      var layer = Math.floor(i / (w * h));
-      var tileId = map.data[i];
+    for (let i = 0; i < map.data.length; i++) {
+      const layer = Math.floor(i / (w * h));
+      const tileId = map.data[i];
       if (layer < 4 && tileId > 8191) {
         issues.push({ type: 'invalid_tile', layer: layer, tileId: tileId, index: i, message: 'Tile ID ' + tileId + ' exceeds max (8191) on layer ' + layer });
       }
@@ -204,16 +226,16 @@ async function validateMap(projectPath: string, mapId: number) {
   }
 
   // Check events
-  var events = map.events || [];
-  for (var ei = 0; ei < events.length; ei++) {
-    var ev = events[ei];
+  const events = map.events || [];
+  for (let ei = 0; ei < events.length; ei++) {
+    const ev = events[ei];
     if (ev === null) continue;
-    for (var pi = 0; pi < (ev.pages || []).length; pi++) {
-      var page = ev.pages[pi];
-      var list = page.list || [];
-      var hasTerminator = false;
-      for (var ci = 0; ci < list.length; ci++) {
-        var cmd = list[ci];
+    for (let pi = 0; pi < (ev.pages || []).length; pi++) {
+      const page = ev.pages[pi];
+      const list = page.list || [];
+      let hasTerminator = false;
+      for (let ci = 0; ci < list.length; ci++) {
+        const cmd = list[ci];
         if (cmd.code === 0 && cmd.indent === 0 && ci === list.length - 1) {
           hasTerminator = true;
         }
@@ -319,6 +341,12 @@ async function handleToolCall(name: string, args: Record<string, any>) {
       return await mapTools.createMap(p, args);
     case 'fill_map_layer':
       return await mapTools.fillMapLayer(p, args.mapId, args.layer, args.tileId);
+    case 'fill_map_rect':
+      return await mapTools.fillMapRect(p, args.mapId, args.layer, args.x1, args.y1, args.x2, args.y2, args.tileId);
+    case 'set_map_tile':
+      return await mapTools.setMapTile(p, args.mapId, args.layer, args.x, args.y, args.tileId);
+    case 'replace_map_tile':
+      return await mapTools.replaceMapTile(p, args.mapId, args.layer, args.oldTileId, args.newTileId);
     case 'create_map_event':
       return await mapTools.createMapEvent(p, args.mapId, args.x, args.y, args.name, args.trigger, args.pages);
     case 'update_map_event':
@@ -367,6 +395,12 @@ case 'search_map_events':
       return await systemTools.updateGameTitle(p, args.title);
 case 'update_starting_position':
   return await systemTools.updateStartingPosition(p, args.mapId, args.x, args.y);
+case 'list_plugins':
+  return await systemTools.listPlugins(p);
+case 'get_plugin_status':
+  return await systemTools.getPluginStatus(p);
+case 'toggle_plugin':
+  return await systemTools.togglePlugin(p, args.pluginName, args.enabled);
 
 // ── Class Tools ──
 case 'get_classes':
@@ -555,10 +589,10 @@ async function readScreenshot(base64PNG: string) {
   ];
 
   const results: Record<string, { r: number; g: number; b: number }> = {};
-  for (var i = 0; i < quadrants.length; i++) {
-    var q = quadrants[i];
+  for (let i = 0; i < quadrants.length; i++) {
+    const q = quadrants[i];
     // Extract quadrant, resize to 1x1 to get average color, get raw pixel data
-    var pixelData = await sharp(buffer)
+    const pixelData = await sharp(buffer)
       .extract({ left: q.x, top: q.y, width: q.w, height: q.h })
       .resize(1, 1)
       .raw()
@@ -580,10 +614,10 @@ async function readScreenshot(base64PNG: string) {
 
 // ─── Vision AI Tool Implementations ───
 
-var VISION_API_URL: string = process.env.VISION_API_URL || 'http://127.0.0.1:9999';
-var VISION_API_PATH: string = process.env.VISION_API_PATH || '/v1/chat/completions';
+const VISION_API_URL: string = process.env.VISION_API_URL || 'http://127.0.0.1:9999';
+const VISION_API_PATH: string = process.env.VISION_API_PATH || '/v1/chat/completions';
 
-var VISION_DEFAULT_PROMPT = [
+const VISION_DEFAULT_PROMPT = [
   'Analiza esta imagen de un proyecto RPG Maker MV. Describe detalladamente:',
   '1. Tipo de contenido (tileset, sprite de personaje, battler, screenshot de mapa, face, etc.)',
   '2. Si es tileset: número de filas/columnas, categorías de tiles (terreno, agua, muros, techos, decoraciones), colores dominantes',
@@ -595,25 +629,25 @@ var VISION_DEFAULT_PROMPT = [
 
 async function analyzeScreenshot(projectPath: string, imagePath: string, customPrompt: string | undefined, resizeMax: number | undefined) {
       
-  var fullPath = resolveSafePath(projectPath, imagePath);
+  const fullPath = resolveSafePath(projectPath, imagePath);
   try {
     await access(fullPath);
   } catch {
     throw new Error('Image not found: ' + imagePath + ' (resolved: ' + fullPath + ')');
   }
 
-  var maxWidth = resizeMax || 1024;
-  var prompt = customPrompt || VISION_DEFAULT_PROMPT;
+  const maxWidth = resizeMax || 1024;
+  const prompt = customPrompt || VISION_DEFAULT_PROMPT;
 
-  var imageBuffer = await sharp(fullPath)
+  const imageBuffer = await sharp(fullPath)
     .resize(maxWidth, null, { withoutEnlargement: true })
     .jpeg({ quality: 80 })
     .toBuffer();
 
-  var base64Image = imageBuffer.toString('base64');
-  var dataUrl = 'data:image/jpeg;base64,' + base64Image;
+  const base64Image = imageBuffer.toString('base64');
+  const dataUrl = 'data:image/jpeg;base64,' + base64Image;
 
-  var requestBody = JSON.stringify({
+  const requestBody = JSON.stringify({
     model: process.env.VISION_MODEL || 'meta/llama-3.2-90b-vision-instruct',
     messages: [
       {
@@ -629,8 +663,8 @@ async function analyzeScreenshot(projectPath: string, imagePath: string, customP
     stream: false
   });
 
-  var endpoint = VISION_API_URL.replace(/\/+$/, '') + VISION_API_PATH;
-  var response;
+  const endpoint = VISION_API_URL.replace(/\/+$/, '') + VISION_API_PATH;
+  let response;
   try {
     response = await fetch(endpoint, {
       method: 'POST',
@@ -642,15 +676,15 @@ async function analyzeScreenshot(projectPath: string, imagePath: string, customP
       signal: AbortSignal.timeout(120000)
     });
   } catch (err) {
-    var msg = err instanceof Error ? err.message : String(err);
+    const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof Error && err.name === 'TimeoutError') {
       throw new Error('Vision API timeout (120s) at ' + endpoint);
     }
     throw new Error('Vision API request failed: ' + msg + '. Is the endpoint at ' + endpoint + ' reachable?');
   }
 
-  var body = await response.text();
-  var data;
+  const body = await response.text();
+  let data;
   try {
     data = JSON.parse(body);
   } catch (e: unknown) {
@@ -659,11 +693,11 @@ async function analyzeScreenshot(projectPath: string, imagePath: string, customP
   if (data.error) {
     throw new Error('Vision API error: ' + JSON.stringify(data.error));
   }
-  var content = '';
+  let content = '';
   if (data.choices && data.choices[0] && data.choices[0].message) {
     content = data.choices[0].message.content || '';
   }
-  var usage = data.usage || {};
+  const usage = data.usage || {};
   return {
     image_path: imagePath,
     analysis: content,
@@ -678,38 +712,38 @@ async function analyzeScreenshot(projectPath: string, imagePath: string, customP
 
 async function renderMapAscii(projectPath: string, mapId: number, layer: number, showEvents: boolean, showRegions: boolean) {
     
-  var map = await mapTools.getMap(projectPath, mapId) as RpgMakerMap;
-  var tileLayer = layer !== undefined ? layer : 0;
-  var showEv = showEvents !== false;
-  var showReg = showRegions === true;
+  const map = await mapTools.getMap(projectPath, mapId) as RpgMakerMap;
+  const tileLayer = layer !== undefined ? layer : 0;
+  const showEv = showEvents !== false;
+  const showReg = showRegions === true;
 
-  var w = map.width;
-  var h = map.height;
-  var data = map.data;
+  const w = map.width;
+  const h = map.height;
+  const data = map.data;
   if (!data || data.length === 0) {
     return { mapId: mapId, error: 'Map has no tile data' };
   }
 
-  var tilesetList = [];
+  let tilesetList = [];
   try {
-    var tilesetContent = await readFile(path.join(projectPath, 'data', 'Tilesets.json'), 'utf-8');
+    const tilesetContent = await readFile(path.join(projectPath, 'data', 'Tilesets.json'), 'utf-8');
     tilesetList = JSON.parse(tilesetContent.replace(/^\uFEFF/, ''));
   } catch(e: unknown) {}
 
-  var tileset = tilesetList[map.tilesetId] || null;
-  var tileCharMap: Record<number, string> = {};
+  const tileset = tilesetList[map.tilesetId] || null;
+  const tileCharMap: Record<number, string> = {};
   tileCharMap[0] = '.';
 
   if (tileset && tileset.flags) {
-    for (var tid = 1; tid <= 8191; tid++) {
+    for (let tid = 1; tid <= 8191; tid++) {
       if (tid >= data.length) break;
-      var flag = tileset.flags[tid] || 0;
-      var isWall = (flag & 0x10) !== 0;
-      var isTerrain = (flag & 0x40) !== 0;
-      var isLadder = (flag & 0x02) !== 0;
-      var isBush = (flag & 0x04) !== 0;
-      var isWater = (flag & 0x80) !== 0;
-      var isDamage = (flag & 0x20) !== 0;
+      const flag = tileset.flags[tid] || 0;
+      const isWall = (flag & 0x10) !== 0;
+      const isTerrain = (flag & 0x40) !== 0;
+      const isLadder = (flag & 0x02) !== 0;
+      const isBush = (flag & 0x04) !== 0;
+      const isWater = (flag & 0x80) !== 0;
+      const isDamage = (flag & 0x20) !== 0;
 
       if (isWater) tileCharMap[tid] = '~';
       else if (isWall) tileCharMap[tid] = '#';
@@ -720,12 +754,12 @@ async function renderMapAscii(projectPath: string, mapId: number, layer: number,
     }
   }
 
-  var autotileChars = 'GTFDRBSCWMLKPAEINU';
+  const autotileChars = 'GTFDRBSCWMLKPAEINU';
   function getTileChar(tileId: number) {
     if (tileId === 0) return '.';
     if (tileCharMap[Number(tileId)]) return tileCharMap[Number(tileId)];
     if (tileId < 2048) {
-      var kindIdx = Math.floor(tileId / 48);
+      const kindIdx = Math.floor(tileId / 48);
       return autotileChars[kindIdx % autotileChars.length] || 'A';
     }
     if (tileId >= 2048 && tileId < 2816) return 'A';
@@ -735,27 +769,27 @@ async function renderMapAscii(projectPath: string, mapId: number, layer: number,
     return '?';
   }
 
-  var layerSize = w * h;
-  var layerOffset = tileLayer * layerSize;
-  var grid = [];
+  const layerSize = w * h;
+  const layerOffset = tileLayer * layerSize;
+  const grid = [];
   for (var y = 0; y < h; y++) {
     var row = '';
     for (var x = 0; x < w; x++) {
       var idx = layerOffset + y * w + x;
-      var tileId = idx < data.length ? data[idx] : 0;
+      const tileId = idx < data.length ? data[idx] : 0;
       row += getTileChar(tileId);
     }
     grid.push(row);
   }
 
-  var eventMarkers = [];
+  const eventMarkers = [];
   if (showEv && map.events) {
-    for (var ei = 0; ei < map.events.length; ei++) {
-      var ev = map.events[ei];
+    for (let ei = 0; ei < map.events.length; ei++) {
+      const ev = map.events[ei];
       if (!ev) continue;
       if (ev.x < w && ev.y < h) {
-        var marker = ev.name ? ev.name.charAt(0).toUpperCase() : 'E';
-        var rowChars: string[] = grid[ev.y].split('');
+        const marker = ev.name ? ev.name.charAt(0).toUpperCase() : 'E';
+        const rowChars: string[] = grid[ev.y].split('');
         rowChars[ev.x] = marker;
         grid[ev.y] = rowChars.join('');
         eventMarkers.push({ id: ev.id, name: ev.name, x: ev.x, y: ev.y, marker: marker });
@@ -763,29 +797,29 @@ async function renderMapAscii(projectPath: string, mapId: number, layer: number,
     }
   }
 
-  var regionGrid = null;
+  let regionGrid = null;
   if (showReg && data.length >= 6 * layerSize) {
     regionGrid = [];
-    var regOffset = 5 * layerSize;
+    const regOffset = 5 * layerSize;
     for (var y = 0; y < h; y++) {
       var row = '';
       for (var x = 0; x < w; x++) {
         var idx = regOffset + y * w + x;
-        var rid = idx < data.length ? data[idx] : 0;
+        const rid = idx < data.length ? data[idx] : 0;
         row += rid === 0 ? '.' : (rid < 10 ? String(rid) : String.fromCharCode(55 + rid));
       }
       regionGrid.push(row);
     }
   }
 
-  var legend = [
+  const legend = [
     'Legend: . = empty, ~ = water, # = wall, H = ladder,',
     '  " = bush, x = damage, , = terrain, T = tree, W = water tile,',
     '  D = decoration, A = autotile, G/F/R/B/S/C = autotile kinds',
     '  Uppercase letters on map = event markers (first char of name)'
   ];
 
-  var result: AsciiMapResult = {
+  const result: AsciiMapResult = {
     mapId: mapId,
     mapName: map.displayName || '',
     width: w,
@@ -837,12 +871,12 @@ export async function main() {
   });
 
   server.setRequestHandler(CallToolRequestSchema, async function(request) {
-    var toolName = request.params.name;
-    var args = request.params.arguments || {};
+    const toolName = request.params.name;
+    const args = request.params.arguments || {};
     logger.info('Tool call: ' + toolName);
 
     try {
-      var currentPath = projectTools.getProjectPath();
+      const currentPath = projectTools.getProjectPath();
       if (!currentPath) {
         throw new Error('No project path set. Use set_project_path or set RPGMAKER_PROJECT_PATH.');
       }
@@ -851,12 +885,12 @@ export async function main() {
       // two tools writing the same data file in parallel interleave their writes
       // and corrupt the project JSON. Reads are cheap, so everything goes
       // through one queue for safety.
-      var queuedCall = toolCallQueue.then(function() { return dispatchTool(toolName, args); });
+      const queuedCall = toolCallQueue.then(function() { return dispatchTool(toolName, args); });
       toolCallQueue = queuedCall.then(function() { return undefined; }, function() { return undefined; });
-      var result = await queuedCall;
+      const result = await queuedCall;
 
       logger.info('Tool call succeeded: ' + toolName);
-      var structured = (typeof result === 'object' && result !== null && !Array.isArray(result))
+      const structured = (typeof result === 'object' && result !== null && !Array.isArray(result))
         ? result as Record<string, unknown>
         : { result: result };
       return {
@@ -869,7 +903,7 @@ export async function main() {
         structuredContent: structured
       };
     } catch (error) {
-      var errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error('Tool call failed: ' + toolName + ' - ' + errorMessage);
       return {
         content: [
@@ -893,12 +927,12 @@ export async function main() {
     process.exit(0);
   });
 
-  var transport = new StdioServerTransport();
+  const transport = new StdioServerTransport();
   if (process.env.RPGMV_STRING_IDS === '1') {
     // Legacy quirk (default in <=4.x): coerce numeric JSON-RPC response ids to
     // strings. Violates JSON-RPC (the id must echo the request's type), so it
     // is now opt-in for any client that happened to depend on it.
-    var originalSend = transport.send.bind(transport);
+    const originalSend = transport.send.bind(transport);
     transport.send = function(message) {
       if ((message as any).id !== undefined && (message as any).id !== null && typeof (message as any).id === 'number') {
         message = Object.assign({}, message, { id: String((message as any).id) });

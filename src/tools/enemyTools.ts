@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "fs";
+import { readFile, readdir } from "fs/promises";
 import { createCrud } from "../utils/crudHelper.js";
 import type { EnemyParams, BossEnemyParams, RpgMakerDbEntry } from "../types/rpgmaker.js";
 
@@ -7,12 +7,12 @@ import type { EnemyParams, BossEnemyParams, RpgMakerDbEntry } from "../types/rpg
 // side-view img/sv_enemies per System.json), keeping a valid provided name,
 // and otherwise picking a real sprite deterministically by enemy name so
 // different enemies look different. Returns "" only if no battlers exist.
-function resolveEnemyBattler(projectPath: string, name: string | undefined, key: string): string {
+async function resolveEnemyBattler(projectPath: string, name: string | undefined, key: string): Promise<string> {
   let sideView = false;
-  try { sideView = !!JSON.parse(readFileSync(projectPath + "/data/System.json", "utf8")).optSideView; } catch { /* default front */ }
+  try { sideView = !!JSON.parse(await readFile(projectPath + "/data/System.json", "utf8")).optSideView; } catch { /* default front */ }
   const dir = projectPath + (sideView ? "/img/sv_enemies" : "/img/enemies");
   let battlers: string[] = [];
-  try { battlers = readdirSync(dir).filter((f) => /\.png$/i.test(f)).map((f) => f.replace(/\.png$/i, "")); } catch { return name || ""; }
+  try { battlers = (await readdir(dir)).filter((f) => /\.png$/i.test(f)).map((f) => f.replace(/\.png$/i, "")); } catch { return name || ""; }
   if (battlers.length === 0) return name || "";
   if (name && battlers.includes(name)) return name;        // valid as given
   let h = 0; for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
@@ -61,7 +61,7 @@ async function getEnemy(projectPath: string, id: number) {
 }
 
 async function createEnemy(projectPath: string, params: EnemyParams) {
-  const battlerName = resolveEnemyBattler(projectPath, params.battlerName, params.name || "enemy");
+  const battlerName = await resolveEnemyBattler(projectPath, params.battlerName, params.name || "enemy");
   return enemiesCrud.create(projectPath, (id) => ({
     ...enemyFactory(id),
     ...params,
@@ -70,7 +70,7 @@ async function createEnemy(projectPath: string, params: EnemyParams) {
 }
 
 async function createBossEnemy(projectPath: string, params: BossEnemyParams) {
-  const battlerName = resolveEnemyBattler(projectPath, params.battlerName, params.name || "boss");
+  const battlerName = await resolveEnemyBattler(projectPath, params.battlerName, params.name || "boss");
   return enemiesCrud.create(projectPath, (id) => ({
     ...enemyFactory(id),
     ...params,

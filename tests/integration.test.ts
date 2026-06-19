@@ -12,6 +12,7 @@ import { readdirSync } from "fs";
 import { applyAutotileShapes, autotileShape, autotileKind } from "../src/utils/autotile.js";
 import { makeChestEvent, makeBossEvent, makeAutotileId, noiseScale } from "../src/utils/mapGenerator.js";
 import { cmd } from "../src/utils/commandBuilder.js";
+import { CreateMapSchema } from "../src/utils/validation.js";
 
 let projectDir: string;
 
@@ -546,6 +547,26 @@ describe("get_project_context", () => {
     const templates = await dispatchTool("get_project_context", { detail: "templates" });
     expect(Array.isArray(templates)).toBe(true);
   });
+
+  it("includes audio asset catalogues (BGM/BGS/SE/ME) for S6", async () => {
+    mkdirSync(path.join(projectDir, "audio", "bgm"), { recursive: true });
+    mkdirSync(path.join(projectDir, "audio", "bgs"), { recursive: true });
+    mkdirSync(path.join(projectDir, "audio", "se"), { recursive: true });
+    mkdirSync(path.join(projectDir, "audio", "me"), { recursive: true });
+    writeFileSync(path.join(projectDir, "audio", "bgm", "Town1.ogg"), "");
+    writeFileSync(path.join(projectDir, "audio", "bgm", "Dungeon1.m4a"), "");
+    writeFileSync(path.join(projectDir, "audio", "bgs", "Rain.ogg"), "");
+    writeFileSync(path.join(projectDir, "audio", "se", "Cursor.ogg"), "");
+    writeFileSync(path.join(projectDir, "audio", "me", "Victory.ogg"), "");
+
+    const result = await dispatchTool("get_project_context", { detail: "full" }) as any;
+    expect(result.audio).toBeDefined();
+    expect(result.audio.bgm).toContain("Town1");
+    expect(result.audio.bgm).toContain("Dungeon1");
+    expect(result.audio.bgs).toContain("Rain");
+    expect(result.audio.se).toContain("Cursor");
+    expect(result.audio.me).toContain("Victory");
+  });
 });
 
 describe("analyze_image", () => {
@@ -675,5 +696,116 @@ describe("pretty-maps fixes (5.9.0)", () => {
     // the generator's style 0/1/2 path; here we guard that generation didn't
     // regress to zero houses.
     expect(map.events.length).toBeGreaterThan(1);
+  });
+});
+
+describe("Wave 1 critical bugfixes", () => {
+  it("duplicate_map sanitizes invalid sprite references (W1-S1)", async () => {
+    const mapRes = await dispatchTool("create_map", { name: "Source" }) as { mapId: number };
+    const mapId = mapRes.mapId;
+    await dispatchTool("create_npc", {
+      mapId, x: 2, y: 2, name: "TestNPC", dialogues: ["Hi"],
+      characterName: "People1", characterIndex: 0
+    });
+
+    const mapFile = path.join(projectDir, "data", "Map" + String(mapId).padStart(3, "0") + ".json");
+    const raw = JSON.parse(readFileSync(mapFile, "utf-8"));
+    const ev = raw.events.find((e: any) => e && e.name === "TestNPC");
+    expect(ev).toBeDefined();
+    ev.pages[0].image.characterName = "NonExistentSpriteXYZ";
+    writeFileSync(mapFile, JSON.stringify(raw, null, 2));
+
+    const dupRes = await dispatchTool("duplicate_map", { sourceMapId: mapId, name: "Dupe" }) as { mapId: number };
+    const dupFile = path.join(projectDir, "data", "Map" + String(dupRes.mapId).padStart(3, "0") + ".json");
+    const dupRaw = JSON.parse(readFileSync(dupFile, "utf-8"));
+    const dupEv = dupRaw.events.find((e: any) => e && e.name === "TestNPC");
+    expect(dupEv).toBeDefined();
+    expect(dupEv.pages[0].image.characterName).toBe("");
+  });
+
+  it("duplicate_map with no events works (W1-S2)", async () => {
+    const mapRes = await dispatchTool("create_map", { name: "Empty" }) as { mapId: number };
+    const dupRes = await dispatchTool("duplicate_map", { sourceMapId: mapRes.mapId, name: "EmptyDupe" }) as { mapId: number };
+    expect(dupRes.mapId).toBeGreaterThan(mapRes.mapId);
+  });
+
+  it("CreateMapSchema accepts all 21 procedural themes (W1-S4/S5)", () => {
+    const themes = ["snow", "harbor", "volcano", "sewer", "fortress", "magic_forest", "magic_interior", "space_interior", "space_exterior", "world"];
+    for (const theme of themes) {
+      const result = CreateMapSchema.safeParse({ theme });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("sequential generation with different themes does not corrupt state (W1-S7)", async () => {
+    const townRes = await dispatchTool("generate_map", { mode: "procedural", theme: "town", width: 20, height: 20, seed: 1 }) as { mapId: number };
+    const townMap = dataFile("Map" + String(townRes.mapId).padStart(3, "0") + ".json");
+
+    const dungeonRes = await dispatchTool("generate_map", { mode: "procedural", theme: "dungeon", width: 20, height: 20, seed: 2 }) as { mapId: number };
+    const dungeonMap = dataFile("Map" + String(dungeonRes.mapId).padStart(3, "0") + ".json");
+
+    const townEvents = (townMap.events || []).filter((e: any) => e !== null);
+    const dungeonEvents = (dungeonMap.events || []).filter((e: any) => e !== null);
+
+    expect(townEvents.length).toBeGreaterThan(0);
+
+    const townDoorNames = townEvents.filter((e: any) => e.name && e.name.startsWith("Door to")).map((e: any) => e.name);
+    const dungeonDoorNames = dungeonEvents.filter((e: any) => e.name && e.name.startsWith("Door to")).map((e: any) => e.name);
+
+    for (const dn of dungeonDoorNames) {
+      expect(townDoorNames).not.toContain(dn);
+    }
+  });
+});
+
+describe("Wave 3 tile painting and plugin management", () => {
+  it("edit_map fill_rect paints a rectangle (W3-S1)", async () => {
+    const mapRes = await dispatchTool("create_map", { name: "Paint", width: 10, height: 10 }) as { mapId: number };
+    await dispatchTool("edit_map", { action: "fill_rect", mapId: mapRes.mapId, layer: 0, x1: 2, y1: 2, x2: 4, y2: 4, tileId: 1234 });
+    const map = dataFile("Map" + String(mapRes.mapId).padStart(3, "0") + ".json");
+    // Layer 0, index at (2,2) = (0*10+2)*10+2 = 22
+    expect(map.data[22]).toBe(1234);
+    expect(map.data[44]).toBe(1234); // (4,4)
+    expect(map.data[0]).toBe(0); // (0,0) unchanged
+  });
+
+  it("edit_map set_tile paints a single tile (W3-S2)", async () => {
+    const mapRes = await dispatchTool("create_map", { name: "Dot", width: 5, height: 5 }) as { mapId: number };
+    await dispatchTool("edit_map", { action: "set_tile", mapId: mapRes.mapId, layer: 1, x: 2, y: 3, tileId: 5678 });
+    const map = dataFile("Map" + String(mapRes.mapId).padStart(3, "0") + ".json");
+    // Layer 1, index at (2,3) = (1*5+3)*5+2 = 42
+    expect(map.data[42]).toBe(5678);
+  });
+
+  it("edit_map replace_tile swaps tile IDs (W3-S3)", async () => {
+    const mapRes = await dispatchTool("create_map", { name: "Swap", width: 5, height: 5 }) as { mapId: number };
+    await dispatchTool("edit_map", { action: "fill_layer", mapId: mapRes.mapId, layer: 0, tileId: 111 });
+    await dispatchTool("edit_map", { action: "set_tile", mapId: mapRes.mapId, layer: 0, x: 1, y: 1, tileId: 222 });
+    await dispatchTool("edit_map", { action: "replace_tile", mapId: mapRes.mapId, layer: 0, oldTileId: 111, newTileId: 333 });
+    const map = dataFile("Map" + String(mapRes.mapId).padStart(3, "0") + ".json");
+    expect(map.data[0]).toBe(333); // was 111
+    expect(map.data[6]).toBe(222); // (1,1) was 222, unchanged
+  });
+
+  it("list_plugins discovers js/plugins (W3-S4)", async () => {
+    mkdirSync(path.join(projectDir, "js", "plugins"), { recursive: true });
+    writeFileSync(path.join(projectDir, "js", "plugins", "TestPlugin.js"), "");
+    writeFileSync(path.join(projectDir, "js", "plugins", "Another.js"), "");
+    const result = await dispatchTool("list_plugins", {}) as string[];
+    expect(result).toContain("TestPlugin");
+    expect(result).toContain("Another");
+  });
+
+  it("toggle_plugin enables/disables plugins in System.json (W3-S5)", async () => {
+    const systemPath = path.join(projectDir, "data", "System.json");
+    const sys = JSON.parse(readFileSync(systemPath, "utf-8"));
+    sys.plugins = [{ name: "TestPlugin", status: false, parameters: {} }];
+    writeFileSync(systemPath, JSON.stringify(sys));
+
+    await dispatchTool("toggle_plugin", { pluginName: "TestPlugin", enabled: true });
+    const after = JSON.parse(readFileSync(systemPath, "utf-8"));
+    expect(after.plugins[0].status).toBe(true);
+
+    await expect(dispatchTool("toggle_plugin", { pluginName: "Missing", enabled: true })).rejects.toThrow(/Missing/);
   });
 });
