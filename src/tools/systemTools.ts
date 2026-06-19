@@ -1,22 +1,40 @@
 import { readJson, writeJson } from '../utils/fileHandler.js';
 import { readdir } from 'fs/promises';
 
+interface SystemPlugin {
+  name: string;
+  status: boolean;
+  [key: string]: unknown;
+}
+
+interface SystemData {
+  gameTitle?: string;
+  startMapId?: number;
+  startX?: number;
+  startY?: number;
+  partyMembers?: number[];
+  switches?: string[];
+  variables?: string[];
+  plugins?: SystemPlugin[];
+  [key: string]: unknown;
+}
+
 async function getSystem(projectPath: string) {
   return await readJson(projectPath, 'System.json');
 }
 
 async function getSwitches(projectPath: string) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
   return system.switches || [];
 }
 
 async function getVariables(projectPath: string) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
   return system.variables || [];
 }
 
 async function setSwitchName(projectPath: string, id: number, name: string) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown[]>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
   if (!system.switches) system.switches = [];
 
   while (system.switches.length <= id) {
@@ -29,7 +47,7 @@ async function setSwitchName(projectPath: string, id: number, name: string) {
 }
 
 async function setVariableName(projectPath: string, id: number, name: string) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown[]>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
   if (!system.variables) system.variables = [];
 
   while (system.variables.length <= id) {
@@ -42,19 +60,19 @@ async function setVariableName(projectPath: string, id: number, name: string) {
 }
 
 async function getGameTitle(projectPath: string) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
   return system.gameTitle || '';
 }
 
 async function updateGameTitle(projectPath: string, title: string) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
   system.gameTitle = title;
   await writeJson(projectPath, 'System.json', system);
   return { gameTitle: title };
 }
 
 async function updateStartingPosition(projectPath: string, mapId: number, x: number, y: number) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
   system.startMapId = mapId;
   system.startX = x;
   system.startY = y;
@@ -73,13 +91,13 @@ async function listPlugins(projectPath: string) {
 }
 
 async function getPluginStatus(projectPath: string) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
-  return (system.plugins || []) as Array<Record<string, unknown>>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
+  return system.plugins || [];
 }
 
 async function togglePlugin(projectPath: string, pluginName: string, enabled: boolean) {
-  const system = await readJson(projectPath, 'System.json') as Record<string, unknown>;
-  const plugins = (system.plugins || []) as Array<Record<string, unknown>>;
+  const system = await readJson(projectPath, 'System.json') as SystemData;
+  const plugins = system.plugins || [];
   const plugin = plugins.find(function (p) { return p && p.name === pluginName; });
   if (!plugin) {
     throw new Error('Plugin "' + pluginName + '" not found in System.json. Install it in js/plugins/ first, then add it to System.json.');

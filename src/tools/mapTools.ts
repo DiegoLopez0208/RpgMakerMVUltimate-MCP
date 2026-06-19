@@ -161,8 +161,8 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
         addEvents: params.addEvents !== false,
         transferPoints: params.transferPoints || [],
         tilesetId: tilesetId,
-        templateId: (params as Record<string, unknown>).templateId,
-        useTemplate: (params as Record<string, unknown>).useTemplate
+        templateId: params.templateId,
+        useTemplate: params.useTemplate
     };
 
     // Scan the project's real tileset tiles (same path createMap uses) and pass
@@ -200,7 +200,7 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
 
     // Auto-wire random encounters for combat themes from the project's troops,
     // so a generated dungeon/cave actually has enemies. Opt out: encounters:false.
-    if ((params as Record<string, unknown>).encounters !== false && COMBAT_THEMES.indexOf(theme) >= 0) {
+    if (params.encounters !== false && COMBAT_THEMES.indexOf(theme) >= 0) {
         const enc = await autoEncounterList(projectPath);
         if (enc.length > 0) {
             map.encounterList = enc;
@@ -214,13 +214,13 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     // interior returns the player to the street just below the door. Interiors
     // get sequential IDs right after the exterior. Opt out with
     // enterableHouses: false. (Interior tileset 3 = the default project's Inside.)
-    const interiorsWanted = (params as Record<string, unknown>).enterableHouses !== false
+    const houses = tileResult.houses;
+    const interiorsWanted = params.enterableHouses !== false
         && (theme === 'town' || theme === 'village')
-        && Array.isArray(tileResult.houses) && tileResult.houses.length > 0;
+        && Array.isArray(houses) && houses.length > 0;
 
     const interiors: { id: number; map: RpgMakerMap; name: string }[] = [];
     if (interiorsWanted) {
-        const houses = tileResult.houses as { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
         // Item IDs the shop can sell (if the project has any).
         let shopItemIds: number[] = [];
         try { shopItemIds = (await readJson(projectPath, 'Items.json') as unknown[]).map(function (it, i) { return it ? i : 0; }).filter(Boolean).slice(0, 4); } catch (_) { /* none */ }
@@ -355,10 +355,10 @@ function makeInteriorOccupant(id: number, x: number, y: number, roomType: string
 async function createMapFromTemplate(projectPath: string, params: Record<string, unknown>) {
     const templateId = toNum(params.templateId, 'templateId');
     const tileResult = await generateFromTemplate(templateId, {
-        width: params.width as number,
-        height: params.height as number,
+        width: params.width !== undefined ? Number(params.width) : undefined,
+        height: params.height !== undefined ? Number(params.height) : undefined,
         keepEvents: params.keepEvents !== false
-    } as Record<string, unknown>);
+    });
     if (!tileResult) {
         throw new Error('Template ' + templateId + ' not found. List templates with get_project_context detail "templates".');
     }
@@ -722,35 +722,32 @@ function resolveCharacterName(projectPath: string, name: string): string {
 // the map's parallax/battleback images and bgm/bgs audio.
 function sanitizeMapAssets(projectPath: string, map: RpgMakerMap): void {
   if (!map) return;
-  if (Array.isArray(map.events)) for (const e of map.events) sanitizeEventImages(projectPath, e as MapEvent | null);
-  const clear = (subdir: string, val: unknown): string | undefined => {
-    if (typeof val !== 'string' || !val) return val as string | undefined;
+  if (Array.isArray(map.events)) for (const e of map.events) sanitizeEventImages(projectPath, e);
+  const clear = (subdir: string, val: string): string => {
     const r = resolveAsset(projectPath, subdir, val);
     return r === null ? val : r; // '' if missing
   };
-  const m = map as unknown as Record<string, unknown>;
-  if (typeof m.parallaxName === 'string') m.parallaxName = clear('img/parallaxes', m.parallaxName);
-  if (typeof m.battleback1Name === 'string') m.battleback1Name = clear('img/battlebacks1', m.battleback1Name);
-  if (typeof m.battleback2Name === 'string') m.battleback2Name = clear('img/battlebacks2', m.battleback2Name);
-  const bgm = m.bgm as { name?: string } | undefined;
-  if (bgm && typeof bgm.name === 'string' && clear('audio/bgm', bgm.name) === '') { bgm.name = ''; m.autoplayBgm = false; }
-  const bgs = m.bgs as { name?: string } | undefined;
-  if (bgs && typeof bgs.name === 'string' && clear('audio/bgs', bgs.name) === '') { bgs.name = ''; m.autoplayBgs = false; }
+  if (typeof map.parallaxName === 'string') map.parallaxName = clear('img/parallaxes', map.parallaxName);
+  if (typeof map.battleback1Name === 'string') map.battleback1Name = clear('img/battlebacks1', map.battleback1Name);
+  if (typeof map.battleback2Name === 'string') map.battleback2Name = clear('img/battlebacks2', map.battleback2Name);
+  const bgm = map.bgm;
+  if (bgm && typeof bgm.name === 'string' && clear('audio/bgm', bgm.name) === '') { bgm.name = ''; map.autoplayBgm = false; }
+  const bgs = map.bgs;
+  if (bgs && typeof bgs.name === 'string' && clear('audio/bgs', bgs.name) === '') { bgs.name = ''; map.autoplayBgs = false; }
 }
 
 function sanitizeEventImages(projectPath: string, event: MapEvent | null): void {
   if (!event || !Array.isArray(event.pages)) return;
-  for (const pg of event.pages) {
-    const page = pg as EventPage;
-    const img = page && page.image;
-    if (img && typeof img.characterName === 'string') {
+  for (const page of event.pages) {
+    const img = page.image;
+    if (typeof img.characterName === 'string') {
       img.characterName = resolveCharacterName(projectPath, img.characterName);
     }
     // Show Text (101): params[0] is a face graphic in img/faces.
-    if (page && Array.isArray(page.list)) {
-      for (const c of page.list as EventCommand[]) {
-        if (c && c.code === 101 && Array.isArray(c.parameters) && typeof c.parameters[0] === 'string' && c.parameters[0]) {
-          const r = resolveAsset(projectPath, 'img/faces', c.parameters[0] as string);
+    if (Array.isArray(page.list)) {
+      for (const c of page.list) {
+        if (c.code === 101 && Array.isArray(c.parameters) && typeof c.parameters[0] === 'string' && c.parameters[0]) {
+          const r = resolveAsset(projectPath, 'img/faces', c.parameters[0]);
           if (r !== null) c.parameters[0] = r;
         }
       }
@@ -1279,8 +1276,12 @@ function createDefaultEventPage(trigger: number): EventPage {
 }
 
 async function readJsonDirect(filePath: string) {
+  try {
     const content = await readFile(filePath, 'utf-8');
     return JSON.parse(content.replace(/^\uFEFF/, '')) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 // Write a map to disk, first sanitizing every asset reference (event sprites,

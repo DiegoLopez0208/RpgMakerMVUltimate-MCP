@@ -9,9 +9,30 @@ const IMG_SUBDIRS = ['characters', 'faces', 'enemies', 'tilesets', 'parallaxes',
 
 const SHEET_KEYS = ['A1', 'A2', 'A3', 'A4', 'A5', 'B', 'C', 'D', 'E'];
 
-type AvailableTiles = { ground: any[]; water: any[]; wallSide: any[]; wallTop: any[]; roof: any[]; decoration: any[] };
+interface TileEntry {
+  tileId: number;
+  kind: number;
+  description: string;
+}
 
-type TilesetResult = {
+interface AvailableTiles {
+  ground: TileEntry[];
+  water: TileEntry[];
+  wallSide: TileEntry[];
+  wallTop: TileEntry[];
+  roof: TileEntry[];
+  decoration: TileEntry[];
+}
+
+interface TilesetData {
+  id: number;
+  name: string;
+  mode: number;
+  tilesetNames: string[];
+  flags: number[];
+}
+
+interface TilesetSheetInfo {
   id: number;
   name: string;
   mode: number;
@@ -19,7 +40,7 @@ type TilesetResult = {
   flags: number[];
   sheets: Record<string, SheetInfo | null>;
   availableTiles: AvailableTiles;
-};
+}
 
 async function getImageMetadata(imagePath: string) {
   try {
@@ -156,8 +177,8 @@ function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Reco
   return available;
 }
 
-async function scanProjectAssets(projectPath: string): Promise<{ tilesets: Record<string, any>; images: Record<string, string[]> }> {
-  const result: { tilesets: Record<string, any>; images: Record<string, string[]> } = { tilesets: {}, images: {} };
+async function scanProjectAssets(projectPath: string): Promise<{ tilesets: Record<string, TilesetSheetInfo>; images: Record<string, string[]> }> {
+  const result: { tilesets: Record<string, TilesetSheetInfo>; images: Record<string, string[]> } = { tilesets: {}, images: {} };
 
   for (let di = 0; di < IMG_SUBDIRS.length; di++) {
     const subdir = IMG_SUBDIRS[di];
@@ -173,18 +194,18 @@ async function scanProjectAssets(projectPath: string): Promise<{ tilesets: Recor
     }
   }
 
-  let tilesetsData: any[];
+  let tilesetsData: TilesetData[];
   try {
-    tilesetsData = await readJson(projectPath, 'Tilesets.json') as any[];
+    tilesetsData = await readJson(projectPath, 'Tilesets.json') as TilesetData[];
   } catch (_) {
     return result;
   }
 
   for (let i = 1; i < tilesetsData.length; i++) {
-    const ts: any = tilesetsData[i];
+    const ts: TilesetData = tilesetsData[i];
     if (!ts) continue;
 
-    const tsResult: TilesetResult = {
+    const tsResult: TilesetSheetInfo = {
       id: ts.id,
       name: ts.name,
       mode: ts.mode || 0,
@@ -219,9 +240,9 @@ async function scanProjectAssets(projectPath: string): Promise<{ tilesets: Recor
 }
 
 async function getTileIdsForTileset(projectPath: string, tilesetId: number | string): Promise<{ availableTiles: AvailableTiles }> {
-  let tilesetsData: any[];
+  let tilesetsData: TilesetData[];
   try {
-    tilesetsData = await readJson(projectPath, 'Tilesets.json') as any[];
+    tilesetsData = await readJson(projectPath, 'Tilesets.json') as TilesetData[];
   } catch (_) {
     return { availableTiles: { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] } };
   }
@@ -231,7 +252,7 @@ async function getTileIdsForTileset(projectPath: string, tilesetId: number | str
     return { availableTiles: { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] } };
   }
 
-  const ts: any = tilesetsData[id];
+  const ts: TilesetData = tilesetsData[id];
   const names: string[] = ts.tilesetNames || [];
   const sheets: Record<string, SheetInfo | null> = {};
 

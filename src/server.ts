@@ -48,7 +48,7 @@ let toolCallQueue: Promise<void> = Promise.resolve();
 
 // Zod validation applied before dispatch, keyed by (legacy) tool name.
 // v5 tools route through these same legacy names, so validation applies to both.
-const SCHEMA_MAP: Record<string, { safeParse: (a: unknown) => { success: boolean; data?: any; error?: any } }> = {
+const SCHEMA_MAP: Record<string, { safeParse: (a: unknown) => { success: boolean; data?: unknown; error?: unknown } }> = {
   analyze_screenshot: AnalyzeScreenshotSchema,
   create_map: CreateMapSchema,
   render_map_ascii: RenderMapAsciiSchema,
@@ -65,20 +65,21 @@ const SCHEMA_MAP: Record<string, { safeParse: (a: unknown) => { success: boolean
  * v5 router; it is NOT serialized itself — serialization happens once at the
  * request level so nested v5→legacy calls don't deadlock.
  */
-export async function executeTool(name: string, args: Record<string, any>): Promise<unknown> {
+export async function executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   const schema = SCHEMA_MAP[name];
   if (schema) {
     const parsed = schema.safeParse(args);
     if (!parsed.success) {
-      throw new Error('Validation error: ' + parsed.error.issues.map(function(i: any) { return i.path.join('.') + ': ' + i.message; }).join('; '));
+      const error = parsed.error as { issues: { path: (string | number)[]; message: string }[] };
+      throw new Error('Validation error: ' + error.issues.map(function(i) { return i.path.join('.') + ': ' + i.message; }).join('; '));
     }
-    args = parsed.data;
+    args = parsed.data as Record<string, unknown>;
   }
   return handleToolCall(name, args);
 }
 
 /** Dispatch one tool call, v5 or legacy. Exported for integration tests. */
-export async function dispatchTool(name: string, args: Record<string, any>): Promise<unknown> {
+export async function dispatchTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   if (V5_TOOL_NAMES.includes(name)) {
     const p = projectTools.getProjectPath() || PROJECT_PATH;
     return routeV5Tool(executeTool, p, name, args);
@@ -87,6 +88,10 @@ export async function dispatchTool(name: string, args: Record<string, any>): Pro
 }
 
 // ─── Project Context & Validation Functions ───
+
+function asEntry(obj: unknown): RpgMakerDbEntry & Record<string, unknown> {
+  return obj as RpgMakerDbEntry & Record<string, unknown>;
+}
 
 async function getProjectContext(projectPath: string) {
   const dataDir = path.join(projectPath, 'data');
@@ -150,17 +155,17 @@ async function getProjectContext(projectPath: string) {
   const tilesets = tilesetsRaw || [];
   const commonEvents = commonEventsRaw || [];
 
-  const maps = (mapInfos as unknown[]).filter(function(m: unknown) { return m !== null; }).map(function(m: unknown) { const r = m as RpgMakerDbEntry; return { id: r.id, name: r.name, parentId: (m as Record<string, unknown>).parentId }; });
-  const actorList = (actors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { const r = a as RpgMakerDbEntry; return { id: r.id, name: r.name, classId: (a as Record<string, unknown>).classId, initialLevel: (a as Record<string, unknown>).initialLevel }; });
-  const itemList = (items as unknown[]).filter(function(i: unknown) { return i !== null; }).map(function(i: unknown) { const r = i as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (i as Record<string, unknown>).iconIndex, price: (i as Record<string, unknown>).price, itypeId: (i as Record<string, unknown>).itypeId }; });
-  const weaponList = (weapons as unknown[]).filter(function(w: unknown) { return w !== null; }).map(function(w: unknown) { const r = w as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (w as Record<string, unknown>).iconIndex, price: (w as Record<string, unknown>).price, wtypeId: (w as Record<string, unknown>).wtypeId }; });
-  const armorList = (armors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { const r = a as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (a as Record<string, unknown>).iconIndex, price: (a as Record<string, unknown>).price, atypeId: (a as Record<string, unknown>).atypeId }; });
-  const skillList = (skills as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { const r = s as RpgMakerDbEntry; return { id: r.id, name: r.name, mpCost: (s as Record<string, unknown>).mpCost, scope: (s as Record<string, unknown>).scope, stypeId: (s as Record<string, unknown>).stypeId }; });
-  const enemyList = (enemies as unknown[]).filter(function(e: unknown) { return e !== null; }).map(function(e: unknown) { const r = e as RpgMakerDbEntry; return { id: r.id, name: r.name, battlerName: (e as Record<string, unknown>).battlerName }; });
-  const troopList = (troops as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { const r = t as RpgMakerDbEntry; return { id: r.id, name: r.name, members: ((t as Record<string, unknown>).members as unknown[] || []).map(function(m: unknown) { return { enemyId: (m as Record<string, number>).enemyId, x: (m as Record<string, number>).x, y: (m as Record<string, number>).y }; }) }; });
-  const stateList = (states as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { const r = s as RpgMakerDbEntry; return { id: r.id, name: r.name, iconIndex: (s as Record<string, unknown>).iconIndex, restriction: (s as Record<string, unknown>).restriction }; });
-  const tilesetList = (tilesets as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { const r = t as RpgMakerDbEntry; return { id: r.id, name: r.name, mode: (t as Record<string, unknown>).mode, tilesetNames: (t as Record<string, unknown>).tilesetNames }; });
-  const ceList = (commonEvents as unknown[]).filter(function(c: unknown) { return c !== null; }).map(function(c: unknown) { const r = c as RpgMakerDbEntry; return { id: r.id, name: r.name, trigger: (c as Record<string, unknown>).trigger, switchId: (c as Record<string, unknown>).switchId }; });
+  const maps = (mapInfos as unknown[]).filter(function(m: unknown) { return m !== null; }).map(function(m: unknown) { const r = asEntry(m); return { id: r.id, name: r.name, parentId: r.parentId as number }; });
+  const actorList = (actors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { const r = asEntry(a); return { id: r.id, name: r.name, classId: r.classId as number, initialLevel: r.initialLevel as number }; });
+  const itemList = (items as unknown[]).filter(function(i: unknown) { return i !== null; }).map(function(i: unknown) { const r = asEntry(i); return { id: r.id, name: r.name, iconIndex: r.iconIndex as number, price: r.price as number, itypeId: r.itypeId as number }; });
+  const weaponList = (weapons as unknown[]).filter(function(w: unknown) { return w !== null; }).map(function(w: unknown) { const r = asEntry(w); return { id: r.id, name: r.name, iconIndex: r.iconIndex as number, price: r.price as number, wtypeId: r.wtypeId as number }; });
+  const armorList = (armors as unknown[]).filter(function(a: unknown) { return a !== null; }).map(function(a: unknown) { const r = asEntry(a); return { id: r.id, name: r.name, iconIndex: r.iconIndex as number, price: r.price as number, atypeId: r.atypeId as number }; });
+  const skillList = (skills as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { const r = asEntry(s); return { id: r.id, name: r.name, mpCost: r.mpCost as number, scope: r.scope as number, stypeId: r.stypeId as number }; });
+  const enemyList = (enemies as unknown[]).filter(function(e: unknown) { return e !== null; }).map(function(e: unknown) { const r = asEntry(e); return { id: r.id, name: r.name, battlerName: r.battlerName as string }; });
+  const troopList = (troops as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { const r = asEntry(t); return { id: r.id, name: r.name, members: (r.members as unknown[] || []).map(function(m: unknown) { const rm = asEntry(m); return { enemyId: rm.enemyId as number, x: rm.x as number, y: rm.y as number }; }) }; });
+  const stateList = (states as unknown[]).filter(function(s: unknown) { return s !== null; }).map(function(s: unknown) { const r = asEntry(s); return { id: r.id, name: r.name, iconIndex: r.iconIndex as number, restriction: r.restriction as number }; });
+  const tilesetList = (tilesets as unknown[]).filter(function(t: unknown) { return t !== null; }).map(function(t: unknown) { const r = asEntry(t); return { id: r.id, name: r.name, mode: r.mode as number, tilesetNames: r.tilesetNames as string[] }; });
+  const ceList = (commonEvents as unknown[]).filter(function(c: unknown) { return c !== null; }).map(function(c: unknown) { const r = asEntry(c); return { id: r.id, name: r.name, trigger: r.trigger as number, switchId: r.switchId as number }; });
 
   const [characters, faces, enemySprites, battlers, pictures, bgm, bgs, se, me] = await Promise.all([
     listPngs('characters'), listPngs('faces'), listPngs('enemies'), listPngs('battlers'), listPngs('pictures'),
@@ -296,7 +301,7 @@ async function handleToolCall(name: string, args: Record<string, any>) {
     case 'get_armors':
       return await itemTools.getArmors(p);
     case 'get_skills':
-      return await itemTools.getSkillsList(p);
+      return await skillTools.getSkillsList(p);
     case 'create_item':
       return await itemTools.createItem(p, args);
     case 'create_weapon':
@@ -934,8 +939,9 @@ export async function main() {
     // is now opt-in for any client that happened to depend on it.
     const originalSend = transport.send.bind(transport);
     transport.send = function(message) {
-      if ((message as any).id !== undefined && (message as any).id !== null && typeof (message as any).id === 'number') {
-        message = Object.assign({}, message, { id: String((message as any).id) });
+      const msg = message as Record<string, unknown>;
+      if (msg.id !== undefined && msg.id !== null && typeof msg.id === 'number') {
+        return originalSend(Object.assign({}, message, { id: String(msg.id) }) as typeof message);
       }
       return originalSend(message);
     };

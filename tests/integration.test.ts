@@ -26,9 +26,11 @@ beforeAll(() => {
   mkdirSync(path.join(projectDir, "img"));
 
   const emptyDb = JSON.stringify([null]);
-  for (const f of ["Actors.json", "Classes.json", "Skills.json", "Items.json", "Weapons.json", "Armors.json", "Enemies.json", "States.json", "Troops.json", "Tilesets.json", "CommonEvents.json", "Animations.json"]) {
+  for (const f of ["Actors.json", "Classes.json", "Items.json", "Weapons.json", "Armors.json", "Enemies.json", "States.json", "Troops.json", "Tilesets.json", "CommonEvents.json", "Animations.json"]) {
     writeFileSync(path.join(projectDir, "data", f), emptyDb);
   }
+  // Skills 1 (Attack) and 2 (Guard) are essential engine skills that cannot be deleted
+  writeFileSync(path.join(projectDir, "data", "Skills.json"), JSON.stringify([null, { id: 1, name: "Attack" }, { id: 2, name: "Guard" }]));
   writeFileSync(path.join(projectDir, "data", "System.json"), JSON.stringify({ gameTitle: "Fixture", switches: ["", ""], variables: ["", ""] }));
   writeFileSync(path.join(projectDir, "data", "MapInfos.json"), JSON.stringify([null, { id: 1, name: "Test", order: 1, parentId: 0, expanded: false, scrollX: 0, scrollY: 0 }]));
   writeFileSync(path.join(projectDir, "data", "Map001.json"), JSON.stringify({
@@ -65,11 +67,14 @@ describe("v5 tool surface", () => {
 
 describe("query_database", () => {
   it("lists every entity of an empty project as []", async () => {
-    for (const entity of ["actors", "classes", "skills", "items", "weapons", "armors", "enemies", "states", "troops", "tilesets", "common_events", "animations"]) {
+    for (const entity of ["actors", "classes", "items", "weapons", "armors", "enemies", "states", "troops", "tilesets", "common_events", "animations"]) {
       const result = await dispatchTool("query_database", { entity });
       expect(Array.isArray(result), entity).toBe(true);
       expect((result as unknown[]).length, entity).toBe(0);
     }
+    // Skills 1 and 2 (Attack/Guard) are essential engine skills pre-populated in the fixture
+    const skills = await dispatchTool("query_database", { entity: "skills" }) as unknown[];
+    expect(skills.length).toBe(2);
   });
 
   it("rejects unknown entities", async () => {
@@ -122,19 +127,19 @@ describe("create_database_entry", () => {
 
 describe("query/update/delete round trip", () => {
   it("fetches by id, updates fields, and deletes", async () => {
-    const skill = await dispatchTool("query_database", { entity: "skills", id: 1 }) as any;
+    const skill = await dispatchTool("query_database", { entity: "skills", id: 3 }) as any;
     expect(skill.name).toBe("Fireball");
 
-    const updated = await dispatchTool("update_database_entry", { entity: "skills", id: 1, fields: { mpCost: 20 } }) as any;
+    const updated = await dispatchTool("update_database_entry", { entity: "skills", id: 3, fields: { mpCost: 20 } }) as any;
     expect(updated.mpCost).toBe(20);
-    expect(updated.id).toBe(1);
+    expect(updated.id).toBe(3);
 
     const found = await dispatchTool("query_database", { entity: "skills", query: "fire" }) as any[];
     expect(found.length).toBe(1);
 
-    const deleted = await dispatchTool("delete_database_entry", { entity: "skills", id: 1 }) as any;
+    const deleted = await dispatchTool("delete_database_entry", { entity: "skills", id: 3 }) as any;
     expect(deleted).toBeDefined();
-    const gone = await dispatchTool("query_database", { entity: "skills", id: 1 });
+    const gone = await dispatchTool("query_database", { entity: "skills", id: 3 });
     expect(gone).toBeNull();
   });
 

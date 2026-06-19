@@ -1,12 +1,13 @@
 import { readFile, writeFile, copyFile } from 'fs/promises';
 import path from 'path';
+import { resolveSafePath } from './security.js';
 
 /**
  * Get the full path to a data file in the RPG Maker MV project.
  * All data files live under {projectPath}/data/
  */
 function getDataPath(projectPath: string, filename: string) {
-  return path.join(projectPath, 'data', filename);
+  return resolveSafePath(projectPath, 'data', filename);
 }
 
 /**

@@ -1,6 +1,9 @@
 import path from "path";
 import { readFile, access } from 'fs/promises';
+import { fileURLToPath } from 'url';
 import type { MapData } from "../types/rpgmaker.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface MapTemplate {
   id: number;

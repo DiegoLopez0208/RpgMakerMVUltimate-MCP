@@ -1,6 +1,5 @@
 import { createCrud } from "../utils/crudHelper.js";
 import type { ItemParams, WeaponParams, ArmorParams, ItemType, RpgMakerDbEntry } from "../types/rpgmaker.js";
-import { readJson } from "../utils/fileHandler.js";
 
 interface Item extends RpgMakerDbEntry {
   description: string;
@@ -107,11 +106,6 @@ async function getArmors(projectPath: string) {
   return armorsCrud.getAll(projectPath);
 }
 
-async function getSkillsList(projectPath: string) {
-  const skills = await readJson(projectPath, "Skills.json") as unknown[];
-  return skills.filter((s: unknown) => s !== null);
-}
-
 async function createItem(projectPath: string, params: ItemParams) {
   return itemsCrud.create(projectPath, (id) => ({
     ...itemFactory(id),
@@ -173,4 +167,4 @@ async function deleteItem(projectPath: string, id: number, type: ItemType) {
   return { deleted };
 }
 
-export { getItems, getWeapons, getArmors, getSkillsList, createItem, createWeapon, createArmor, updateItem, searchItems, deleteItem };
+export { getItems, getWeapons, getArmors, createItem, createWeapon, createArmor, updateItem, searchItems, deleteItem };

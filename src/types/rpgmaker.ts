@@ -296,6 +296,10 @@ export interface CreateMapParams {
 export interface CreateMapV3Params extends CreateMapParams {
   theme?: string;
   seed?: number;
+  templateId?: number;
+  useTemplate?: boolean;
+  encounters?: boolean;
+  enterableHouses?: boolean;
 }
 
 export interface SheetInfo {

@@ -12,7 +12,7 @@
 import * as mapTools from './tools/mapTools.js';
 import { searchTemplates } from './utils/mapGenerator.js';
 
-type ExecuteTool = (name: string, args: Record<string, any>) => Promise<unknown>;
+type ExecuteTool = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 
 const DB_ENTITIES = [
   'actors', 'classes', 'skills', 'items', 'weapons', 'armors',
@@ -27,7 +27,7 @@ function assertEntity(entity: unknown): DbEntity {
   return entity as DbEntity;
 }
 
-function requireArg(args: Record<string, any>, key: string, context: string): any {
+function requireArg(args: Record<string, unknown>, key: string, context: string): unknown {
   if (args[key] === undefined || args[key] === null) {
     throw new Error('Missing required argument "' + key + '" for ' + context);
   }
@@ -83,7 +83,7 @@ const EVENT_PRESETS: Record<string, string> = {
   puzzle_switch: 'create_puzzle_switch'
 };
 
-async function queryDatabase(executeTool: ExecuteTool, projectPath: string, args: Record<string, any>) {
+async function queryDatabase(executeTool: ExecuteTool, projectPath: string, args: Record<string, unknown>) {
   const entity = assertEntity(args.entity);
 
   if (args.id !== undefined && args.id !== null) {
@@ -111,8 +111,8 @@ async function listEntity(executeTool: ExecuteTool, _projectPath: string, entity
   return executeTool(LIST_TOOL[entity], {});
 }
 
-async function createDatabaseEntry(executeTool: ExecuteTool, args: Record<string, any>) {
-  const data = (args.data || {}) as Record<string, any>;
+async function createDatabaseEntry(executeTool: ExecuteTool, args: Record<string, unknown>) {
+  const data = (args.data || {}) as Record<string, unknown>;
 
   if (args.preset) {
     const preset = CREATE_PRESETS[args.preset as string];
@@ -133,7 +133,7 @@ async function createDatabaseEntry(executeTool: ExecuteTool, args: Record<string
   return executeTool(createTool, data);
 }
 
-async function updateDatabaseEntry(executeTool: ExecuteTool, args: Record<string, any>) {
+async function updateDatabaseEntry(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const entity = assertEntity(args.entity);
   const id = requireArg(args, 'id', 'update_database_entry');
 
@@ -156,7 +156,7 @@ async function updateDatabaseEntry(executeTool: ExecuteTool, args: Record<string
   return executeTool(updateTool, { id: id, fields: fields });
 }
 
-async function deleteDatabaseEntry(executeTool: ExecuteTool, args: Record<string, any>) {
+async function deleteDatabaseEntry(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const entity = assertEntity(args.entity);
   const id = requireArg(args, 'id', 'delete_database_entry');
   if (ITEMISH_TYPE[entity]) {
@@ -169,7 +169,7 @@ async function deleteDatabaseEntry(executeTool: ExecuteTool, args: Record<string
   return executeTool(deleteTool, { id: id });
 }
 
-async function queryMap(executeTool: ExecuteTool, args: Record<string, any>) {
+async function queryMap(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const view = (args.view as string) || 'infos';
   switch (view) {
     case 'infos':
@@ -200,7 +200,7 @@ async function queryMap(executeTool: ExecuteTool, args: Record<string, any>) {
   }
 }
 
-async function generateMap(executeTool: ExecuteTool, projectPath: string, args: Record<string, any>) {
+async function generateMap(executeTool: ExecuteTool, projectPath: string, args: Record<string, unknown>) {
   const mode = (args.mode as string) || 'procedural';
   switch (mode) {
     case 'blank': {
@@ -237,7 +237,7 @@ async function generateMap(executeTool: ExecuteTool, projectPath: string, args: 
   }
 }
 
-async function editMap(executeTool: ExecuteTool, args: Record<string, any>) {
+async function editMap(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const action = args.action as string;
   switch (action) {
     case 'fill_layer':
@@ -293,7 +293,7 @@ async function editMap(executeTool: ExecuteTool, args: Record<string, any>) {
   }
 }
 
-async function manageMapEvent(executeTool: ExecuteTool, args: Record<string, any>) {
+async function manageMapEvent(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const action = (args.action as string) || 'create';
   switch (action) {
     case 'create': {
@@ -339,7 +339,7 @@ async function manageMapEvent(executeTool: ExecuteTool, args: Record<string, any
   }
 }
 
-async function manageSystem(executeTool: ExecuteTool, args: Record<string, any>) {
+async function manageSystem(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const action = (args.action as string) || 'get';
   switch (action) {
     case 'get': {
@@ -373,7 +373,7 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, any>)
   }
 }
 
-async function getProjectContextV5(executeTool: ExecuteTool, args: Record<string, any>) {
+async function getProjectContextV5(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const detail = (args.detail as string) || 'full';
   switch (detail) {
     case 'summary':
@@ -391,7 +391,7 @@ async function getProjectContextV5(executeTool: ExecuteTool, args: Record<string
   }
 }
 
-async function analyzeImage(executeTool: ExecuteTool, args: Record<string, any>) {
+async function analyzeImage(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const mode = (args.mode as string) || 'ai';
   switch (mode) {
     case 'ai':
@@ -416,7 +416,7 @@ export const V5_TOOL_NAMES = [
   'list_plugins', 'get_plugin_status', 'toggle_plugin'
 ];
 
-export async function routeV5Tool(executeTool: ExecuteTool, projectPath: string, name: string, args: Record<string, any>): Promise<unknown> {
+export async function routeV5Tool(executeTool: ExecuteTool, projectPath: string, name: string, args: Record<string, unknown>): Promise<unknown> {
   switch (name) {
     case 'query_database': return queryDatabase(executeTool, projectPath, args);
     case 'create_database_entry': return createDatabaseEntry(executeTool, args);
