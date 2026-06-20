@@ -1,8 +1,18 @@
 {
   "name": "rpgmaker-mv-mcp",
   "version": "5.8.0",
+  "description": "MCP server for editing RPG Maker MV projects: 12 consolidated tools for maps, events, database, and procedural generation.",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "rpgmaker-mv-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "skill",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",

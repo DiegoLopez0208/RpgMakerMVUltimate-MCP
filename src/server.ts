@@ -619,7 +619,7 @@ async function readScreenshot(base64PNG: string) {
 
 // ─── Vision AI Tool Implementations ───
 
-const VISION_API_URL: string = process.env.VISION_API_URL || 'http://127.0.0.1:9999';
+const VISION_API_URL: string = process.env.VISION_API_URL || '';
 const VISION_API_PATH: string = process.env.VISION_API_PATH || '/v1/chat/completions';
 
 const VISION_DEFAULT_PROMPT = [
@@ -633,7 +633,11 @@ const VISION_DEFAULT_PROMPT = [
 ].join('\n');
 
 async function analyzeScreenshot(projectPath: string, imagePath: string, customPrompt: string | undefined, resizeMax: number | undefined) {
-      
+
+  if (!VISION_API_URL) {
+    throw new Error('Vision AI is not configured. Set the VISION_API_URL env var to an OpenAI-compatible vision endpoint (and optionally VISION_API_KEY / VISION_MODEL) to use analyze_image mode "ai". For offline analysis use query_map view "ascii" or analyze_image modes "grid"/"colors".');
+  }
+
   const fullPath = resolveSafePath(projectPath, imagePath);
   try {
     await access(fullPath);
@@ -671,12 +675,13 @@ async function analyzeScreenshot(projectPath: string, imagePath: string, customP
   const endpoint = VISION_API_URL.replace(/\/+$/, '') + VISION_API_PATH;
   let response;
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (process.env.VISION_API_KEY) {
+      headers['Authorization'] = 'Bearer ' + process.env.VISION_API_KEY;
+    }
     response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + (process.env.VISION_API_KEY || 'sk-proxy')
-      },
+      headers,
       body: requestBody,
       signal: AbortSignal.timeout(120000)
     });
@@ -860,7 +865,7 @@ export async function main() {
   }
 
   const server = new Server(
-    { name: 'rpgmaker-mv-mcp', version: '5.0.0' },
+    { name: 'rpgmaker-mv-mcp', version: '5.8.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -947,5 +952,5 @@ export async function main() {
     };
   }
   await server.connect(transport);
-  logger.info('RPG Maker MV MCP server v5.0.0 running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
+  logger.info('RPG Maker MV MCP server v5.8.0 running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
 }
