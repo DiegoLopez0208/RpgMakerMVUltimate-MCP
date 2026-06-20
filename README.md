@@ -1,81 +1,44 @@
 # RPG Maker MV Ultimate MCP Server
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server for RPG Maker MV project management. Provides **12 consolidated tools** covering actors, classes, skills, items, weapons, armors, enemies, states, troops, common events, maps, events, tilesets, animations, system settings, project management, **AI vision analysis**, **offline ASCII map rendering**, and **knowledge-driven map generation**. The 101 fine-grained v4 tool names keep working as call aliases (`RPGMV_LEGACY_TOOLS=1` re-advertises them).
+[![npm](https://img.shields.io/npm/v/rpgmaker-mv-mcp)](https://www.npmjs.com/package/rpgmaker-mv-mcp)
 
-## Features
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent edit a real **RPG Maker MV** project on disk — database, maps, events, system — through **12 consolidated tools**, validated against the actual engine so the output is coherent and playable.
 
-- **12 consolidated MCP tools** covering every aspect of RPG Maker MV project data (the v4 names remain callable for backward compatibility)
-- **TypeScript ESM** — fully typed codebase with strict compilation.
-- **Vision AI analysis** — `analyze_screenshot` sends project images to any OpenAI-compatible vision API (OpenAI, Ollama, LocalAI, NVIDIA, etc.) for AI descriptions
-- **Offline ASCII map rendering** — `render_map_ascii` generates ASCII maps with event markers and region IDs, no API needed
-- **Knowledge-driven map generation** with 21 themes, procedural generation (Perlin noise, BSP, cellular automata), and 106 template maps
-- **Template-based map generation** — generates maps from ProjectR reference templates
-- **Asset scanning** — indexes your project's img/ folder and Tilesets.json to build categorized tile inventories
-- **7 static knowledge files** — tile IDs, passage flags, event commands, enums, trait/effect codes, database schemas, image paths
-- **High-level event builders** — NPC with dialogue, chest, teleport, shop, inn, boss battle, puzzle switch, transfer
-- **Map validation** — detects invalid tile IDs, broken event commands, null references
-- **21 procedural themes** — forest, town, village, castle, dungeon, cave, beach, desert, swamp, ruins, interior, snow, harbor, volcano, sewer, fortress, magic_forest, magic_interior, space_interior, space_exterior, world
+Its headline feature is **knowledge-driven map generation**: instead of painting tiles procedurally, `generate_map` **clones hand-authored reference maps** from 106 bundled RTP templates (real multi-tile buildings, walls, furniture) and adapts them to your project's tilesets — falling back to procedural generation only for themes without a template.
 
-## Quick Start
+The 101 fine-grained v4 tool names still work as call aliases (set `RPGMV_LEGACY_TOOLS=1` to also advertise them).
 
-```bash
-npm install
-npm run build
-RPGMAKER_PROJECT_PATH=/path/to/your/project npm start
-```
+## Install
 
-### With Claude Desktop / opencode / any MCP client
-
-Add to your MCP config:
+The package ships an executable, so no clone is required. Add it to your MCP client:
 
 ```json
 {
   "mcpServers": {
     "rpgmaker-mv": {
-      "command": "node",
-      "args": ["/path/to/RpgMakerMVUltimate-MCP/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "rpgmaker-mv-mcp"],
       "env": {
-        "RPGMAKER_PROJECT_PATH": "/path/to/your/project"
+        "RPGMAKER_PROJECT_PATH": "/path/to/your/RPGMakerMV/project"
       }
     }
   }
 }
 ```
 
-## Agent Skill (recommended for any AI agent)
+Works with Claude Desktop, Claude Code, opencode, and any MCP-compatible client. The server starts even without `RPGMAKER_PROJECT_PATH` — call `set_project_path` at runtime if you didn't set it.
 
-A portable agent skill teaches any model (Claude, DeepSeek, …) the correct,
-crash-free workflow — building maps with `generate_map` (which stamps real
-houses/trees and wires encounters) instead of hand-painting tiles or guessing
-IDs. It lives at [`skill/rpgmaker-mv-mcp/SKILL.md`](skill/rpgmaker-mv-mcp/SKILL.md)
-and works with the [Agent Skills](https://agentskills.io) standard.
-
-### Install the skill
-
-**One-liner (no clone needed)** — pull just the skill folder into your agent's
-skills directory with [`degit`](https://github.com/Rich-Harris/degit):
+### From source
 
 ```bash
-# Claude Code / Claude.ai (custom skills)
-npx degit DiegoLopez0208/RpgMakerMVUltimate-MCP/skill/rpgmaker-mv-mcp ~/.claude/skills/rpgmaker-mv-mcp
-
-# opencode
-npx degit DiegoLopez0208/RpgMakerMVUltimate-MCP/skill/rpgmaker-mv-mcp ~/.opencode/skills/rpgmaker-mv-mcp
-
-# generic agents
-npx degit DiegoLopez0208/RpgMakerMVUltimate-MCP/skill/rpgmaker-mv-mcp ~/.agents/skills/rpgmaker-mv-mcp
+git clone https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP
+cd RpgMakerMVUltimate-MCP
+npm install
+npm run build
+RPGMAKER_PROJECT_PATH=/path/to/your/project npm start
 ```
 
-**From a clone** (if you already have the repo):
-
-```bash
-cp -r skill/rpgmaker-mv-mcp ~/.claude/skills/      # or ~/.opencode/skills/ , ~/.agents/skills/
-```
-
-The skill is also listed in
-[awesome-claude-skills](https://github.com/travisvn/awesome-claude-skills).
-
-## Tools (v5)
+## The 12 tools
 
 | Tool | Purpose |
 |---|---|
@@ -84,142 +47,78 @@ The skill is also listed in
 | `update_database_entry` | Partial updates; append commands to common events; add enemies to troops |
 | `delete_database_entry` | Delete entries (with reference-breakage warnings) |
 | `query_map` | Map tree, full map data, events, single event, lint (`validate`), offline ASCII render |
-| `generate_map` | Blank / themed / procedural (21 themes, seeded) / batch / duplicate / from one of 106 bundled templates |
-| `edit_map` | Fill tile layers, set player-visible display names, organize the map tree, connect two maps |
-| `manage_map_event` | Create (presets: npc, chest, teleport, shop, inn, boss, puzzle_switch), update, delete, add commands, bulk-populate |
+| `generate_map` | Knowledge-driven generation: clones a real reference map per theme (or pure procedural / blank / themed / a specific template / batch / duplicate) |
+| `edit_map` | Fill tile layers, set display names, organize the map tree, connect two maps, set encounters |
+| `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, delete, add commands, bulk-populate |
 | `manage_system` | Game title, switch/variable names, starting position |
-| `get_project_context` | Project digest, asset index, per-tileset tile IDs, template catalog |
+| `get_project_context` | Project digest, asset index, per-tileset tile IDs, bundled-template catalog |
 | `set_project_path` | Switch projects at runtime |
-| `analyze_image` | Vision AI analysis, offline tileset grid measurement, quadrant colors |
+| `analyze_image` | Optional Vision-AI image analysis, plus offline tileset grid measurement and quadrant colors |
 
-Set `RPGMV_LEGACY_TOOLS=1` to also advertise the 101 v4 tool names; calls to v4 names work regardless of the flag.
+## Map generation (knowledge-driven)
 
-## Vision AI
+`generate_map` defaults to `mode: "procedural"`, which is smarter than the name suggests:
 
-The `analyze_screenshot` tool sends project images to an OpenAI-compatible vision API for AI-powered analysis. Works with any endpoint that supports the `/v1/chat/completions` API format.
+- For themes with a matching RTP reference template — **town, village, dungeon, interior, castle, world**, and more — it **clones a hand-authored map from the 106 bundled templates**, picking the closest size, so you get real 3D-looking buildings, walls and furniture instead of flat tile noise.
+- For themes without a template (**beach, swamp, desert, …**) it generates procedurally (Perlin terrain, BSP dungeons, cellular caves).
+- Same `seed` + params → the same map. Pass `templateId` to force a specific template, or `useTemplate: false` to force pure procedural.
 
-**Supported backends**: OpenAI, Ollama, LocalAI, NVIDIA NIM, vLLM, LiteLLM, or any OpenAI-compatible proxy.
+Other modes: `"blank"` (empty canvas you paint with `edit_map`), `"themed"` (simple tile layout), `"template"` (instantiate one specific bundled map by `templateId`), `"batch"` (many maps at once), `"duplicate"` (copy an existing map).
 
-### Configuration
+```json
+{
+  "tool": "generate_map",
+  "arguments": { "mode": "procedural", "theme": "town", "name": "Riverbend", "width": 40, "height": 30 }
+}
+```
 
-Set these environment variables to enable vision analysis:
+Combat themes (dungeon/cave/world/fortress/sewer/volcano) auto-wire random encounters from your existing troops, and town/village auto-create enterable house interiors with two-way warps. List available templates with `get_project_context { detail: "templates" }`.
 
-| Variable | Default | Description |
+**Themes:** `forest` `town` `village` `castle` `dungeon` `cave` `beach` `desert` `swamp` `ruins` `interior` `snow` `harbor` `volcano` `sewer` `fortress` `magic_forest` `magic_interior` `space_interior` `space_exterior` `world`
+
+## Offline map inspection
+
+No API needed:
+
+- `query_map { view: "ascii", mapId }` — render a map as a character grid with event markers (the cheapest way to "see" a layout and pick coordinates).
+- `query_map { view: "validate", mapId }` — lint for invalid tile IDs, broken transfers, and missing event terminators.
+
+## Vision AI (optional)
+
+`analyze_image { mode: "ai" }` sends a project image (tileset, sprite, screenshot, battler) to **any OpenAI-compatible vision endpoint**. It is **disabled by default** — nothing is sent anywhere unless you configure it. The other modes (`"grid"`, `"colors"`) and all other tools work fully offline.
+
+| Variable | Required | Description |
 |---|---|---|
-| `VISION_API_URL` | `http://127.0.0.1:9999` | Base URL of the vision API |
-| `VISION_API_KEY` | `sk-proxy` | API key / bearer token |
-| `VISION_MODEL` | `meta/llama-3.2-90b-vision-instruct` | Model name to use |
-| `VISION_API_PATH` | `/v1/chat/completions` | API endpoint path |
-
-### Usage
-
-```json
-{
-  "tool": "analyze_screenshot",
-  "arguments": {
-    "image_path": "img/tilesets/Outside.png",
-    "prompt": "Describe the tile categories and colors",
-    "resize_max": 1024
-  }
-}
-```
-
-Works with: tilesets, character sprites, map screenshots, battlers, faces, etc.
-
-### OpenAI Example
+| `VISION_API_URL` | to enable | Base URL of the vision API (e.g. `https://api.openai.com`, `http://localhost:11434`). Unset = vision disabled. |
+| `VISION_API_KEY` | optional | Bearer token; only sent when set. |
+| `VISION_MODEL` | optional | Model name (default `meta/llama-3.2-90b-vision-instruct`). |
+| `VISION_API_PATH` | optional | Endpoint path (default `/v1/chat/completions`). |
 
 ```bash
-VISION_API_URL=https://api.openai.com \
-VISION_API_KEY=sk-... \
-VISION_MODEL=gpt-4o \
-npm start
+# OpenAI
+VISION_API_URL=https://api.openai.com VISION_API_KEY=sk-... VISION_MODEL=gpt-4o npm start
+# Ollama (local, no key)
+VISION_API_URL=http://localhost:11434 VISION_MODEL=llava npm start
 ```
 
-### Ollama Example
+Supported backends: OpenAI, Ollama, LocalAI, NVIDIA NIM, vLLM, LiteLLM, or any OpenAI-compatible proxy.
+
+## Agent Skill (recommended for any AI agent)
+
+A portable [Agent Skill](https://agentskills.io) teaches any model (Claude, DeepSeek, …) the correct, crash-free workflow — building maps with `generate_map` and adding content with `manage_map_event` presets instead of hand-painting tiles or guessing IDs. It lives at [`skill/rpgmaker-mv-mcp/SKILL.md`](skill/rpgmaker-mv-mcp/SKILL.md).
 
 ```bash
-VISION_API_URL=http://localhost:11434 \
-VISION_MODEL=llava \
-npm start
+# Claude Code / Claude.ai
+npx degit DiegoLopez0208/RpgMakerMVUltimate-MCP/skill/rpgmaker-mv-mcp ~/.claude/skills/rpgmaker-mv-mcp
+# opencode
+npx degit DiegoLopez0208/RpgMakerMVUltimate-MCP/skill/rpgmaker-mv-mcp ~/.opencode/skills/rpgmaker-mv-mcp
 ```
 
-### Without Vision AI
+The skill is also listed in [awesome-claude-skills](https://github.com/travisvn/awesome-claude-skills).
 
-Set no `VISION_API_URL` or leave it unset. All other 100 tools work offline. `render_map_ascii` provides visual map inspection without any API.
+## Knowledge base
 
-### render_map_ascii
-
-Generates an ASCII representation of a map. No API required — works offline.
-
-```json
-{
-  "tool": "render_map_ascii",
-  "arguments": {
-    "map_id": 1,
-    "layer": 0,
-    "show_events": true,
-    "show_regions": false
-  }
-}
-```
-
-Output uses tileset flag-based characters: `.` empty, `~` water, `#` wall, `H` ladder, `"` bush, `,` terrain, `T` tree, `D` decoration, `A` autotile. Event positions shown as first-letter markers.
-
-## Map Generation
-
-The unified map generator produces coherent, beautiful maps using your project's actual tilesets:
-
-```json
-{
-  "tool": "create_map",
-  "arguments": {
-    "name": "Dark Forest",
-    "width": 30,
-    "height": 25,
-    "tilesetId": 2,
-    "theme": "forest",
-    "displayName": "The Dark Forest"
-  }
-}
-```
-
-### Themes
-
-`forest` `town` `village` `castle` `dungeon` `cave` `beach` `desert` `swamp` `ruins` `interior` `snow` `harbor` `volcano` `sewer` `fortress` `magic_forest` `magic_interior` `space_interior` `space_exterior` `world`
-
-### Template-Based Generation
-
-Generate maps from 106 Rpg maker MV reference templates:
-
-```json
-{
-  "tool": "create_map",
-  "arguments": {
-    "templateId": 1,
-    "displayName": "Custom Forest"
-  }
-}
-```
-
-### How It Works
-
-1. `create_map` calls `get_tile_ids_for_tileset` to read the tileset's actual tiles
-2. Categories tiles into: ground, water, wallSide, wallTop, roof, decoration
-3. Generates a 6-layer map: z=0,1 (ground), z=2,3 (upper), z=4 (shadow bits), z=5 (region ID)
-4. Falls back to hardcoded RTP IDs if tileset scan fails (backward compatible)
-5. Procedural generators use Perlin noise, BSP tree partitioning, and cellular automata
-
-### Asset Scanning
-
-```json
-{ "tool": "scan_project_assets" }
-```
-
-Returns tileset sheet metadata (dimensions, tile counts, autotile kinds), categorized available tiles, and all PNG files in img/ subdirectories.
-
-## Knowledge Base
-
-Static JSON files in `knowledge/` provide technical reference data extracted from the RPG Maker MV corescript:
+Static JSON reference data in `knowledge/`, extracted from the RPG Maker MV corescript and the bundled maps:
 
 | File | Content |
 |---|---|
@@ -230,64 +129,33 @@ Static JSON files in `knowledge/` provide technical reference data extracted fro
 | `trait-effect-codes.json` | Trait codes 11-64, effect codes 11-45 |
 | `database-schemas.json` | Full schemas for all MV data types |
 | `image-paths.json` | img/ directories, tileset slots, naming conventions |
+| `map-templates.json` | Index of the 106 bundled reference maps |
+| `stamps.json` | Mined multi-tile object stamps (trees, props) per tileset |
+| `maps/` | 106 RTP reference map JSONs used for template cloning |
 
-See [knowledge/README.md](knowledge/README.md) for details.
+## Feedback & contributing
+
+This server is actively developed and **feedback is very welcome** — bug reports, weird maps, missing tools, or ideas. Please open a [GitHub Issue](https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/issues) with what you asked the agent to do and what you got (an exported map JSON or a screenshot helps a lot).
+
+### Known limitations & roadmap
+
+- Decoration/object semantics are best-effort; rare multi-tile objects may be placed as single tiles.
+- Town and dungeon layouts keep improving — planned: central plaza/well landmark, houses in rows facing roads, fences/yards, richer road networks, more dungeon-room variety.
+- Vision AI is optional and requires your own endpoint.
 
 ## Development
 
 ```bash
 npm install
-npm run build          # tsc compile
-npm start              # run built server
-npm run dev            # tsx watch mode for development
+npm run build      # tsc compile (+ copies knowledge/ into dist/)
+npm test           # vitest
+npm run dev        # tsx watch mode
 ```
 
-### Project Structure
+Source: `src/server.ts` (tool handlers), `src/toolDefinitionsV5.ts` + `src/v5Router.ts` (the 12-tool v5 surface), `src/tools/*` (per-domain CRUD), `src/utils/mapGenerator.ts` (template cloning + procedural generation), `knowledge/` (static reference data + bundled maps).
 
-```
-src/
-  server.ts              # MCP server entry point (tool dispatch + handlers)
-  index.ts               # Re-export entry
-  types/
-    rpgmaker.ts           # Shared TypeScript interfaces for all MV data structures
-  tools/
-    actorTools.ts         # Actor CRUD
-    animationTools.ts     # Animation get
-    assetTools.ts         # Asset scanning + tile ID categorization
-    classTools.ts         # Class CRUD
-    commonEventTools.ts   # Common event CRUD
-    enemyTools.ts         # Enemy CRUD + boss builder
-    itemTools.ts          # Item/Weapon/Armor CRUD
-    mapTools.ts           # Map CRUD + event builders + generation integration
-    projectTools.ts       # Project summary + path switch
-    skillTools.ts         # Skill CRUD + simplified builders
-    stateTools.ts         # State CRUD
-    systemTools.ts        # System switches/variables/title
-    tilesetTools.ts       # Tileset get/update
-    troopTools.ts         # Troop CRUD + encounter builder
-  utils/
-    fileHandler.ts        # readJson/writeJson/nextId/getMapPath
-    commandBuilder.ts     # Event command factory (35+ commands)
-    mapGenerator.ts       # Unified generator (Perlin, BSP, cellular, 21 themes)
-    logger.ts             # Logging utility
-  knowledge/
-    mapTemplates.ts       # Template index loading + search
-knowledge/
-  maps/                   # 106 ProjectR reference map JSONs
-  map-templates.json      # Template index
-  tile-ids.json           # Tile ID ranges and formulas
-  passage-flags.json      # Passage flag bits
-  event-commands.json     # Event command reference
-  enums.json              # Enum value reference
-  trait-effect-codes.json # Trait and effect codes
-  database-schemas.json   # MV data type schemas
-  image-paths.json        # Image path conventions
-```
-[
+[![DiegoLopez0208/RpgMakerMVUltimate-MCP MCP server](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP/badges/score.svg)](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP)
 
-![DiegoLopez0208/RpgMakerMVUltimate-MCP MCP server](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP/badges/score.svg)
-
-](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP)
 ## License
 
 MIT

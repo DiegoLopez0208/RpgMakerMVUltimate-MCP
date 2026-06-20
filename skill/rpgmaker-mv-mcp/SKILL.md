@@ -9,13 +9,14 @@ This MCP edits a real RPG Maker MV project on disk (`data/*.json`, validated aga
 
 ## The one rule that prevents 90% of bad output
 
-**Do NOT hand-paint tiles or place objects one tile at a time, and never invent IDs.** Build maps with `generate_map` and add content with the `manage_map_event` presets. Both place *real* multi-tile objects (houses, trees, chests) and use only IDs that exist. When you do need an ID (tile, sprite, troop, skill, item), get it from `get_project_context` — never guess.
+**Do NOT hand-paint tiles or place objects one tile at a time, and never invent IDs.** Build maps with `generate_map` and add content with the `manage_map_event` presets. `generate_map` is knowledge-driven: for most themes it **clones a real hand-authored reference map** from the 106 bundled templates (real multi-tile houses, walls, furniture) instead of painting tiles procedurally, so the output looks like a real RPG Maker map and only uses IDs that exist. When you do need an ID (tile, sprite, troop, skill, item), get it from `get_project_context` — never guess.
 
 ## Standard workflow
 
 1. **`get_project_context`** (detail `full`) — ALWAYS first. Returns every database id+name, switch/variable names, starting position, and the sprite filenames available per `img/` folder. This is your source of truth; read it before creating anything.
-2. **Build the world** with `generate_map`:
-   - `mode:"procedural"`, pick a `theme` (town, village, forest, dungeon, cave, world, beach, desert, snow, …). Omit `tilesetId` — it auto-selects the right tileset for the theme. The generator stamps real buildings/trees, autotiles terrain, and (for combat themes) auto-wires random encounters from existing troops.
+2. **Build the world** with `generate_map` (default `mode:"procedural"`, which is knowledge-driven):
+   - Pick a `theme` (town, village, forest, dungeon, cave, world, interior, castle, beach, desert, snow, …) and omit `tilesetId` — it auto-selects the right tileset. For themes with a bundled reference map (town, village, dungeon, interior, castle, world, …) it **clones a real hand-authored map** from the knowledge base, adapted to your tilesets; for themes without one (beach, swamp, desert) it generates procedurally. Combat themes auto-wire random encounters from existing troops.
+   - Want a specific reference map? List them with `get_project_context detail:"templates"`, then `generate_map mode:"template" templateId:<id>` (or pass `templateId` in procedural mode to force that one). Force pure procedural generation with `useTemplate:false`. Same `seed` + params → the same map.
    - `town`/`village` auto-create enterable house interiors with two-way warps (returned in `interiorMapIds`); opt out with `enterableHouses:false`.
    - To connect maps, use `edit_map action:"connect"` (bidirectional) or `manage_map_event preset:"door"` / `"teleport"`.
 3. **Populate** with `manage_map_event` presets (each builds a complete, working event):

@@ -1,64 +1,51 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.diegolopez0208/rpgmaker-mv-ultimate",
-  "description": "MCP server for RPG Maker MV project management. 12 consolidated tools for actors, classes, skills, items, weapons, armors, enemies, states, troops, maps, events, tilesets, animations, system settings, AI vision analysis, procedural map generation with 21 themes, and 106 bundled map templates. v4 tool names remain callable.",
+  "title": "RPG Maker MV Ultimate MCP",
+  "description": "Edit RPG Maker MV projects from an AI agent: 12 tools for maps, events, database, and knowledge-driven map generation that clones real reference maps for coherent, playable output.",
+  "version": "5.8.1",
   "repository": {
     "url": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP",
     "source": "github"
   },
-  "version": "5.8.0",
-  "categories": [
-    "developer-tools",
-    "gaming"
-  ],
-  "tags": [
-    "rpg-maker",
-    "game-development",
-    "rpg-maker-mv",
-    "procedural-generation",
-    "vision-ai"
-  ],
   "packages": [
     {
       "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "rpgmaker-mv-mcp",
-      "version": "5.8.0",
+      "version": "5.8.1",
       "transport": {
         "type": "stdio"
-      },
-      "command": {
-        "type": "node",
-        "args": [
-          "dist/index.js"
-        ]
       },
       "environmentVariables": [
         {
           "name": "RPGMAKER_PROJECT_PATH",
-          "description": "Path to your RPG Maker MV project",
-          "isRequired": true,
-          "format": "string",
+          "description": "Absolute path to the RPG Maker MV project to edit (the folder with data/ and js/). The server starts without it; needed for real editing, or call set_project_path at runtime.",
+          "isRequired": false,
           "isSecret": false
         },
         {
           "name": "VISION_API_URL",
-          "description": "Base URL for OpenAI-compatible Vision API (optional)",
+          "description": "Base URL of an OpenAI-compatible vision endpoint to enable analyze_image mode \"ai\" (e.g. https://api.openai.com or http://localhost:11434). Unset = vision disabled; every other tool works offline.",
           "isRequired": false,
-          "format": "string",
           "isSecret": false
         },
         {
           "name": "VISION_API_KEY",
-          "description": "API key for Vision API (optional)",
+          "description": "Bearer token for the vision endpoint (only sent when set).",
           "isRequired": false,
-          "format": "string",
           "isSecret": true
         },
         {
           "name": "VISION_MODEL",
-          "description": "Model name for Vision API (optional, defaults to meta/llama-3.2-90b-vision-instruct)",
+          "description": "Vision model name to request (e.g. gpt-4o, llava). Defaults to meta/llama-3.2-90b-vision-instruct.",
           "isRequired": false,
-          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "RPGMV_LEGACY_TOOLS",
+          "description": "Set to 1 to also advertise the 101 legacy v4 tool names (they remain callable regardless of this flag).",
+          "isRequired": false,
           "isSecret": false
         }
       ]
