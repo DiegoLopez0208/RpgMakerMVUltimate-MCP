@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.diegolopez0208/rpgmaker-mv-ultimate",
   "title": "RPG Maker MV Ultimate MCP",
-  "description": "Edit RPG Maker MV projects from an AI agent: 12 tools for maps, events, database, and knowledge-driven map generation that clones real reference maps for coherent, playable output.",
+  "description": "AI agent toolkit to edit RPG Maker MV: maps, events, database, knowledge-driven map generation",
   "version": "5.11.1",
   "repository": {
     "url": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP",
