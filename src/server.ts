@@ -865,7 +865,7 @@ export async function main() {
   }
 
   const server = new Server(
-    { name: 'rpgmaker-mv-mcp', version: '5.8.0' },
+    { name: 'rpgmaker-mv-mcp', version: '5.8.1' },
     { capabilities: { tools: {} } }
   );
 
@@ -952,5 +952,5 @@ export async function main() {
     };
   }
   await server.connect(transport);
-  logger.info('RPG Maker MV MCP server v5.8.0 running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
+  logger.info('RPG Maker MV MCP server v5.8.1 running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
 }
