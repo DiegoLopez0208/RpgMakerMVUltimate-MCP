@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.diegolopez0208/rpgmaker-mv-ultimate",
+  "name": "io.github.DiegoLopez0208/rpgmaker-mv-ultimate",
   "title": "RPG Maker MV Ultimate MCP",
   "description": "AI agent toolkit to edit RPG Maker MV: maps, events, database, knowledge-driven map generation",
-  "version": "5.11.1",
+  "version": "5.11.2",
   "repository": {
     "url": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP",
     "source": "github"
@@ -13,7 +13,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "rpgmaker-mv-mcp",
-      "version": "5.11.1",
+      "version": "5.11.2",
       "transport": {
         "type": "stdio"
       },
