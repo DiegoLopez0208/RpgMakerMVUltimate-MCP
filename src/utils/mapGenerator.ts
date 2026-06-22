@@ -4,6 +4,7 @@ import type { MapEvent, TilesetConfig, GeneratorOptions, MapTemplate } from '../
 import { applyAutotileShapes } from './autotile.js';
 import { pickStamp, stampObject, hasStamps, getStamps, type StampCategory, type Stamp } from './stamps.js';
 import { isTileA1, isRoofTile, isWallSideTile } from './engine.js';
+import { isStandable } from './placement.js';
 
 // Real scanned tiles for the active project's tileset (optional, set by
 // generateTileLayoutV3 when the caller passes availableTiles). Used by theme
@@ -1392,8 +1393,12 @@ function isWalkableGround(id: number): boolean {
 //   1. both upper/object layers are empty (no decoration, furniture, tree…),
 //   2. the GROUND1 tile is something the player can stand on,
 //   3. any GROUND2 overlay isn't an impassable wall/roof/water band.
-function isPlaceableFloor(data: number[], w: number, h: number, x: number, y: number): boolean {
+function isPlaceableFloor(data: number[], w: number, h: number, x: number, y: number, flags?: number[]): boolean {
   if (x < 1 || x >= w - 1 || y < 1 || y >= h - 1) return false;
+  // When the project's real tileset passage flags are available, defer to the
+  // engine's own passability (covers every layer + custom/plugin tilesets).
+  // Otherwise fall back to the autotile-range heuristic.
+  if (flags) return isStandable({ width: w, height: h, data: data }, flags, x, y);
   if (getTile(data, w, h, x, y, LAYER_UPPER1) !== 0 || getTile(data, w, h, x, y, LAYER_UPPER2) !== 0) return false;
   if (!isWalkableGround(getTile(data, w, h, x, y, LAYER_GROUND1))) return false;
   const g2 = getTile(data, w, h, x, y, LAYER_GROUND2);
@@ -1406,18 +1411,18 @@ function isPlaceableFloor(data: number[], w: number, h: number, x: number, y: nu
 // finally to the preferred coord even if non-ideal (so a map with no region-1
 // tiles still gets an event rather than losing it). Returns null only if the
 // preferred coord is out of bounds.
-function findFloorTile(data: number[], w: number, h: number, rng: PRNG, preferX: number, preferY: number): { x: number; y: number } | null {
+function findFloorTile(data: number[], w: number, h: number, rng: PRNG, preferX: number, preferY: number, flags?: number[]): { x: number; y: number } | null {
   const px = Math.max(1, Math.min(w - 2, preferX | 0));
   const py = Math.max(1, Math.min(h - 2, preferY | 0));
   // 1. The ideal spot, if it's already a real floor.
-  if (isPlaceableFloor(data, w, h, px, py)) return { x: px, y: py };
+  if (isPlaceableFloor(data, w, h, px, py, flags)) return { x: px, y: py };
   // 2. Random rejection sampling, biased toward region-1 tiles (roads, plazas,
   //    intended walkable areas) so NPCs cluster where the map "wants" them
   //    rather than on any random patch of walkable grass.
   let anyFloor: { x: number; y: number } | null = null;
   for (let attempt = 0; attempt < 80; attempt++) {
     const x = rng.nextInt(1, w - 2), y = rng.nextInt(1, h - 2);
-    if (!isPlaceableFloor(data, w, h, x, y)) continue;
+    if (!isPlaceableFloor(data, w, h, x, y, flags)) continue;
     if (data[(LAYER_REGION * h + y) * w + x] === 1) return { x: x, y: y };
     if (!anyFloor) anyFloor = { x: x, y: y };
   }
@@ -1429,7 +1434,7 @@ function findFloorTile(data: number[], w: number, h: number, rng: PRNG, preferX:
   let bestDist = Infinity;
   for (let y = 1; y < h - 1; y++)
     for (let x = 1; x < w - 1; x++) {
-      if (!isPlaceableFloor(data, w, h, x, y)) continue;
+      if (!isPlaceableFloor(data, w, h, x, y, flags)) continue;
       const dx = x - px, dy = y - py, d = dx * dx + dy * dy;
       if (d < bestDist) { bestDist = d; best = { x: x, y: y }; }
     }
@@ -1484,6 +1489,10 @@ function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: Ge
   const addEvents = (opts as Record<string, boolean>).addEvents !== false;
   if (!addEvents) return events;
 
+  // Optional real tileset passage flags: when present, event placement uses
+  // true engine passability instead of the autotile-range heuristic.
+  const flags = (opts as Record<string, number[]>).tilesetFlags;
+
   const teleportPositions: TransferPoint[] = [];
   const transferPoints = (opts as Record<string, TransferPoint[]>).transferPoints;
   if (transferPoints) {
@@ -1498,7 +1507,7 @@ function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: Ge
       // Place chests on a real floor tile (region 1, not inside a wall/water).
       // Was: rng.nextInt(3, w-4) with no check — chests could land in walls.
       const spot = data
-        ? findFloorTile(data, w, h, rng, rng.nextInt(3, w - 4), rng.nextInt(3, h - 4))
+        ? findFloorTile(data, w, h, rng, rng.nextInt(3, w - 4), rng.nextInt(3, h - 4), flags)
         : { x: rng.nextInt(3, w - 4), y: rng.nextInt(3, h - 4) };
       if (spot) events.push(makeChestEvent(events.length, spot.x, spot.y));
     }
@@ -1507,7 +1516,7 @@ function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: Ge
     // which could sit inside a wall.
     const bossRoom = (opts as Record<string, unknown>).bossRoom as { cx: number; cy: number } | undefined;
     const bossPrefer = bossRoom ? { x: bossRoom.cx, y: bossRoom.cy } : { x: Math.floor(w * 0.75), y: Math.floor(h * 0.25) };
-    const bossSpot = data ? findFloorTile(data, w, h, rng, bossPrefer.x, bossPrefer.y) : bossPrefer;
+    const bossSpot = data ? findFloorTile(data, w, h, rng, bossPrefer.x, bossPrefer.y, flags) : bossPrefer;
     if (bossSpot) events.push(makeBossEvent(events.length, bossSpot.x, bossSpot.y, 1));
   }
 
@@ -1516,14 +1525,14 @@ function generateEvents(w: number, h: number, rng: PRNG, theme: string, opts: Ge
     const numNpcs = rng.nextInt(2, 5);
     for (let i = 0; i < numNpcs; i++) {
       const spot = data
-        ? findFloorTile(data, w, h, rng, rng.nextInt(3, w - 4), rng.nextInt(3, h - 4))
+        ? findFloorTile(data, w, h, rng, rng.nextInt(3, w - 4), rng.nextInt(3, h - 4), flags)
         : { x: rng.nextInt(3, w - 4), y: rng.nextInt(3, h - 4) };
       if (spot) events.push(makeNpcEvent(events.length, spot.x, spot.y, npcNames[i % npcNames.length], pickDialogue(theme, rng)));
     }
   }
 
   if (theme === 'interior' || theme === 'magic_interior' || theme === 'space_interior') {
-    const spot = data ? findFloorTile(data, w, h, rng, Math.floor(w / 2) + 1, Math.floor(h / 2)) : { x: Math.floor(w / 2) + 1, y: Math.floor(h / 2) };
+    const spot = data ? findFloorTile(data, w, h, rng, Math.floor(w / 2) + 1, Math.floor(h / 2), flags) : { x: Math.floor(w / 2) + 1, y: Math.floor(h / 2) };
     if (spot) events.push(makeNpcEvent(events.length, spot.x, spot.y, 'Inhabitant', pickDialogue('town', rng)));
   }
 

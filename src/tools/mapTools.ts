@@ -187,6 +187,13 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
         if (tsCfg && tsCfg.availableTiles) v3opts.availableTiles = tsCfg.availableTiles;
     } catch (_) { /* scan optional — generator falls back to its built-in table */ }
 
+    // Pass the tileset's real passage flags so generated events are placed by
+    // true engine passability (isStandable), not just the autotile-range
+    // heuristic — fixes the rare NPC landing on an A2 tile the project's tileset
+    // actually flags impassable.
+    const genFlags = await loadTilesetFlags(projectPath, tilesetId);
+    if (genFlags) v3opts.tilesetFlags = genFlags;
+
     const tileResult = await generateTileLayoutV3(width, height, theme, v3opts);
 
     const map: RpgMakerMap = {
