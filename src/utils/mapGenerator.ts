@@ -3,6 +3,7 @@ import { readFile, access } from 'fs/promises';
 import type { MapEvent, TilesetConfig, GeneratorOptions, MapTemplate } from '../types/rpgmaker.js';
 import { applyAutotileShapes } from './autotile.js';
 import { pickStamp, stampObject, hasStamps, getStamps, type StampCategory, type Stamp } from './stamps.js';
+import { isTileA1, isRoofTile, isWallSideTile } from './engine.js';
 
 // Real scanned tiles for the active project's tileset (optional, set by
 // generateTileLayoutV3 when the caller passes availableTiles). Used by theme
@@ -952,12 +953,18 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
         if (DOOR_TILES.has(t)) doors.push({ x: x, y: y });
       }
   }
-  // Tag walkable tiles as region 1 (for event placement). Walls (A4 >=5888) and
-  // water (A1 2048-2096) are excluded.
+  // Tag genuinely walkable tiles as region 1 (the hint event placement biases
+  // toward). Engine-grounded: the GROUND1 tile must be standable, any GROUND2
+  // overlay must not be an impassable wall/roof/water band, and nothing can be
+  // sitting on the object layers. The old rule only excluded A4 walls + a
+  // narrow water range on layer 0, so it tagged A3 roofs and every decorated
+  // tile as "walkable" — that's why events landed on rooftops.
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
-      const g = data[(0 * h + y) * w + x];
-      if (g >= 5888 || (g >= 2048 && g <= 2096)) continue;
+      if (!isWalkableGround(getTile(data, w, h, x, y, LAYER_GROUND1))) continue;
+      const g2 = getTile(data, w, h, x, y, LAYER_GROUND2);
+      if (g2 !== 0 && !isWalkableGround(g2)) continue;
+      if (getTile(data, w, h, x, y, LAYER_UPPER1) !== 0 || getTile(data, w, h, x, y, LAYER_UPPER2) !== 0) continue;
       setRegion(data, w, h, x, y, 1);
     }
   return doors;
@@ -1361,11 +1368,37 @@ function generateWorldTheme(data: number[], w: number, h: number, _rng: PRNG, pe
 // with region 3, so "region === 1 AND both upper layers empty" is a reliable
 // placeability test across all themes that generate events.
 
+// A ground-layer tile the player can actually stand on, classified by the
+// engine's own autotile predicates (no per-theme guessing):
+//   • A2 ground autotiles (grass/dirt/road/interior floor) → walkable
+//   • A4 wall-TOPS (the passable cap of a low wall)         → walkable
+//   • A5 lower ground tiles                                 → walkable
+//   • A3 roofs + A3/A4 wall-SIDES                           → NOT walkable
+//   • A1 water/waterfall sheet                              → NOT walkable
+// Empty (0) is "no ground here": not a floor on layer 0, but transparent (no
+// obstacle) when it appears on the GROUND2 overlay.
+function isWalkableGround(id: number): boolean {
+  if (id === 0) return false;
+  if (isTileA1(id)) return false;                         // water / waterfall
+  if (isRoofTile(id) || isWallSideTile(id)) return false; // roofs, wall sides
+  return true;
+}
+
+// Authoritative placeability test. Earlier this trusted region===1, but the
+// region layer is tagged inconsistently across paths (template clones in
+// particular used to mark roofs/walls as region 1), which dropped events onto
+// roofs and walls. We now verify walkability directly from the tile data, so
+// placement is correct regardless of how (or whether) regions were tagged:
+//   1. both upper/object layers are empty (no decoration, furniture, tree…),
+//   2. the GROUND1 tile is something the player can stand on,
+//   3. any GROUND2 overlay isn't an impassable wall/roof/water band.
 function isPlaceableFloor(data: number[], w: number, h: number, x: number, y: number): boolean {
   if (x < 1 || x >= w - 1 || y < 1 || y >= h - 1) return false;
-  const region = data[(LAYER_REGION * h + y) * w + x];
-  if (region !== 1) return false;
-  return getTile(data, w, h, x, y, LAYER_UPPER1) === 0 && getTile(data, w, h, x, y, LAYER_UPPER2) === 0;
+  if (getTile(data, w, h, x, y, LAYER_UPPER1) !== 0 || getTile(data, w, h, x, y, LAYER_UPPER2) !== 0) return false;
+  if (!isWalkableGround(getTile(data, w, h, x, y, LAYER_GROUND1))) return false;
+  const g2 = getTile(data, w, h, x, y, LAYER_GROUND2);
+  if (g2 !== 0 && !isWalkableGround(g2)) return false;
+  return true;
 }
 
 // Find a walkable floor tile by rejection sampling. `preferX/preferY` is the
@@ -1376,14 +1409,34 @@ function isPlaceableFloor(data: number[], w: number, h: number, x: number, y: nu
 function findFloorTile(data: number[], w: number, h: number, rng: PRNG, preferX: number, preferY: number): { x: number; y: number } | null {
   const px = Math.max(1, Math.min(w - 2, preferX | 0));
   const py = Math.max(1, Math.min(h - 2, preferY | 0));
+  // 1. The ideal spot, if it's already a real floor.
   if (isPlaceableFloor(data, w, h, px, py)) return { x: px, y: py };
-  for (let attempt = 0; attempt < 60; attempt++) {
+  // 2. Random rejection sampling, biased toward region-1 tiles (roads, plazas,
+  //    intended walkable areas) so NPCs cluster where the map "wants" them
+  //    rather than on any random patch of walkable grass.
+  let anyFloor: { x: number; y: number } | null = null;
+  for (let attempt = 0; attempt < 80; attempt++) {
     const x = rng.nextInt(1, w - 2), y = rng.nextInt(1, h - 2);
-    if (isPlaceableFloor(data, w, h, x, y)) return { x: x, y: y };
+    if (!isPlaceableFloor(data, w, h, x, y)) continue;
+    if (data[(LAYER_REGION * h + y) * w + x] === 1) return { x: x, y: y };
+    if (!anyFloor) anyFloor = { x: x, y: y };
   }
-  // Last resort: a non-floor tile is still better than dropping the event
-  // entirely (the engine won't crash on an event sitting on a wall — it just
-  // can't be stepped on). Prefer the original coord.
+  if (anyFloor) return anyFloor;
+  // 3. Deterministic full scan for the floor tile NEAREST the preferred spot.
+  //    Guarantees a genuine floor whenever one exists, instead of the old
+  //    behaviour of dumping the event on a wall when sampling got unlucky.
+  let best: { x: number; y: number } | null = null;
+  let bestDist = Infinity;
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1; x < w - 1; x++) {
+      if (!isPlaceableFloor(data, w, h, x, y)) continue;
+      const dx = x - px, dy = y - py, d = dx * dx + dy * dy;
+      if (d < bestDist) { bestDist = d; best = { x: x, y: y }; }
+    }
+  if (best) return best;
+  // 4. Truly no walkable tile on the whole map — keep the event at the clamped
+  //    preferred coord rather than dropping it (the engine won't crash on an
+  //    event that simply can't be stepped on).
   return { x: px, y: py };
 }
 

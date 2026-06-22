@@ -7,6 +7,19 @@ import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Par
 
 import { generateTileLayoutV3, generateFromTemplate, THEMES as V3_THEMES, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
+import { nearestStandable } from '../utils/placement.js';
+
+// Load the passage flags for a map's tileset (Tilesets[id].flags, one entry per
+// tileId). Returns null if Tilesets.json is missing or the tileset has no flags
+// (e.g. the dummy project data) so callers can skip passability snapping.
+async function loadTilesetFlags(projectPath: string, tilesetId: number): Promise<number[] | null> {
+  try {
+    const tilesets = await readJson(projectPath, 'Tilesets.json') as Array<{ flags?: number[] } | null>;
+    const ts = tilesets && tilesets[tilesetId];
+    if (ts && Array.isArray(ts.flags) && ts.flags.length > 0) return ts.flags;
+  } catch (_) { /* no tileset data → skip snapping */ }
+  return null;
+}
 
 /**
  * Get map info for all maps in the project.
@@ -762,6 +775,19 @@ async function createMapEvent(projectPath: string, mapId: number, x: number, y: 
   const newId = nextId(map.events);
   const triggerVal = toNum(trigger !== undefined ? trigger : 0, 'trigger');
 
+  // Passability snapping: if the requested tile isn't somewhere the player can
+  // actually stand (a wall, a roof, the void, or an unreachable pocket), move
+  // the event to the nearest reachable tile instead of burying it. Tiles that
+  // are already standable — including doors/transfers that sit on a passable
+  // floor under an overhead tile — are left exactly where they were asked for.
+  let px = toNum(x, 'x') as number, py = toNum(y, 'y') as number;
+  let relocated = false;
+  const flags = await loadTilesetFlags(projectPath, map.tilesetId);
+  if (flags) {
+    const snap = nearestStandable(map, flags, px, py);
+    px = snap.x; py = snap.y; relocated = snap.relocated;
+  }
+
   if (pages && pages.length > 0) {
     // Apply trigger to pages that don't have one set
     for (let i = 0; i < pages.length; i++) {
@@ -786,8 +812,8 @@ async function createMapEvent(projectPath: string, mapId: number, x: number, y: 
     id: newId,
     name: name || 'EV' + newId,
     note: '',
-    x: x,
-    y: y,
+    x: px,
+    y: py,
     pages: pages
   };
 
@@ -797,6 +823,11 @@ async function createMapEvent(projectPath: string, mapId: number, x: number, y: 
 
   const mapPath = getMapPath(projectPath, numMapId);
   await writeMapJson(projectPath, mapPath, map);
+  // Surface relocation so the caller (often an LLM agent) learns the real spot
+  // instead of assuming its requested coordinate stuck.
+  if (relocated) {
+    return Object.assign({}, event, { relocated: true, requested: { x: toNum(x, 'x'), y: toNum(y, 'y') } });
+  }
   return event;
 }
 

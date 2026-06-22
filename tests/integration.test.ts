@@ -10,7 +10,7 @@ import { TOOL_DEFINITIONS_V5 } from "../src/toolDefinitionsV5.js";
 import { TOOL_DEFINITIONS } from "../src/toolDefinitions.js";
 import { readdirSync } from "fs";
 import { applyAutotileShapes, autotileShape, autotileKind } from "../src/utils/autotile.js";
-import { makeChestEvent, makeBossEvent, makeAutotileId, noiseScale } from "../src/utils/mapGenerator.js";
+import { makeChestEvent, makeBossEvent, makeAutotileId, noiseScale, isPlaceableFloor } from "../src/utils/mapGenerator.js";
 import { cmd } from "../src/utils/commandBuilder.js";
 import { CreateMapSchema } from "../src/utils/validation.js";
 
@@ -646,14 +646,37 @@ describe("pretty-maps fixes (5.9.0)", () => {
       const ev = map.events[i];
       if (!ev) continue;
       if (ev.name === "Chest" || ev.name === "Boss") {
-        // Region 1 = walkable floor in the dungeon generator; a chest/boss must
-        // not sit on a wall (region 0) or water (region 3). Tolerate the rare
-        // last-resort fallback by requiring at least the great majority to pass.
-        expect(regionOf(ev.x, ev.y)).toBe(1);
+        // In the dungeon generator region 1 = room/corridor floor and region 2 =
+        // the boss room (where the boss is intentionally placed). Both are
+        // walkable; a chest/boss must never sit on a wall (region 0) or water
+        // (region 3). The upper/object layers must also be clear.
+        expect([1, 2]).toContain(regionOf(ev.x, ev.y));
+        expect(map.data[(2 * h + ev.y) * w + ev.x]).toBe(0); // LAYER_UPPER1 empty
+        expect(map.data[(3 * h + ev.y) * w + ev.x]).toBe(0); // LAYER_UPPER2 empty
         checked++;
       }
     }
     expect(checked).toBeGreaterThan(0); // the gate actually ran
+  });
+
+  it("template-cloned town places every NPC on walkable floor, never on a roof/wall (5.11.3 placement fix)", async () => {
+    // Town/village clone a hand-authored RTP template whose buildings are A3
+    // roof/wall autotiles on the ground layer. The old region-tagging marked
+    // those roofs as walkable, so NPCs spawned on rooftops. isPlaceableFloor is
+    // now authoritative (engine walkability + clear object layers), so every
+    // generated event must satisfy it.
+    const res = await dispatchTool("generate_map", { mode: "procedural", theme: "town", width: 40, height: 40, seed: 4242, enterableHouses: false }) as { mapId: number };
+    const map = dataFile("Map" + String(res.mapId).padStart(3, "0") + ".json");
+    const w = map.width, h = map.height;
+    let npcs = 0;
+    for (let i = 1; i < map.events.length; i++) {
+      const ev = map.events[i];
+      if (!ev || !ev.name) continue;
+      if (/^(Door|Transfer)/.test(ev.name)) continue; // door/transfer events sit on doorways by design
+      expect(isPlaceableFloor(map.data, w, h, ev.x, ev.y)).toBe(true);
+      npcs++;
+    }
+    expect(npcs).toBeGreaterThan(0);
   });
 
   it("generated town NPCs speak themed dialogue, not the '...' placeholder (5.9.0)", async () => {
