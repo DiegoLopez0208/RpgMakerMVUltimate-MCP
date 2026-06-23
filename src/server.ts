@@ -38,8 +38,8 @@ import * as animationTools from './tools/animationTools.js';
 import * as projectTools from './tools/projectTools.js';
 import * as assetTools from './tools/assetTools.js';
 import { TOOL_DEFINITIONS } from './toolDefinitions.js';
-import { TOOL_DEFINITIONS_V5 } from './toolDefinitionsV5.js';
-import { routeV5Tool, V5_TOOL_NAMES } from './v5Router.js';
+import { TOOL_DEFINITIONS_LEGACY } from './toolDefinitionsLegacy.js';
+import { routeTool, TOOL_NAMES } from './router.js';
 
 const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
 
@@ -47,7 +47,7 @@ const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
 let toolCallQueue: Promise<void> = Promise.resolve();
 
 // Zod validation applied before dispatch, keyed by (legacy) tool name.
-// v5 tools route through these same legacy names, so validation applies to both.
+// The 12 consolidated tools route through these same legacy names, so validation applies to both.
 const SCHEMA_MAP: Record<string, { safeParse: (a: unknown) => { success: boolean; data?: unknown; error?: unknown } }> = {
   analyze_screenshot: AnalyzeScreenshotSchema,
   create_map: CreateMapSchema,
@@ -62,8 +62,8 @@ const SCHEMA_MAP: Record<string, { safeParse: (a: unknown) => { success: boolean
 /**
  * Validate (when a schema exists) and dispatch one legacy-named tool call.
  * This is the single entry point used by the MCP CallTool handler and by the
- * v5 router; it is NOT serialized itself — serialization happens once at the
- * request level so nested v5→legacy calls don't deadlock.
+ * router; it is NOT serialized itself — serialization happens once at the
+ * request level so nested consolidated→legacy calls don't deadlock.
  */
 export async function executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   const schema = SCHEMA_MAP[name];
@@ -78,11 +78,11 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
   return handleToolCall(name, args);
 }
 
-/** Dispatch one tool call, v5 or legacy. Exported for integration tests. */
+/** Dispatch one tool call, consolidated or legacy. Exported for integration tests. */
 export async function dispatchTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-  if (V5_TOOL_NAMES.includes(name)) {
+  if (TOOL_NAMES.includes(name)) {
     const p = projectTools.getProjectPath() || PROJECT_PATH;
-    return routeV5Tool(executeTool, p, name, args);
+    return routeTool(executeTool, p, name, args);
   }
   return executeTool(name, args);
 }
@@ -869,12 +869,12 @@ export async function main() {
     { capabilities: { tools: {} } }
   );
 
-  // Default: the 12 consolidated v5 tools. RPGMV_LEGACY_TOOLS=1 additionally
-  // advertises the v4 names (calls to v4 names always work either way).
+  // Default: the 12 consolidated tools. RPGMV_LEGACY_TOOLS=1 additionally
+  // advertises the legacy names (calls to legacy names always work either way).
   const legacyMode = process.env.RPGMV_LEGACY_TOOLS === '1';
   const advertisedTools = legacyMode
-    ? TOOL_DEFINITIONS_V5.concat(TOOL_DEFINITIONS.filter(function(t) { return !V5_TOOL_NAMES.includes(t.name); }) as typeof TOOL_DEFINITIONS_V5)
-    : TOOL_DEFINITIONS_V5;
+    ? TOOL_DEFINITIONS.concat(TOOL_DEFINITIONS_LEGACY.filter(function(t) { return !TOOL_NAMES.includes(t.name); }) as typeof TOOL_DEFINITIONS)
+    : TOOL_DEFINITIONS;
 
   server.setRequestHandler(ListToolsRequestSchema, async function() {
     return { tools: advertisedTools };

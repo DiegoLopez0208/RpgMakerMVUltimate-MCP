@@ -152,7 +152,7 @@ npm test           # vitest
 npm run dev        # tsx watch mode
 ```
 
-Source: `src/server.ts` (tool handlers), `src/toolDefinitionsV5.ts` + `src/v5Router.ts` (the 12-tool v5 surface), `src/tools/*` (per-domain CRUD), `src/utils/mapGenerator.ts` (template cloning + procedural generation), `knowledge/` (static reference data + bundled maps).
+Source: `src/server.ts` (tool handlers), `src/toolDefinitions.ts` + `src/router.ts` (the 12-tool surface), `src/tools/*` (per-domain CRUD), `src/utils/mapGenerator.ts` (template cloning + procedural generation), `knowledge/` (static reference data + bundled maps).
 
 [![DiegoLopez0208/RpgMakerMVUltimate-MCP MCP server](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP/badges/score.svg)](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP)
 

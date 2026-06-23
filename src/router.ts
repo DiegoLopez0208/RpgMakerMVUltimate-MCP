@@ -1,5 +1,5 @@
 /**
- * v5Router.ts — routes the 12 consolidated v5 tools onto the existing
+ * router.ts — routes the 12 consolidated tools onto the existing
  * per-operation implementations (the same code paths the 101 legacy tools use).
  *
  * Most branches translate (toolName, args) into a legacy tool invocation via
@@ -373,7 +373,7 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
   }
 }
 
-async function getProjectContextV5(executeTool: ExecuteTool, args: Record<string, unknown>) {
+async function getProjectContext(executeTool: ExecuteTool, args: Record<string, unknown>) {
   const detail = (args.detail as string) || 'full';
   switch (detail) {
     case 'summary':
@@ -409,14 +409,14 @@ async function analyzeImage(executeTool: ExecuteTool, args: Record<string, unkno
   }
 }
 
-export const V5_TOOL_NAMES = [
+export const TOOL_NAMES = [
   'query_database', 'create_database_entry', 'update_database_entry', 'delete_database_entry',
   'query_map', 'generate_map', 'edit_map', 'manage_map_event',
   'manage_system', 'get_project_context', 'set_project_path', 'analyze_image',
   'list_plugins', 'get_plugin_status', 'toggle_plugin'
 ];
 
-export async function routeV5Tool(executeTool: ExecuteTool, projectPath: string, name: string, args: Record<string, unknown>): Promise<unknown> {
+export async function routeTool(executeTool: ExecuteTool, projectPath: string, name: string, args: Record<string, unknown>): Promise<unknown> {
   switch (name) {
     case 'query_database': return queryDatabase(executeTool, projectPath, args);
     case 'create_database_entry': return createDatabaseEntry(executeTool, args);
@@ -430,7 +430,7 @@ export async function routeV5Tool(executeTool: ExecuteTool, projectPath: string,
     case 'list_plugins': return executeTool('list_plugins', {});
     case 'get_plugin_status': return executeTool('get_plugin_status', {});
     case 'toggle_plugin': return executeTool('toggle_plugin', { pluginName: requireArg(args, 'pluginName', 'toggle_plugin'), enabled: requireArg(args, 'enabled', 'toggle_plugin') });
-    case 'get_project_context': return getProjectContextV5(executeTool, args);
+    case 'get_project_context': return getProjectContext(executeTool, args);
     case 'set_project_path': return executeTool('set_project_path', { path: requireArg(args, 'path', 'set_project_path') });
     case 'analyze_image': return analyzeImage(executeTool, args);
     default:

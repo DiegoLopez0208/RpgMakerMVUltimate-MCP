@@ -31,7 +31,7 @@ npm install
 The server exposes tools through **two parallel systems**:
 
 1. **Legacy tools** (`server.ts`) — direct function dispatch via `executeTool()`
-2. **v5 tools** (`v5Router.ts`) — higher-level routing with richer parameters
+2. **Consolidated tools** (`router.ts`) — higher-level routing with richer parameters
 
 When adding a tool, you usually need to update **both**.
 
@@ -40,8 +40,8 @@ When adding a tool, you usually need to update **both**.
 1. **Implement** in `src/tools/mapTools.ts` (or `systemTools.ts`, `projectTools.ts`, etc.)
 2. **Export** it at the bottom of the file
 3. **Wire legacy handler** in `src/server.ts` `handleToolCall` switch
-4. **Wire v5 router** in `src/v5Router.ts` `routeV5Tool` switch (if it maps to a v5 tool name)
-5. **Add tool definition** in `src/toolDefinitions.ts` (legacy) and/or `src/toolDefinitionsV5.ts` (v5)
+4. **Wire router** in `src/router.ts` `routeTool` switch (if it maps to a consolidated tool name)
+5. **Add tool definition** in `src/toolDefinitionsLegacy.ts` (legacy) and/or `src/toolDefinitions.ts` (consolidated)
 6. **Write tests** in `tests/integration.test.ts` following TDD: RED → GREEN → refactor
 
 ### Adding a System / Project Tool
@@ -94,9 +94,9 @@ npx tsc --noEmit
 ```
 src/
   server.ts          — MCP server entry, legacy tool dispatch, getProjectContext
-  v5Router.ts        — v5 tool routing, parameter transformation
-  toolDefinitions.ts — Legacy tool JSON schemas
-  toolDefinitionsV5.ts — v5 tool JSON schemas
+  router.ts          — Consolidated tool routing, parameter transformation
+  toolDefinitions.ts — Consolidated (12-tool) JSON schemas
+  toolDefinitionsLegacy.ts — Legacy tool JSON schemas
   types/rpgmaker.ts  — Shared TypeScript interfaces
   tools/             — Tool implementations (map, system, project, enemy, skill, asset, tileset)
   utils/             — Shared utilities (mapGenerator, autotile, validation, security, etc.)
@@ -117,7 +117,7 @@ tests/
 
 ## Common Pitfalls
 
-- **Forgetting v5 routing** — a legacy tool works but the v5 alias fails
+- **Forgetting router wiring** — a legacy tool works but the consolidated alias fails
 - **Missing exports** — function implemented but not exported from the tool module
 - **Sync I/O in async paths** — prefer `readFile` over `readFileSync` in async functions
 - **Module-level state leaks** — concurrent requests can corrupt shared mutable variables

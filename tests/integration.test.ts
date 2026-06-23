@@ -6,8 +6,8 @@ import sharp from "sharp";
 
 import { dispatchTool } from "../src/server.js";
 import * as projectTools from "../src/tools/projectTools.js";
-import { TOOL_DEFINITIONS_V5 } from "../src/toolDefinitionsV5.js";
 import { TOOL_DEFINITIONS } from "../src/toolDefinitions.js";
+import { TOOL_DEFINITIONS_LEGACY } from "../src/toolDefinitionsLegacy.js";
 import { readdirSync } from "fs";
 import { applyAutotileShapes, autotileShape, autotileKind } from "../src/utils/autotile.js";
 import { makeChestEvent, makeBossEvent, makeAutotileId, noiseScale, isPlaceableFloor } from "../src/utils/mapGenerator.js";
@@ -51,17 +51,17 @@ afterAll(() => {
   rmSync(projectDir, { recursive: true, force: true });
 });
 
-describe("v5 tool surface", () => {
+describe("consolidated tool surface", () => {
   it("exposes exactly 12 tools, all annotated and described", () => {
-    expect(TOOL_DEFINITIONS_V5.length).toBe(12);
-    for (const t of TOOL_DEFINITIONS_V5) {
+    expect(TOOL_DEFINITIONS.length).toBe(12);
+    for (const t of TOOL_DEFINITIONS) {
       expect(t.annotations, t.name).toBeDefined();
       expect(t.description.length, t.name).toBeGreaterThan(120);
     }
   });
 
   it("keeps the legacy v4 definitions available for legacy mode", () => {
-    expect(TOOL_DEFINITIONS.length).toBeGreaterThan(90);
+    expect(TOOL_DEFINITIONS_LEGACY.length).toBeGreaterThan(90);
   });
 });
 
