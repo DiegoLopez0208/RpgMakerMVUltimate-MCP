@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.11.4] - 2026-06-23
+
+### Changed
+- **Dropped the "V5" naming now that the 12-tool surface is simply the default.** `toolDefinitionsV5.ts` → `toolDefinitions.ts` (`TOOL_DEFINITIONS`), the old 101-tool `toolDefinitions.ts` → `toolDefinitionsLegacy.ts` (`TOOL_DEFINITIONS_LEGACY`), and `v5Router.ts` → `router.ts` (`routeV5Tool`→`routeTool`, `V5_TOOL_NAMES`→`TOOL_NAMES`). No behavior change; the legacy tools are still opt-in via `RPGMV_LEGACY_TOOLS=1`.
+
+### Fixed
+- Aligned all version references — `package-lock.json` was stale at 5.8.0; `package.json`, `server.json`, the lockfile and the `src/server.ts` banner now all read the published version.
+
+### Removed
+- Internal AI planning doc `PLAN_V5.md`.
+
 ## [5.9.0] - 2026-06-17
 
 ### Fixed
