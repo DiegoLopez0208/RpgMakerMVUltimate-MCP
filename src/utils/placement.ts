@@ -118,6 +118,32 @@ export function nearestStandable(map: PlaceableMap, flags: number[], x: number, 
   return { x: best.x, y: best.y, relocated: true };
 }
 
+/**
+ * Pick a safe spawn/start point for a map: a tile that is standable AND reachable
+ * (a member of the main playable region — never void, a wall, or a walled-in
+ * pocket the player can't leave). Biased toward the bottom-centre of that region,
+ * the natural "player walks in from the south" entrance, which reads correctly
+ * for towns, exteriors and dungeons alike. Falls back to the map centre only if
+ * the map has no standable tiles at all (a degenerate/broken map).
+ */
+export function chooseSpawn(map: PlaceableMap, flags: number[]): { x: number; y: number } {
+  const region = largestStandableRegion(map, flags);
+  if (region.length === 0) return { x: Math.floor(map.width / 2), y: Math.floor(map.height / 2) };
+  const w = map.width;
+  let minX = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < region.length; i++) {
+    const rx = region[i] % w, ry = (region[i] - (region[i] % w)) / w;
+    if (rx < minX) minX = rx;
+    if (rx > maxX) maxX = rx;
+    if (ry > maxY) maxY = ry;
+  }
+  // Aim at the bottom-centre of the playable area, then snap to the nearest
+  // reachable tile — guaranteed standable and inside the main region.
+  const centerX = Math.floor((minX + maxX) / 2);
+  const near = nearestStandable(map, flags, centerX, maxY);
+  return { x: near.x, y: near.y };
+}
+
 export interface WalkableSummary {
   usableRegionTiles: number;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };

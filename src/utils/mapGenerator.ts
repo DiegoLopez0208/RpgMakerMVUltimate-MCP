@@ -895,16 +895,90 @@ const DOOR_TILES = new Set([62, 63, 64, 68]);
 // matching the theme's categories is auto-picked from the full 106-template
 // index. Returns detected door positions (for town/exterior themes) or null if
 // no template is available.
-async function cloneTemplateForTheme(data: number[], w: number, h: number, theme: string, templateId?: number): Promise<{ x: number; y: number }[] | null> {
+type TemplateMeta = { id: number; category: string; theme: string; width: number; height: number; tilesetId: number };
+
+// Score a candidate template against the request (lower = better fit). Combines
+// area closeness, aspect-ratio match, an exact-theme bonus, a matching-tileset
+// bonus (so cloned tiles actually render on the project's tileset), and a
+// penalty for templates smaller than the request (cropping a bigger map keeps
+// real content; padding a smaller one leaves empty void).
+function scoreTemplate(t: TemplateMeta, w: number, h: number, theme: string, preferredTileset: number): number {
+  const areaRatio = (t.width * t.height) / (w * h);
+  // A template at least as big as the request is fine — we crop the best window.
+  // Only mildly discourage cropping a tiny corner out of a huge map. A template
+  // smaller than the request must be padded (void/empty), which looks broken, so
+  // penalise it in proportion to how much is missing.
+  let sizeCost: number;
+  if (t.width >= w && t.height >= h) {
+    sizeCost = Math.max(0, Math.log2(areaRatio)) * 0.15;
+  } else {
+    sizeCost = 0.5 + (1 - Math.min(1, areaRatio)) * 0.5;
+  }
+  const aspectCost = Math.abs(t.width / t.height - w / h) * 0.3;
+  const tilesetBonus = t.tilesetId === preferredTileset ? -0.6 : 0;
+  const themeBonus = t.theme === theme ? -0.4 : 0;
+  return sizeCost + aspectCost + tilesetBonus + themeBonus;
+}
+
+// Find the (offsetX, offsetY) crop window of size (w, h) inside a (tw, th)
+// template that captures the most map content — measured on the object/overlay
+// layers where buildings, walls and decoration live, so we never crop off the
+// interesting half of a map. Uses a summed-area table for O(tw*th) lookup.
+function bestCropOffset(map: { width: number; height: number; data: number[] }, w: number, h: number): { ox: number; oy: number } {
+  const tw = map.width, th = map.height;
+  if (tw <= w && th <= h) return { ox: 0, oy: 0 };
+  // Per-cell content weight: object layers (UPPER1/UPPER2) and GROUND2 overlay
+  // count more than the base ground, which is usually a uniform floor fill.
+  const weight = new Array((tw + 1) * (th + 1)).fill(0) as number[];
+  for (let y = 0; y < th; y++) {
+    for (let x = 0; x < tw; x++) {
+      let cell = 0;
+      if (map.data[(LAYER_GROUND1 * th + y) * tw + x]) cell += 1;
+      if (map.data[(LAYER_GROUND2 * th + y) * tw + x]) cell += 2;
+      if (map.data[(LAYER_UPPER1 * th + y) * tw + x]) cell += 3;
+      if (map.data[(LAYER_UPPER2 * th + y) * tw + x]) cell += 3;
+      const i = (y + 1) * (tw + 1) + (x + 1);
+      weight[i] = cell + weight[i - 1] + weight[i - (tw + 1)] - weight[i - (tw + 1) - 1];
+    }
+  }
+  const cw = Math.min(w, tw), ch = Math.min(h, th);
+  let best = -1, bestOx = 0, bestOy = 0;
+  for (let oy = 0; oy + ch <= th; oy++) {
+    for (let ox = 0; ox + cw <= tw; ox++) {
+      const x2 = ox + cw, y2 = oy + ch;
+      const sum = weight[y2 * (tw + 1) + x2] - weight[oy * (tw + 1) + x2] - weight[y2 * (tw + 1) + ox] + weight[oy * (tw + 1) + ox];
+      if (sum > best) { best = sum; bestOx = ox; bestOy = oy; }
+    }
+  }
+  return { ox: bestOx, oy: bestOy };
+}
+
+// Most common non-zero GROUND1 tile in a template — used to fill the pad area
+// when a template is smaller than the requested map, so we surround it with real
+// walkable ground instead of leaving a void frame.
+function dominantGround(map: { width: number; height: number; data: number[] }): number {
+  const counts = new Map<number, number>();
+  const tw = map.width, th = map.height;
+  for (let y = 0; y < th; y++)
+    for (let x = 0; x < tw; x++) {
+      const t = map.data[(LAYER_GROUND1 * th + y) * tw + x];
+      if (t && isWalkableGround(t)) counts.set(t, (counts.get(t) || 0) + 1);
+    }
+  let best = 0, bestCount = 0;
+  for (const [t, c] of counts) if (c > bestCount) { bestCount = c; best = t; }
+  return best;
+}
+
+async function cloneTemplateForTheme(data: number[], w: number, h: number, theme: string, templateId?: number, rng?: PRNG, preferredTileset?: number): Promise<{ x: number; y: number }[] | null> {
   const idxPath = path.join(import.meta.dirname, "..", "knowledge", "map-templates.json");
-  let idx: { id: number; category: string; theme: string; width: number; height: number; tilesetId: number }[];
+  let idx: TemplateMeta[];
   try {
     await access(idxPath);
     idx = JSON.parse(await readFile(idxPath, "utf8")) as typeof idx;
   } catch {
     return null; // no knowledge dir → fall back to procedural
   }
-  // Pick the template: explicit override, or auto-pick by category + closest area.
+  // Pick the template: explicit override, or a scored match with seeded variety.
   let picked: { id: number; width: number; height: number } | null = null;
   if (templateId) {
     const found = idx.find(function (t) { return t.id === templateId; });
@@ -912,14 +986,32 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
   }
   if (!picked) {
     const cats = THEME_CATEGORIES[theme] || [];
-    const candidates = idx.filter(function (t) { return cats.indexOf(t.category) >= 0; });
+    let candidates = idx.filter(function (t) { return cats.indexOf(t.category) >= 0; });
     if (candidates.length === 0) return null;
-    const target = w * h;
-    let bestDiff = Infinity;
-    for (const t of candidates) {
-      const diff = Math.abs(t.width * t.height - target);
-      if (diff < bestDiff) { bestDiff = diff; picked = { id: t.id, width: t.width, height: t.height }; }
-    }
+    const ts = preferredTileset || THEME_TILESET[theme] || 1;
+    // Hard-filter to the target tileset when any candidate matches: the cloned
+    // map's tilesetId is fixed by theme, so cloning tile data authored for a
+    // different tileset would render as garbage. Only fall back to other
+    // tilesets when none match the requested one.
+    const sameTs = candidates.filter(function (t) { return t.tilesetId === ts; });
+    if (sameTs.length > 0) candidates = sameTs;
+    const ranked = candidates
+      .map(function (t) { return { t: t, score: scoreTemplate(t, w, h, theme, ts) }; })
+      .sort(function (a, b) { return a.score - b.score; });
+    // Pick from the top matches (weighted toward the best) so the same
+    // theme+size produces different real maps across seeds instead of always
+    // cloning one template — the long-standing "all towns look identical" bug.
+    const topN = Math.min(6, ranked.length);
+    const weights: number[] = [];
+    let total = 0;
+    // Gentle falloff (rank + a flat floor) so the best fit is favoured but the
+    // other good same-tileset templates still get picked often — real variety.
+    for (let i = 0; i < topN; i++) { const wt = (topN - i) + topN; weights.push(wt); total += wt; }
+    let r = (rng ? rng.nextFloat() : Math.random()) * total;
+    let choice = 0;
+    for (let i = 0; i < topN; i++) { r -= weights[i]; if (r <= 0) { choice = i; break; } }
+    const sel = ranked[choice].t;
+    picked = { id: sel.id, width: sel.width, height: sel.height };
   }
   if (!picked) return null;
   const fn = "Map" + String(picked.id).padStart(3, "0") + ".json";
@@ -931,12 +1023,23 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
   }
   const map = JSON.parse(await readFile(fp, "utf8")) as { width: number; height: number; data: number[] };
   const tw = map.width, th = map.height;
-  // Copy tile data, cropping/padding to (w, h).
+  // When the template is bigger than the request, crop the content-richest
+  // window instead of the top-left corner (which often cuts buildings in half).
+  const { ox, oy } = bestCropOffset(map, w, h);
+  // When the template is smaller, centre it and surround the pad with the
+  // template's dominant ground tile so the map isn't framed by void.
+  const padX = tw < w ? Math.floor((w - tw) / 2) : 0;
+  const padY = th < h ? Math.floor((h - th) / 2) : 0;
+  if (padX > 0 || padY > 0) {
+    const ground = dominantGround(map);
+    if (ground) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) data[(LAYER_GROUND1 * h + y) * w + x] = ground;
+  }
+  // Copy tile data, applying the crop offset (source) and pad offset (dest).
   for (let layer = 0; layer < 6; layer++) {
     for (let y = 0; y < Math.min(h, th); y++) {
       for (let x = 0; x < Math.min(w, tw); x++) {
-        const srcIdx = (layer * th + y) * tw + x;
-        const dstIdx = (layer * h + y) * w + x;
+        const srcIdx = (layer * th + (y + oy)) * tw + (x + ox);
+        const dstIdx = (layer * h + (y + padY)) * w + (x + padX);
         data[dstIdx] = map.data[srcIdx];
       }
     }
@@ -948,9 +1051,11 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
   const isExterior = cats.indexOf('town') >= 0 || cats.indexOf('exterior') >= 0;
   const doors: { x: number; y: number }[] = [];
   if (isExterior) {
-    for (let y = 0; y < Math.min(h, th); y++)
-      for (let x = 0; x < Math.min(w, tw); x++) {
-        const t = map.data[(3 * th + y) * tw + x];
+    // Read from the already-copied (cropped/padded) destination so door coords
+    // land in the final map's coordinate space.
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const t = getTile(data, w, h, x, y, LAYER_UPPER2);
         if (DOOR_TILES.has(t)) doors.push({ x: x, y: y });
       }
   }
@@ -1721,7 +1826,8 @@ async function generateTileLayoutV3(width: number, height: number, theme: string
   const useTpl = (opts as Record<string, unknown>).useTemplate !== false;
   const tplId = (opts as Record<string, unknown>).templateId as number | undefined;
   if (useTpl && THEME_CATEGORIES[theme]) {
-    const doors = await cloneTemplateForTheme(data, width, height, theme, tplId);
+    const preferredTileset = ((opts as Record<string, unknown>).tilesetId as number) || THEME_TILESET[theme];
+    const doors = await cloneTemplateForTheme(data, width, height, theme, tplId, rng, preferredTileset);
     if (doors) {
       // For town/village (exterior themes), convert detected door positions
       // into house footprints so createMapV3 can wire enterable interiors.
@@ -1882,6 +1988,7 @@ async function generateMap(opts: GeneratorOptions = {}): Promise<{
 }
 
 export { generateTileLayoutV3, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent };
+export { scoreTemplate, bestCropOffset, dominantGround };
 export { generateMap };
 export { generateFromTemplate };
 export { searchTemplates };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isStandable, nearestStandable, walkableSummary } from "../src/utils/placement.js";
+import { isStandable, nearestStandable, walkableSummary, chooseSpawn } from "../src/utils/placement.js";
 import type { RpgMakerMap } from "../src/types/rpgmaker.js";
 
 // Tile flag conventions (RPG Maker MV Tilesets.flags):
@@ -71,6 +71,23 @@ describe("placement passability", () => {
     expect(r.relocated).toBe(true);
     expect({ x: r.x, y: r.y }).not.toEqual({ x: 0, y: 0 });
     expect(r.x >= 2 && r.x <= 4 && r.y >= 1 && r.y <= 3).toBe(true);
+  });
+
+  it("chooseSpawn returns a standable, reachable, bottom-biased tile", () => {
+    const m = makeMap();
+    const s = chooseSpawn(m, flags);
+    expect(isStandable(m, flags, s.x, s.y)).toBe(true);
+    // must be in the main 3x3 region, never the isolated tile or void
+    expect(s.x >= 2 && s.x <= 4 && s.y >= 1 && s.y <= 3).toBe(true);
+    // bottom-centre bias → the lowest row of the region (y=3), centre column (x=3)
+    expect(s).toEqual({ x: 3, y: 3 });
+  });
+
+  it("chooseSpawn falls back to map centre when nothing is standable", () => {
+    const width = 4, height = 4;
+    const data = new Array(width * height * 6).fill(WALL);
+    const m = { width, height, data, tilesetId: 1, events: [] } as unknown as RpgMakerMap;
+    expect(chooseSpawn(m, flags)).toEqual({ x: 2, y: 2 });
   });
 
   it("walkableSummary reports the usable region bounds and suggested points", () => {

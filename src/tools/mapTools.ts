@@ -7,7 +7,7 @@ import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Par
 
 import { generateTileLayoutV3, generateFromTemplate, THEMES as V3_THEMES, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
-import { nearestStandable } from '../utils/placement.js';
+import { nearestStandable, chooseSpawn } from '../utils/placement.js';
 
 // Load the passage flags for a map's tileset (Tilesets[id].flags, one entry per
 // tileId). Returns null if Tilesets.json is missing or the tileset has no flags
@@ -312,7 +312,14 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     }
 
     await writeJson(projectPath, 'MapInfos.json', mapInfos);
-    return { mapId: mapId, seed: tileResult.seed, theme: theme, interiorMapIds: interiors.map(function(it) { return it.id; }) };
+    // A guaranteed-safe spawn for this map: standable, reachable, biased to the
+    // bottom-centre entrance. Use it for the transfer destination / start
+    // position so the player never lands in void or stuck inside a wall. When the
+    // project has no tileset flags we fall back to a sensible bottom-centre tile.
+    const spawn = genFlags
+        ? chooseSpawn(map, genFlags)
+        : { x: Math.floor(width / 2), y: Math.max(0, height - 2) };
+    return { mapId: mapId, seed: tileResult.seed, theme: theme, interiorMapIds: interiors.map(function(it) { return it.id; }), spawn: spawn };
 }
 
 /** Assemble a minimal RPG Maker MV map object from generated tile data + events. */
@@ -452,6 +459,14 @@ async function connectMaps(projectPath: string, mapIdA: number, mapIdB: number, 
   const numMapIdB = toNum(mapIdB, 'mapIdB');
   const mapA = await getMap(projectPath, numMapIdA) as RpgMakerMap;
   const mapB = await getMap(projectPath, numMapIdB) as RpgMakerMap;
+  // Snap each transfer endpoint to a standable, reachable tile on its own map,
+  // so neither the entry door nor the arrival point lands in void or a wall (the
+  // classic "I walk through the door and I'm stuck" bug). Already-valid tiles —
+  // including doors over passable floor — are left untouched.
+  const flagsA = await loadTilesetFlags(projectPath, mapA.tilesetId);
+  const flagsB = await loadTilesetFlags(projectPath, mapB.tilesetId);
+  if (flagsA) { const s = nearestStandable(mapA, flagsA, posA.x, posA.y); posA = { ...posA, x: s.x, y: s.y }; }
+  if (flagsB) { const s = nearestStandable(mapB, flagsB, posB.x, posB.y); posB = { ...posB, x: s.x, y: s.y }; }
   const newIdA = nextId(mapA.events);
   const evA = makeTransferEvent(newIdA, posA.x, posA.y, numMapIdB, posB.x, posB.y, posA.trigger || 1);
   while (mapA.events.length <= newIdA) mapA.events.push(null);
@@ -1585,6 +1600,7 @@ async function createPuzzleSwitch(projectPath: string, mapId: number, x: number,
 
 export { getMapInfos };
 export { getMap };
+export { loadTilesetFlags };
 export { getMapEvents };
 export { getMapEvent };
 export { getNextMapId };

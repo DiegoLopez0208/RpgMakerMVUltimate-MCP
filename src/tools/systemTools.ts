@@ -1,5 +1,8 @@
 import { readJson, writeJson } from '../utils/fileHandler.js';
 import { readdir } from 'fs/promises';
+import { getMap, loadTilesetFlags } from './mapTools.js';
+import { nearestStandable } from '../utils/placement.js';
+import type { RpgMakerMap } from '../types/rpgmaker.js';
 
 interface SystemPlugin {
   name: string;
@@ -73,11 +76,23 @@ async function updateGameTitle(projectPath: string, title: string) {
 
 async function updateStartingPosition(projectPath: string, mapId: number, x: number, y: number) {
   const system = await readJson(projectPath, 'System.json') as SystemData;
+  // Snap the start coordinate to a standable, reachable tile on the target map,
+  // so the game never opens with the player stuck in a wall or floating in void.
+  // Tiles that are already valid are left exactly where they were requested.
+  let finalX = x, finalY = y, relocated = false;
+  try {
+    const map = await getMap(projectPath, mapId) as RpgMakerMap;
+    const flags = await loadTilesetFlags(projectPath, map.tilesetId);
+    if (flags) {
+      const snap = nearestStandable(map, flags, x, y);
+      finalX = snap.x; finalY = snap.y; relocated = snap.relocated;
+    }
+  } catch (_) { /* map/tileset unreadable → keep requested coords */ }
   system.startMapId = mapId;
-  system.startX = x;
-  system.startY = y;
+  system.startX = finalX;
+  system.startY = finalY;
   await writeJson(projectPath, 'System.json', system);
-  return { startMapId: mapId, startX: x, startY: y };
+  return { startMapId: mapId, startX: finalX, startY: finalY, relocated: relocated, requested: { x: x, y: y } };
 }
 
 async function listPlugins(projectPath: string) {
