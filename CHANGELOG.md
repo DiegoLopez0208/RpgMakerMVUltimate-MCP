@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.12.2] - 2026-06-27
+
+### Changed
+- Branding consistency: the npm description, `server.json` title/description and GitHub About now all read as "RPG Maker MV Ultimate" and lead with the project's differentiator (understands a project — validate references, explain why an event never fires, critique maps). No code changes.
+
 ## [5.12.1] - 2026-06-27
 
 ### Changed

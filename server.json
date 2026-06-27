@@ -3,7 +3,7 @@
   "name": "io.github.DiegoLopez0208/rpgmaker-mv-ultimate",
   "title": "RPG Maker MV Ultimate MCP",
   "description": "RPG Maker MV Ultimate: AI copilot to generate, edit and understand RPG Maker MV projects (MCP)",
-  "version": "5.12.1",
+  "version": "5.12.2",
   "repository": {
     "url": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP",
     "source": "github"
@@ -13,7 +13,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "rpgmaker-mv-mcp",
-      "version": "5.12.1",
+      "version": "5.12.2",
       "transport": {
         "type": "stdio"
       },
