@@ -1,6 +1,6 @@
 import path from "path";
 import { readFile, access } from 'fs/promises';
-import type { MapEvent, TilesetConfig, GeneratorOptions, MapTemplate } from '../types/rpgmaker.js';
+import type { MapEvent, GeneratorOptions, MapTemplate } from '../types/rpgmaker.js';
 import { applyAutotileShapes } from './autotile.js';
 import { pickStamp, stampObject, hasStamps, getStamps, type StampCategory, type Stamp } from './stamps.js';
 import { isTileA1, isRoofTile, isWallSideTile } from './engine.js';
@@ -621,7 +621,7 @@ function applyPerlinTerrain(data: number[], w: number, h: number, perlin: Perlin
 // Prefers SMALLER stamps (they fit more easily on a dense town grid) but still
 // picks a larger one occasionally for variety. More attempts than before so a
 // town fills with real buildings instead of falling back to flat autotile boxes.
-function placeHouseStamps(
+function _placeHouseStamps(
   data: number[], w: number, h: number, rng: PRNG, count: number, blocked: ((x: number, y: number) => boolean) | undefined, ctx: GeneratorContext
 ): { x: number; y: number; w: number; h: number; doorX: number; doorY: number }[] {
   const houses: { x: number; y: number; w: number; h: number; doorX: number; doorY: number }[] = [];
@@ -692,7 +692,7 @@ function placeDecoClusters(
   if (usable.length === 0) return;
   for (let g = 0; g < groves; g++) {
     const gx = rng.nextInt(2, w - 3), gy = rng.nextInt(2, h - 3);
-    for (let p = 0, placed = 0, attempts = 0; placed < perGrove && attempts < perGrove * 12; attempts++) {
+    for (let placed = 0, attempts = 0; placed < perGrove && attempts < perGrove * 12; attempts++) {
       const stamp = pickStamp(ctx.stampTileset, usable[rng.nextInt(0, usable.length - 1)], rng);
       if (!stamp) break;
       // Bias placement near the grove centre (Gaussian-ish via summed randoms).
@@ -1076,7 +1076,7 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
   return doors;
 }
 
-function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
+function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _ctx: GeneratorContext): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
   const ts = TILESETS.outside;
   fillLayer(data, w, h, LAYER_GROUND1, ts.grass);
   setRegion(data, w, h, 0, 0, w - 1, h - 1, 1);
@@ -1194,7 +1194,7 @@ function generateInteriorTheme(data: number[], w: number, h: number, rng: PRNG, 
   }
 }
 
-function generateCastleTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): void {
+function generateCastleTheme(data: number[], w: number, h: number, _rng: PRNG, _ctx: GeneratorContext): void {
   const ts = TILESETS.outside;
   fillLayer(data, w, h, LAYER_GROUND1, ts.stone);
   fillRect(data, w, h, 0, 0, w - 1, 2, LAYER_UPPER1, ts.wallSide);
@@ -1218,7 +1218,7 @@ function generateCastleTheme(data: number[], w: number, h: number, rng: PRNG, ct
   setTile(data, w, h, midX, h - 1, LAYER_UPPER1, 0);
 }
 
-function generateBeachTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): void {
+function generateBeachTheme(data: number[], w: number, h: number, rng: PRNG, _ctx: GeneratorContext): void {
   const ts = TILESETS.outside;
   const waterLine = Math.floor(h * 0.4);
   const sandLine = Math.floor(h * 0.6);
@@ -1244,7 +1244,7 @@ function generateBeachTheme(data: number[], w: number, h: number, rng: PRNG, ctx
   }
 }
 
-function generateDesertTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+function generateDesertTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
   const ts = TILESETS.outside;
   fillLayer(data, w, h, LAYER_GROUND1, ts.sand || ts.dirt);
   for (let y = 0; y < h; y++)
@@ -1273,7 +1273,7 @@ function generateDesertTheme(data: number[], w: number, h: number, rng: PRNG, pe
   setTile(data, w, h, ox + 1, oy - or + 1, LAYER_UPPER1, ts.tree);
 }
 
-function generateSwampTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+function generateSwampTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
   const ts = TILESETS.outside;
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -1289,7 +1289,7 @@ function generateSwampTheme(data: number[], w: number, h: number, rng: PRNG, per
   }
 }
 
-function generateRuinsTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+function generateRuinsTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
   const ts = TILESETS.outside;
   fillLayer(data, w, h, LAYER_GROUND1, ts.stone);
   for (let y = 0; y < h; y++)
@@ -1329,7 +1329,7 @@ function generateCaveTheme(data: number[], w: number, h: number, rng: PRNG, ctx:
   return generateCellularCave(data, w, h, rng, TILESETS.dungeon, { fillProb: 0.48, iterations: 5 }, ctx);
 }
 
-function generateSnowTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+function generateSnowTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
   const ts = TILESETS.outside;
   fillLayer(data, w, h, LAYER_GROUND1, ts.stone);
   for (let y = 0; y < h; y++)
@@ -1345,7 +1345,7 @@ function generateSnowTheme(data: number[], w: number, h: number, rng: PRNG, perl
   }
 }
 
-function generateHarborTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): void {
+function generateHarborTheme(data: number[], w: number, h: number, _rng: PRNG, _ctx: GeneratorContext): void {
   const ts = TILESETS.outside;
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -1357,7 +1357,7 @@ function generateHarborTheme(data: number[], w: number, h: number, rng: PRNG, ct
   fillRect(data, w, h, Math.floor(w * 0.2), dockY, Math.floor(w * 0.8), dockY + 1, LAYER_GROUND1, ts.stone);
 }
 
-function generateVolcanoTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+function generateVolcanoTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
   const ts = TILESETS.dungeon;
   fillLayer(data, w, h, LAYER_GROUND1, ts.darkFloor || ts.floor);
   for (let y = 0; y < h; y++)
@@ -1382,7 +1382,7 @@ function generateFortressTheme(data: number[], w: number, h: number, rng: PRNG, 
   return generateBSPDungeon(data, w, h, rng, TILESETS.dungeon, { depth: Math.max(3, Math.floor(Math.min(w, h) / 12)), minRoom: 4, margin: 1 }, ctx);
 }
 
-function generateMagicForestTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+function generateMagicForestTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
   const ts = TILESETS.magic_exterior;
   applyPerlinTerrain(data, w, h, perlin, ts, { scale: 0.05, waterThreshold: -0.3 });
   for (let y = 0; y < h; y++)
@@ -1410,7 +1410,7 @@ function generateMagicInteriorTheme(data: number[], w: number, h: number, rng: P
   setTile(data, w, h, cx - 2, cy, LAYER_UPPER2, ts.magicDeco3 || 514);
 }
 
-function generateSpaceInteriorTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): void {
+function generateSpaceInteriorTheme(data: number[], w: number, h: number, rng: PRNG, _ctx: GeneratorContext): void {
   const ts = TILESETS.space_interior;
   fillLayer(data, w, h, LAYER_GROUND1, ts.metalFloor);
   // Walls on the ground layer (A4 renders its own 3D); upper stays empty.
@@ -1430,7 +1430,7 @@ function generateSpaceInteriorTheme(data: number[], w: number, h: number, rng: P
   }
 }
 
-function generateSpaceExteriorTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+function generateSpaceExteriorTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
   const ts = TILESETS.sf_outside;
   fillLayer(data, w, h, LAYER_GROUND1, ts.metal);
   for (let y = 0; y < h; y++)
@@ -1448,7 +1448,7 @@ function generateSpaceExteriorTheme(data: number[], w: number, h: number, rng: P
   }
 }
 
-function generateWorldTheme(data: number[], w: number, h: number, _rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+function generateWorldTheme(data: number[], w: number, h: number, _rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
   const ts = TILESETS.overworld;
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {

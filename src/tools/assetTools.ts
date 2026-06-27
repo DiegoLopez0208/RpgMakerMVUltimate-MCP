@@ -1,5 +1,5 @@
 import path from "path";
-import { readdir, readFile } from 'fs/promises';
+import { readdir } from 'fs/promises';
 import sharp from 'sharp';
 import { readJson } from '../utils/fileHandler.js';
 import type { SheetInfo } from '../types/rpgmaker.js';
@@ -59,31 +59,31 @@ function computeSheetInfo(sheetKey: string, filename: string, width: number, hei
   const info: SheetInfo = { filename: filename, width: width, height: height, cols: cols, rows: rows };
 
   if (sheetKey === 'A1') {
-    var kinds = Math.floor(rows / 6) * 8;
+    let kinds = Math.floor(rows / 6) * 8;
     if (kinds < 1) kinds = 1;
     info.tileCount = kinds * 48;
     info.kinds = kinds;
     info.autotile = true;
   } else if (sheetKey === 'A2') {
-    var blocksX = Math.floor(width / 96);
-    var blocksY = Math.floor(height / 144);
-    var kinds = blocksX * blocksY;
+    const blocksX = Math.floor(width / 96);
+    const blocksY = Math.floor(height / 144);
+    let kinds = blocksX * blocksY;
     if (kinds < 1) kinds = 1;
     info.tileCount = kinds * 48;
     info.kinds = kinds;
     info.autotile = true;
   } else if (sheetKey === 'A3') {
-    var blocksX = Math.floor(width / 96);
-    var blocksY = Math.floor(height / 96);
-    var kinds = blocksX * blocksY;
+    const blocksX = Math.floor(width / 96);
+    const blocksY = Math.floor(height / 96);
+    let kinds = blocksX * blocksY;
     if (kinds < 1) kinds = 1;
     info.tileCount = kinds * 48;
     info.kinds = kinds;
     info.autotile = true;
   } else if (sheetKey === 'A4') {
-    var blocksX = Math.floor(width / 96);
-    var blocksY = Math.floor(height / 120);
-    var kinds = blocksX * blocksY;
+    const blocksX = Math.floor(width / 96);
+    const blocksY = Math.floor(height / 120);
+    let kinds = blocksX * blocksY;
     if (kinds < 1) kinds = 1;
     info.tileCount = kinds * 48;
     info.kinds = kinds;
@@ -103,7 +103,7 @@ function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Reco
 
   const a1 = sheets['A1'];
   if (a1 && a1.kinds) {
-    for (var k = 0; k < a1.kinds; k++) {
+    for (let k = 0; k < a1.kinds; k++) {
       const baseId = 2048 + k * 48;
       if (k <= 1) {
         available.water.push({ tileId: baseId, kind: k, description: (k === 0 ? 'water surface' : 'deep water') + ' A1 kind ' + k });
@@ -118,8 +118,8 @@ function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Reco
 
   const a2 = sheets['A2'];
   if (a2 && a2.kinds) {
-    for (var k = 0; k < a2.kinds; k++) {
-      var tileId = 2816 + k * 48;
+    for (let k = 0; k < a2.kinds; k++) {
+      const tileId = 2816 + k * 48;
       let desc = 'floor A2 kind ' + k;
       if (k === 0) desc = 'grass floor A2 kind 0';
       else if (k === 6) desc = 'stone floor A2 kind 6';
@@ -130,8 +130,8 @@ function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Reco
 
   const a3 = sheets['A3'];
   if (a3 && a3.kinds) {
-    for (var k = 0; k < a3.kinds; k++) {
-      var tileId = 4352 + k * 48;
+    for (let k = 0; k < a3.kinds; k++) {
+      const tileId = 4352 + k * 48;
       if (k < 8) {
         available.roof.push({ tileId: tileId, kind: k, description: 'roof A3 kind ' + k });
         available.wallTop.push({ tileId: tileId, kind: k, description: 'roof/wallTop A3 kind ' + k });
@@ -143,8 +143,8 @@ function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Reco
 
   const a4 = sheets['A4'];
   if (a4 && a4.kinds) {
-    for (var k = 0; k < a4.kinds; k++) {
-      var tileId = 5888 + k * 48;
+    for (let k = 0; k < a4.kinds; k++) {
+      const tileId = 5888 + k * 48;
       if (k % 2 === 0) {
         available.wallTop.push({ tileId: tileId, kind: k, description: 'wallTop/floor A4 kind ' + k });
         available.ground.push({ tileId: tileId, kind: k, description: 'floor A4 kind ' + k });
@@ -156,7 +156,7 @@ function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Reco
 
   const a5 = sheets['A5'];
   if (a5 && a5.tileCount) {
-    for (var i = 0; i < a5.tileCount; i++) {
+    for (let i = 0; i < a5.tileCount; i++) {
       available.decoration.push({ tileId: 1536 + i, kind: -1, description: 'static tile A5 index ' + i });
     }
     available.ground.push({ tileId: 1536, kind: -1, description: 'A5 static tile 0' });
@@ -168,7 +168,7 @@ function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Reco
     const key = beSheets[si];
     const sheet = sheets[key];
     if (sheet && sheet.tileCount) {
-      for (var i = 0; i < sheet.tileCount; i++) {
+      for (let i = 0; i < sheet.tileCount; i++) {
         available.decoration.push({ tileId: beBase[key] + i, kind: -1, description: 'decoration ' + key + ' index ' + i });
       }
     }

@@ -1,5 +1,26 @@
 # Changelog
 
+## [5.12.0] - 2026-06-27
+
+### Added
+- **Project intelligence layer — a 13th consolidated tool, `analyze_project`.** Turns the server from a JSON editor into a copilot that understands the whole project. It builds (and mtime-caches) an in-memory model of every map, event, common event, switch and variable, then exposes it through `view`:
+  - `overview` — game title, entity/map/event counts, a health summary (errors/warnings/info) and any maps unreachable from the start map. The fastest way to grasp a project you didn't build.
+  - `index` — the structured digest (every map with its event count, common events, and only the *named* switches/variables).
+  - `validate` — whole-project consistency lint: transfers to non-existent maps, MapInfos entries whose Map file is missing, events that call missing common events / items / weapons / armors / troops / animations, duplicate database IDs, named-but-unused switches/variables, bad starting position, unreachable maps. Filterable by `severity`.
+  - `graph` — the map transfer network (nodes + directed edges) and reachability from the start map.
+  - `usage` — "what uses X?": pass `kind` (switch/variable/common_event/item/weapon/armor/troop/animation/actor/state/map) + `id` to get every event, common event and troop that references it, with read/write roles for switches/variables.
+  - `explain` — reasons about one thing: `target` switch/variable tells you whether it's set, read, gated, a dead write, or **never set** (the usual reason a door/event never triggers); `target` map reports incoming transfers and what becomes unreachable if it's deleted.
+  - `ast` — parses one event page (`mapId`+`eventId`) or a common event (`commonEventId`) into a logical tree with a readable outline.
+  - `plugins` — fuses `js/plugins.js` with each plugin file's `@plugindesc/@author/@param/@command/@help` header, and flags configured plugins whose file is missing.
+  - `critique` — reviews one map (`mapId`) like a game designer: dead space, empty/cluttered balance, event distribution across quadrants, floor monotony, fragmented walkable regions — with justified, actionable suggestions and a rough score.
+  - `refactor` — finds command sequences copy-pasted across events/common events and suggests extracting them into a Common Event.
+  - `search` — ranks the project's human-readable text (map/NPC names, dialogue, item/skill descriptions, notes) against a free-text `query` like "the blacksmith" or "the dark forest" (offline lexical ranking, EN+ES).
+- **`manage_map_event` action `"convert"`** — high-level authoring that re-purposes an *existing* event in place (keeping its id, position, name and sprite) into a `merchant` (working shop from `goods`/`items`), `inn` (full-recovery flow with gold check) or `sign`. Ideal for "turn this NPC into a merchant" without re-placing it. Verified in-game: a converted NPC opens a real `Scene_Shop` with no loading errors.
+- New `src/intel/` modules (`projectIndex`, `references`, `eventAst`, `graph`, `validate`, `plugins`, `critique`, `refactor`, `search`, `analyze`), all pure and unit-tested. Test suite grew from 146 to **209 tests**.
+
+### Changed
+- Code-quality pass with **zero `eslint` errors across `src/`** and a clean `tsc`. The dynamic tool-dispatch boundary in `src/server.ts` is now typed via a `ToolArgs` interface (no `any`, no rule suppression); `no-var`/`prefer-const`/unused-symbol cleanups across `mapTools`, `assetTools`, `mapGenerator`, `commandBuilder`, `systemTools`, `projectTools`, `fileHandler`, `autotile`, `engineDefaults`. `eslint.config.js` now documents the underscore convention for intentionally-unused identifiers.
+
 ## [5.11.4] - 2026-06-23
 
 ### Changed

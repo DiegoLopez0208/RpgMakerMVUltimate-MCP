@@ -17,7 +17,7 @@
  * A2 99% / A3 93% / A4 wall-top 95% / A4 wall-side 87%.
  */
 import {
-  TILE_ID_A1, isAutotile, autotileKind, autotileShape,
+  TILE_ID_A1, isAutotile, autotileKind,
   isFloorTypeAutotile, isWallTypeAutotile,
 } from './engine.js';
 

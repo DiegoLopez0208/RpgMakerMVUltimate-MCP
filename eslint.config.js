@@ -5,7 +5,14 @@ export default tseslint.config(
   {
     rules: {
       'no-var': 'error',
-      'prefer-const': 'error'
+      'prefer-const': 'error',
+      // Intentionally-unused identifiers follow the underscore convention
+      // (e.g. positional callback params `_ctx`, throwaway catch bindings `_`).
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
+      }]
     },
     files: ['src/**/*.ts']
   }

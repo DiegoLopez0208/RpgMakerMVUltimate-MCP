@@ -11,6 +11,7 @@
 
 import * as mapTools from './tools/mapTools.js';
 import { searchTemplates } from './utils/mapGenerator.js';
+import { analyzeProject } from './intel/analyze.js';
 
 type ExecuteTool = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -315,6 +316,13 @@ async function manageMapEvent(executeTool: ExecuteTool, args: Record<string, unk
         eventId: requireArg(args, 'eventId', 'manage_map_event action "update"'),
         fields: requireArg(args, 'fields', 'manage_map_event action "update"')
       });
+    case 'convert':
+      return executeTool('convert_map_event', {
+        mapId: requireArg(args, 'mapId', 'manage_map_event action "convert"'),
+        eventId: requireArg(args, 'eventId', 'manage_map_event action "convert"'),
+        kind: requireArg(args, 'kind', 'manage_map_event action "convert"'),
+        options: args.options || {}
+      });
     case 'delete':
       return executeTool('delete_map_event', {
         mapId: requireArg(args, 'mapId', 'manage_map_event action "delete"'),
@@ -413,7 +421,7 @@ export const TOOL_NAMES = [
   'query_database', 'create_database_entry', 'update_database_entry', 'delete_database_entry',
   'query_map', 'generate_map', 'edit_map', 'manage_map_event',
   'manage_system', 'get_project_context', 'set_project_path', 'analyze_image',
-  'list_plugins', 'get_plugin_status', 'toggle_plugin'
+  'list_plugins', 'get_plugin_status', 'toggle_plugin', 'analyze_project'
 ];
 
 export async function routeTool(executeTool: ExecuteTool, projectPath: string, name: string, args: Record<string, unknown>): Promise<unknown> {
@@ -433,6 +441,7 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
     case 'get_project_context': return getProjectContext(executeTool, args);
     case 'set_project_path': return executeTool('set_project_path', { path: requireArg(args, 'path', 'set_project_path') });
     case 'analyze_image': return analyzeImage(executeTool, args);
+    case 'analyze_project': return analyzeProject(projectPath, args);
     default:
       throw new Error('Unknown tool: ' + name);
   }

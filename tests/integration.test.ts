@@ -52,8 +52,8 @@ afterAll(() => {
 });
 
 describe("consolidated tool surface", () => {
-  it("exposes exactly 12 tools, all annotated and described", () => {
-    expect(TOOL_DEFINITIONS.length).toBe(12);
+  it("exposes exactly 13 tools, all annotated and described", () => {
+    expect(TOOL_DEFINITIONS.length).toBe(13);
     for (const t of TOOL_DEFINITIONS) {
       expect(t.annotations, t.name).toBeDefined();
       expect(t.description.length, t.name).toBeGreaterThan(120);
@@ -835,5 +835,115 @@ describe("Wave 3 tile painting and plugin management", () => {
     expect(after.plugins[0].status).toBe(true);
 
     await expect(dispatchTool("toggle_plugin", { pluginName: "Missing", enabled: true })).rejects.toThrow(/Missing/);
+  });
+});
+
+describe("analyze_project (intelligence layer)", () => {
+  // These run after content has been created above; assert shape, not exact counts.
+  it("overview returns counts, health and start position", async () => {
+    const r = await dispatchTool("analyze_project", { view: "overview" }) as any;
+    expect(r.counts).toBeDefined();
+    expect(typeof r.counts.maps).toBe("number");
+    expect(r.health).toHaveProperty("error");
+    expect(r.start).toHaveProperty("mapId");
+  });
+
+  it("index lists maps and only named switches", async () => {
+    const r = await dispatchTool("analyze_project", { view: "index" }) as any;
+    expect(Array.isArray(r.maps)).toBe(true);
+    expect(Array.isArray(r.namedSwitches)).toBe(true);
+  });
+
+  it("validate returns a structured report filterable by severity", async () => {
+    const all = await dispatchTool("analyze_project", { view: "validate" }) as any;
+    expect(all.issueCount).toBe(all.issues.length);
+    const errorsOnly = await dispatchTool("analyze_project", { view: "validate", severity: "error" }) as any;
+    expect(errorsOnly.issues.every((i: any) => i.severity === "error")).toBe(true);
+  });
+
+  it("graph exposes the transfer network and reachability", async () => {
+    const r = await dispatchTool("analyze_project", { view: "graph" }) as any;
+    expect(Array.isArray(r.nodes)).toBe(true);
+    expect(Array.isArray(r.edges)).toBe(true);
+    expect(Array.isArray(r.reachableFromStart)).toBe(true);
+  });
+
+  it("usage and explain answer reference questions", async () => {
+    const usage = await dispatchTool("analyze_project", { view: "usage", kind: "switch", id: 1 }) as any;
+    expect(usage).toHaveProperty("usedBy");
+    const explain = await dispatchTool("analyze_project", { view: "explain", target: "switch", id: 1 }) as any;
+    expect(explain).toHaveProperty("diagnosis");
+  });
+
+  it("ast parses a freshly created event into an outline", async () => {
+    const mapRes = await dispatchTool("generate_map", { mode: "blank", name: "AstMap", width: 12, height: 12, tilesetId: 1 }) as any;
+    await dispatchTool("manage_map_event", {
+      action: "create", mapId: mapRes.mapId, x: 2, y: 2,
+      pages: [{ list: [
+        { code: 111, indent: 0, parameters: [0, 1, 0] },
+        { code: 121, indent: 1, parameters: [2, 2, 0] },
+        { code: 412, indent: 0, parameters: [] },
+        { code: 0, indent: 0, parameters: [] },
+      ] }],
+    });
+    const r = await dispatchTool("analyze_project", { view: "ast", mapId: mapRes.mapId, eventId: 1 }) as any;
+    expect(r.outline).toContain("If Switch(1)");
+    expect(Array.isArray(r.ast)).toBe(true);
+  });
+
+  it("rejects an unknown view", async () => {
+    await expect(dispatchTool("analyze_project", { view: "nope" })).rejects.toThrow(/Unknown view/);
+  });
+
+  it("plugins view reads the configured plugins", async () => {
+    const r = await dispatchTool("analyze_project", { view: "plugins" }) as any;
+    expect(r).toHaveProperty("plugins");
+    expect(typeof r.total).toBe("number");
+  });
+
+  it("critique view reviews a generated map with metrics and findings", async () => {
+    const mapRes = await dispatchTool("generate_map", { mode: "procedural", theme: "town", width: 24, height: 20, seed: 3, name: "CritiqueTown" }) as any;
+    const r = await dispatchTool("analyze_project", { view: "critique", mapId: mapRes.mapId }) as any;
+    expect(r.metrics).toHaveProperty("walkableTiles");
+    expect(Array.isArray(r.findings)).toBe(true);
+    expect(typeof r.score).toBe("number");
+  });
+
+  it("search view ranks events by dialogue text", async () => {
+    const m = await dispatchTool("generate_map", { mode: "blank", name: "SearchMap", width: 12, height: 12, tilesetId: 1 }) as any;
+    await dispatchTool("manage_map_event", { action: "create", preset: "npc", mapId: m.mapId, x: 3, y: 3, name: "Borin the Blacksmith", dialogues: ["I forge the finest swords in the realm."] });
+    const r = await dispatchTool("analyze_project", { view: "search", query: "blacksmith" }) as any;
+    expect(r.results.some((h: any) => h.label === "Borin the Blacksmith")).toBe(true);
+  });
+
+  it("refactor view detects duplicated event logic", async () => {
+    const m = await dispatchTool("generate_map", { mode: "blank", name: "DupMap", width: 12, height: 12, tilesetId: 1 }) as any;
+    const dupPage = { list: [
+      { code: 311, indent: 0, parameters: [0, 1, 0, 0, 999, false] },
+      { code: 312, indent: 0, parameters: [0, 1, 0, 0, 999, false] },
+      { code: 250, indent: 0, parameters: [{ name: "Heal", volume: 90, pitch: 100, pan: 0 }] },
+      { code: 101, indent: 0, parameters: ["", 0, 0, 2] },
+      { code: 401, indent: 0, parameters: ["Healed!"] },
+      { code: 0, indent: 0, parameters: [] },
+    ] };
+    await dispatchTool("manage_map_event", { action: "create", mapId: m.mapId, x: 2, y: 2, name: "PriestA", pages: [dupPage] });
+    await dispatchTool("manage_map_event", { action: "create", mapId: m.mapId, x: 4, y: 4, name: "PriestB", pages: [dupPage] });
+    const r = await dispatchTool("analyze_project", { view: "refactor", minLen: 4 }) as any;
+    expect(r.blockCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("convert turns an existing NPC into a working merchant in place", async () => {
+    const m = await dispatchTool("generate_map", { mode: "blank", name: "ShopMap", width: 12, height: 12, tilesetId: 1 }) as any;
+    const npc = await dispatchTool("manage_map_event", { action: "create", preset: "npc", mapId: m.mapId, x: 5, y: 5, name: "Gareth", dialogues: ["Hello."], characterName: "People1", characterIndex: 2 }) as any;
+    const result = await dispatchTool("manage_map_event", {
+      action: "convert", mapId: m.mapId, eventId: npc.id, kind: "merchant",
+      options: { items: [{ type: "item", id: 1 }], greeting: "Best wares in town!" },
+    }) as any;
+    expect(result.converted).toBe(true);
+    expect(result.event.id).toBe(npc.id);            // identity preserved
+    expect(result.event.x).toBe(5);                   // position preserved
+    expect(result.event.pages[0].image).toEqual(npc.pages[0].image); // sprite preserved (as sanitized)
+    const codes = result.event.pages[0].list.map((c: any) => c.code);
+    expect(codes).toContain(302);                     // shop processing wired in
   });
 });

@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/rpgmaker-mv-mcp)](https://www.npmjs.com/package/rpgmaker-mv-mcp)
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent edit a real **RPG Maker MV** project on disk — database, maps, events, system — through **12 consolidated tools**, validated against the actual engine so the output is coherent and playable.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent edit a real **RPG Maker MV** project on disk — database, maps, events, system — through **13 consolidated tools**, validated against the actual engine so the output is coherent and playable — and it can **reason about** the project (validate references, explain why an event never fires, critique a map) via `analyze_project`.
 
 Its headline feature is **knowledge-driven map generation**: instead of painting tiles procedurally, `generate_map` **clones hand-authored reference maps** from 106 bundled RTP templates (real multi-tile buildings, walls, furniture) and adapts them to your project's tilesets — falling back to procedural generation only for themes without a template.
 
@@ -38,7 +38,7 @@ npm run build
 RPGMAKER_PROJECT_PATH=/path/to/your/project npm start
 ```
 
-## The 12 tools
+## The 13 tools
 
 | Tool | Purpose |
 |---|---|
@@ -49,8 +49,9 @@ RPGMAKER_PROJECT_PATH=/path/to/your/project npm start
 | `query_map` | Map tree, full map data, events, single event, lint (`validate`), offline ASCII render |
 | `generate_map` | Knowledge-driven generation: clones a real reference map per theme (or pure procedural / blank / themed / a specific template / batch / duplicate) |
 | `edit_map` | Fill tile layers, set display names, organize the map tree, connect two maps, set encounters |
-| `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, delete, add commands, bulk-populate |
+| `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, **convert** an existing event into a merchant/inn/sign, delete, add commands, bulk-populate |
 | `manage_system` | Game title, switch/variable names, starting position |
+| `analyze_project` | Read-only project intelligence — `overview`, `index`, `validate`, `graph`, `usage`, `explain`, `ast`, `plugins`, `critique`, `refactor`, `search` (see below) |
 | `get_project_context` | Project digest, asset index, per-tileset tile IDs, bundled-template catalog |
 | `set_project_path` | Switch projects at runtime |
 | `analyze_image` | Optional Vision-AI image analysis, plus offline tileset grid measurement and quadrant colors |
@@ -82,6 +83,21 @@ No API needed:
 
 - `query_map { view: "ascii", mapId }` — render a map as a character grid with event markers (the cheapest way to "see" a layout and pick coordinates).
 - `query_map { view: "validate", mapId }` — lint for invalid tile IDs, broken transfers, and missing event terminators.
+
+## Project intelligence (`analyze_project`)
+
+Read-only — it understands the whole project instead of re-reading files, so an agent can reason about a game it didn't build. All offline.
+
+- `{ view: "overview" }` — **call this first** on an unfamiliar project: counts, a health summary, and maps unreachable from the start.
+- `{ view: "validate" }` — every consistency problem at once: broken transfers, missing map files, dangling common-event/item/troop references, duplicate IDs, unused switches/variables, unreachable maps.
+- `{ view: "explain", target: "switch", id }` — why something never happens, e.g. *"Switch 12 is read/gated in 3 places but is **never set ON**"* (the usual cause of a door that never opens). `target: "map"` reports what a deletion would strand.
+- `{ view: "usage", kind: "variable", id }` — every event/common-event/troop that touches it (with read/write roles).
+- `{ view: "graph" }` — the map transfer network and reachability.
+- `{ view: "ast", mapId, eventId }` — an event's logic as a readable tree.
+- `{ view: "plugins" }` — what plugins the project uses, their parameters and commands.
+- `{ view: "critique", mapId }` — a designer-style review of one map (dead space, empty/cluttered, event spread, monotony) with justified suggestions.
+- `{ view: "refactor" }` — duplicated event logic worth extracting into a Common Event.
+- `{ view: "search", query: "the blacksmith" }` — find things by meaning across names, dialogue and descriptions.
 
 ## Vision AI (optional)
 
@@ -152,7 +168,7 @@ npm test           # vitest
 npm run dev        # tsx watch mode
 ```
 
-Source: `src/server.ts` (tool handlers), `src/toolDefinitions.ts` + `src/router.ts` (the 12-tool surface), `src/tools/*` (per-domain CRUD), `src/utils/mapGenerator.ts` (template cloning + procedural generation), `knowledge/` (static reference data + bundled maps).
+Source: `src/server.ts` (tool handlers), `src/toolDefinitions.ts` + `src/router.ts` (the 13-tool surface), `src/tools/*` (per-domain CRUD), `src/utils/mapGenerator.ts` (template cloning + procedural generation), `src/intel/*` (the read-only project-intelligence layer behind `analyze_project`), `knowledge/` (static reference data + bundled maps).
 
 [![DiegoLopez0208/RpgMakerMVUltimate-MCP MCP server](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP/badges/score.svg)](https://glama.ai/mcp/servers/DiegoLopez0208/RpgMakerMVUltimate-MCP)
 

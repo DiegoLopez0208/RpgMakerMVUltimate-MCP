@@ -19,7 +19,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import sharp from 'sharp';
 
 import { validateProjectPath } from './utils/fileHandler.js';
-import type { RpgMakerDbEntry, MapEvent, RpgMakerMap, VisionApiResponse, AsciiMapResult } from './types/rpgmaker.js';
+import type { RpgMakerDbEntry, RpgMakerMap, AsciiMapResult, EventPage, EventCommand, ItemType, CreateMapV3Params } from './types/rpgmaker.js';
 import * as logger from './utils/logger.js';
 import * as actorTools from './tools/actorTools.js';
 import * as itemTools from './tools/itemTools.js';
@@ -75,7 +75,9 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
     }
     args = parsed.data as Record<string, unknown>;
   }
-  return handleToolCall(name, args);
+  // Boundary: the transport hands us untyped JSON; describe it as the concrete
+  // tool arguments the handlers expect (each handler re-validates/coerces).
+  return handleToolCall(name, args as unknown as ToolArgs);
 }
 
 /** Dispatch one tool call, consolidated or legacy. Exported for integration tests. */
@@ -275,9 +277,45 @@ async function validateMap(projectPath: string, mapId: number) {
 
 
 // ─── Tool Execution Handler ───
-// Dispatches tool calls to the appropriate tool module function
+/**
+ * The shape the tool handlers consume after JSON-RPC deserialization. Numeric
+ * fields are coerced by each handler (toNum) so they are typed as numbers here;
+ * this is the one place we describe the loosely-typed wire input as the concrete
+ * arguments the dispatch forwards. Keeps the whole dispatch body type-checked
+ * (no `any`) while a single boundary assertion in executeTool admits the
+ * Record<string, unknown> coming off the transport.
+ */
+interface ToolArgs {
+  // numeric identifiers / coordinates / counts
+  id: number; mapId: number; eventId: number; x: number; y: number;
+  x1: number; y1: number; x2: number; y2: number; layer: number;
+  tileId: number; oldTileId: number; newTileId: number; tilesetId: number;
+  trigger: number; troopId: number; enemyId: number; stateId: number;
+  destMapId: number; destX: number; destY: number; sourceMapId: number;
+  mapIdA: number; mapIdB: number; switchX: number; switchY: number;
+  doorX: number; doorY: number; gameSwitchId: number; pageIndex: number;
+  characterIndex: number; count: number; cost: number; mpCost: number;
+  scope: number; paramId: number; turns: number; chance: number;
+  element: number; animationId: number; encounterStep: number;
+  map_id: number; resize_max: number;
+  // strings
+  name: string; title: string; path: string; query: string; type: ItemType;
+  kind: string; characterName: string; switchName: string; doorName: string;
+  formula: string; pluginName: string; prompt: string; image_path: string;
+  base64PNG: string; eventType: string;
+  // booleans
+  enabled: boolean; show_events: boolean; show_regions: boolean;
+  // structural
+  pages: EventPage[]; command: EventCommand; fields: Record<string, unknown>;
+  items: Record<string, unknown>[]; goods: unknown[][]; dialogues: string[];
+  enemyIds: number[]; encounters: Record<string, unknown>[];
+  names: Record<string, unknown>[]; folders: Record<string, unknown>[];
+  posA: Record<string, number>; posB: Record<string, number>;
+  opts: Record<string, unknown>; options: Record<string, unknown>; batch: unknown[];
+}
 
-async function handleToolCall(name: string, args: Record<string, any>) {
+// Dispatches tool calls to the appropriate tool module function
+async function handleToolCall(name: string, args: ToolArgs) {
   const p = projectTools.getProjectPath() || PROJECT_PATH;
 
   switch (name) {
@@ -356,6 +394,8 @@ async function handleToolCall(name: string, args: Record<string, any>) {
       return await mapTools.createMapEvent(p, args.mapId, args.x, args.y, args.name, args.trigger, args.pages);
     case 'update_map_event':
       return await mapTools.updateMapEvent(p, args.mapId, args.eventId, args.fields);
+    case 'convert_map_event':
+      return await mapTools.convertEvent(p, args.mapId, args.eventId, args.kind, args.options);
     case 'add_event_command':
       return await mapTools.addEventCommand(p, args.mapId, args.eventId, args.pageIndex, args.command);
     case 'create_npc':
@@ -365,11 +405,11 @@ async function handleToolCall(name: string, args: Record<string, any>) {
     case 'create_teleport_event':
       return await mapTools.createTeleportEvent(p, args.mapId, args.x, args.y, args.destMapId, args.destX, args.destY, args.trigger);
     case 'create_door':
-      return await mapTools.createDoor(p, args.mapId, args.x, args.y, args.destMapId, args.destX, args.destY, args);
+      return await mapTools.createDoor(p, args.mapId, args.x, args.y, args.destMapId, args.destX, args.destY, args as unknown as Record<string, unknown>);
 case 'search_map_events':
         return await mapTools.searchMapEvents(p, args.mapId, args.query);
       case 'generate_map_v3':
-        return await mapTools.createMapV3(p, args);
+        return await mapTools.createMapV3(p, args as unknown as CreateMapV3Params);
       case 'generate_map_batch':
         return await mapTools.createMapBatch(p, args.batch);
       case 'connect_maps':
@@ -499,7 +539,7 @@ case 'delete_skill':
 case 'delete_map_event':
   return await mapTools.deleteMapEvent(p, args.mapId, args.eventId);
             case 'duplicate_map':
-                return await mapTools.duplicateMap(p, args.sourceMapId, args);
+                return await mapTools.duplicateMap(p, args.sourceMapId, args as unknown as Record<string, unknown>);
             case 'create_shop':
                 return await mapTools.createShop(p, args.mapId, args.x, args.y, args.name, args.goods, args.characterName, args.characterIndex);
             case 'create_inn':
@@ -517,8 +557,7 @@ case 'get_project_context':
 case 'validate_map':
   return await validateMap(p, args.mapId);
 case 'set_project_path':
-  var setResult = await projectTools.setProjectPath(args.path);
-  return setResult;
+  return await projectTools.setProjectPath(args.path);
 
     // ── Vision / Image Tools ──
     case 'analyze_tileset_image':
@@ -697,7 +736,7 @@ async function analyzeScreenshot(projectPath: string, imagePath: string, customP
   let data;
   try {
     data = JSON.parse(body);
-  } catch (e: unknown) {
+  } catch {
     throw new Error('Failed to parse vision API response (HTTP ' + response.status + '): ' + body.slice(0, 500));
   }
   if (data.error) {
@@ -738,7 +777,7 @@ async function renderMapAscii(projectPath: string, mapId: number, layer: number,
   try {
     const tilesetContent = await readFile(path.join(projectPath, 'data', 'Tilesets.json'), 'utf-8');
     tilesetList = JSON.parse(tilesetContent.replace(/^\uFEFF/, ''));
-  } catch(e: unknown) {}
+  } catch {}
 
   const tileset = tilesetList[map.tilesetId] || null;
   const tileCharMap: Record<number, string> = {};
@@ -782,10 +821,10 @@ async function renderMapAscii(projectPath: string, mapId: number, layer: number,
   const layerSize = w * h;
   const layerOffset = tileLayer * layerSize;
   const grid = [];
-  for (var y = 0; y < h; y++) {
-    var row = '';
-    for (var x = 0; x < w; x++) {
-      var idx = layerOffset + y * w + x;
+  for (let y = 0; y < h; y++) {
+    let row = '';
+    for (let x = 0; x < w; x++) {
+      const idx = layerOffset + y * w + x;
       const tileId = idx < data.length ? data[idx] : 0;
       row += getTileChar(tileId);
     }
@@ -811,10 +850,10 @@ async function renderMapAscii(projectPath: string, mapId: number, layer: number,
   if (showReg && data.length >= 6 * layerSize) {
     regionGrid = [];
     const regOffset = 5 * layerSize;
-    for (var y = 0; y < h; y++) {
-      var row = '';
-      for (var x = 0; x < w; x++) {
-        var idx = regOffset + y * w + x;
+    for (let y = 0; y < h; y++) {
+      let row = '';
+      for (let x = 0; x < w; x++) {
+        const idx = regOffset + y * w + x;
         const rid = idx < data.length ? data[idx] : 0;
         row += rid === 0 ? '.' : (rid < 10 ? String(rid) : String.fromCharCode(55 + rid));
       }
@@ -865,7 +904,7 @@ export async function main() {
   }
 
   const server = new Server(
-    { name: 'rpgmaker-mv-mcp', version: '5.11.5' },
+    { name: 'rpgmaker-mv-mcp', version: '5.12.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -952,5 +991,5 @@ export async function main() {
     };
   }
   await server.connect(transport);
-  logger.info('RPG Maker MV MCP server v5.11.5 running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
+  logger.info('RPG Maker MV MCP server v5.12.0 running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
 }

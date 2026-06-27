@@ -17,7 +17,7 @@ async function getProjectSummary(projectPath: string): Promise<ProjectSummary> {
   const result: ProjectSummary = { projectPath: projectPath, dataFiles: {} };
   const dataDir = getDataPath(projectPath, '');
   let files: string[] = [];
-  try { files = readdirSync(dataDir); } catch(e: unknown) { result.dataFiles['error'] = { type: 'error', error: 'Cannot read data directory' }; return result; }
+  try { files = readdirSync(dataDir); } catch { result.dataFiles['error'] = { type: 'error', error: 'Cannot read data directory' }; return result; }
   const jsonFiles = files.filter(function(f) { return f.endsWith('.json'); });
   for (let i = 0; i < jsonFiles.length; i++) {
     const fname = jsonFiles[i];
@@ -44,7 +44,7 @@ async function getProjectSummary(projectPath: string): Promise<ProjectSummary> {
     result.startY = (sys as Record<string, unknown>).startY as number;
     result.switchCount = sys.switches ? (sys.switches as string[]).filter(function(s: string) { return s && s.length > 0; }).length : 0;
     result.variableCount = sys.variables ? (sys.variables as string[]).filter(function(v: string) { return v && v.length > 0; }).length : 0;
-  } catch(e: unknown) {
+  } catch {
     result.systemError = 'Cannot read System.json';
   }
   const mapFiles = files.filter(function(f) { return /^Map\d{3}\.json$/.test(f); });

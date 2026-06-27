@@ -727,12 +727,6 @@ function playME(name: string, volume: number, pitch: number, pan: number): Event
  * @param actorId - The actor ID
  * @returns EventCommand[]
  */
-function getActorInfo(actorId: number): EventCommand[] {
-  return [
-    { code: 108, indent: 0, parameters: ['Get Actor Info placeholder - use script calls for advanced features'] }
-  ];
-}
-
 const cmd = {
   message,
   choice,

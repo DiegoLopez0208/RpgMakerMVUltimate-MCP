@@ -1,6 +1,6 @@
 {
   "name": "rpgmaker-mv-mcp",
-  "version": "5.11.5",
+  "version": "5.12.0",
   "description": "MCP server for editing RPG Maker MV projects: 12 consolidated tools for maps, events, database, and procedural generation.",
   "type": "module",
   "main": "dist/index.js",

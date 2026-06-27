@@ -5,7 +5,7 @@ import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
 
-import { generateTileLayoutV3, generateFromTemplate, THEMES as V3_THEMES, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
+import { generateTileLayoutV3, generateFromTemplate, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 import { nearestStandable, chooseSpawn } from '../utils/placement.js';
 
@@ -17,7 +17,7 @@ async function loadTilesetFlags(projectPath: string, tilesetId: number): Promise
     const tilesets = await readJson(projectPath, 'Tilesets.json') as Array<{ flags?: number[] } | null>;
     const ts = tilesets && tilesets[tilesetId];
     if (ts && Array.isArray(ts.flags) && ts.flags.length > 0) return ts.flags;
-  } catch (_) { /* no tileset data → skip snapping */ }
+  } catch { /* no tileset data → skip snapping */ }
   return null;
 }
 
@@ -106,7 +106,7 @@ async function createMap(projectPath: string, params: CreateMapParams | CreateMa
             } else {
                 tileResult = await generateTileLayoutV3(width, height, theme);
             }
-        } catch (_) {
+        } catch {
             tileResult = await generateTileLayoutV3(width, height, theme);
         }
     } else {
@@ -185,7 +185,7 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     try {
         const tsCfg = await getTileIdsForTileset(projectPath, tilesetId);
         if (tsCfg && tsCfg.availableTiles) v3opts.availableTiles = tsCfg.availableTiles;
-    } catch (_) { /* scan optional — generator falls back to its built-in table */ }
+    } catch { /* scan optional — generator falls back to its built-in table */ }
 
     // Pass the tileset's real passage flags so generated events are placed by
     // true engine passability (isStandable), not just the autotile-range
@@ -243,7 +243,7 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     if (interiorsWanted) {
         // Item IDs the shop can sell (if the project has any).
         let shopItemIds: number[] = [];
-        try { shopItemIds = (await readJson(projectPath, 'Items.json') as unknown[]).map(function (it, i) { return it ? i : 0; }).filter(Boolean).slice(0, 4); } catch (_) { /* none */ }
+        try { shopItemIds = (await readJson(projectPath, 'Items.json') as unknown[]).map(function (it, i) { return it ? i : 0; }).filter(Boolean).slice(0, 4); } catch { /* none */ }
         for (let i = 0; i < houses.length; i++) {
             const ho = houses[i];
             const doorX = ho.doorX !== undefined ? ho.doorX : ho.x + Math.floor(ho.w / 2);
@@ -492,7 +492,7 @@ async function populateMapEvents(projectPath: string, mapId: number, eventType: 
         const x = (opts.x as number) || Math.floor(Math.random() * (map.width - 4)) + 2;
         const y = (opts.y as number) || Math.floor(Math.random() * (map.height - 4)) + 2;
         const newId = nextId(map.events);
-        var ev;
+        let ev;
         if (eventType === 'npc') ev = makeNpcEvent(newId, x, y, (opts.name as string) || 'NPC');
         else if (eventType === 'chest') ev = makeChestEvent(newId, x, y);
         else if (eventType === 'boss') ev = makeBossEvent(newId, x, y, (opts.troopId as number) || 1);
@@ -549,7 +549,7 @@ async function autoEncounterList(projectPath: string): Promise<{ troopId: number
     }
     const pick = valid.slice(0, 6);
     return pick.map(function (id, idx) { return { troopId: id, weight: Math.max(1, pick.length - idx) * 5, regionSet: [] }; });
-  } catch (_) { return []; }
+  } catch { return []; }
 }
 
 async function setMapDisplayNames(projectPath: string, nameMap: Record<string, unknown>[]) {
@@ -565,7 +565,7 @@ async function setMapDisplayNames(projectPath: string, nameMap: Record<string, u
       map.displayName = entry.name as string;
       await writeJsonDirect(getMapPath(projectPath, id), map);
       updated.push({ mapId: id, displayName: entry.name });
-    } catch (_) {
+    } catch {
       skipped.push({ mapId: id, reason: 'map file not found' });
     }
   }
@@ -1040,16 +1040,16 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
     const item = itemEntries[idx];
     const amount = (item.amount as number) || 1;
     if (item.type === 'item') {
-      page1List.push.apply(page1List, cmd.giveItem(item.id as number, amount));
+      page1List.push(...cmd.giveItem(item.id as number, amount));
     } else if (item.type === 'weapon') {
-      page1List.push.apply(page1List, cmd.giveWeapon(item.id as number, amount));
+      page1List.push(...cmd.giveWeapon(item.id as number, amount));
     } else if (item.type === 'armor') {
-      page1List.push.apply(page1List, cmd.giveArmor(item.id as number, amount));
+      page1List.push(...cmd.giveArmor(item.id as number, amount));
     }
   }
 
   // Activate Self Switch A = ON (so the chest stays open)
-  page1List.push.apply(page1List, cmd.selfSwitchControl('A', true));
+  page1List.push(...cmd.selfSwitchControl('A', true));
 
   // Show "found items" message
   const msgCmds = cmd.message('Found items inside the chest!', '', 0);
@@ -1351,7 +1351,7 @@ async function writeJsonDirect(filePath: string, data: unknown) {
 
   try {
     await copyFile(filePath, backupPath);
-  } catch (_) {
+  } catch {
     // If backup fails (file doesn't exist yet), continue
   }
 
@@ -1476,6 +1476,109 @@ async function createInn(projectPath: string, mapId: number, x: number, y: numbe
   const mapPath = getMapPath(projectPath, numMapId);
   await writeMapJson(projectPath, mapPath, map);
   return event;
+}
+
+/** Normalise merchant goods from either `goods` ([type,id,priceType,price][]) or
+ *  a friendly `items` ([{type:item|weapon|armor, id}]) shorthand. */
+function normalizeMerchantGoods(options: Record<string, unknown>): number[][] {
+  const out: number[][] = [];
+  if (Array.isArray(options.goods)) {
+    for (const g of options.goods as unknown[]) {
+      if (!Array.isArray(g) || g.length < 2) continue;
+      out.push([toNum(g[0], 'goods type'), toNum(g[1], 'goods id'), g[2] !== undefined ? toNum(g[2], 'priceType') : 0, g[3] !== undefined ? toNum(g[3], 'price') : 0]);
+    }
+  } else if (Array.isArray(options.items)) {
+    const TYPE: Record<string, number> = { item: 0, weapon: 1, armor: 2 };
+    for (const it of options.items as Record<string, unknown>[]) {
+      if (!it || it.id === undefined) continue;
+      const t = typeof it.type === 'number' ? it.type : (TYPE[String(it.type)] ?? 0);
+      out.push([t, toNum(it.id, 'item id'), 0, 0]);
+    }
+  }
+  return out;
+}
+
+/**
+ * High-level authoring: turn an EXISTING event into a merchant / inn / sign,
+ * preserving its identity (id, position, name) and sprite while replacing its
+ * behaviour. Reuses the same audited command shapes as the create_* presets.
+ * Roadmap #6 — "convert NPC into merchant" without re-placing the event.
+ */
+async function convertEvent(projectPath: string, mapId: number, eventId: number, kind: string, options: Record<string, unknown>) {
+  const numMapId = toNum(mapId, 'mapId');
+  const numEventId = toNum(eventId, 'eventId');
+  options = options || {};
+  const map = await getMap(projectPath, numMapId) as RpgMakerMap;
+  if (!Array.isArray(map.events) || !map.events[numEventId]) {
+    throw new Error('Event ' + numEventId + ' not found on map ' + numMapId);
+  }
+  const existing = map.events[numEventId] as MapEvent;
+  // Preserve the event's current sprite so it still looks like the same NPC.
+  const prevImage = existing.pages && existing.pages[0] && existing.pages[0].image
+    ? existing.pages[0].image
+    : { characterIndex: 0, characterName: '', direction: 2, pattern: 1, tileId: 0 };
+
+  let list: EventCommand[];
+  let defaultName: string;
+  if (kind === 'merchant') {
+    const goods = normalizeMerchantGoods(options);
+    if (goods.length === 0) throw new Error('convert to "merchant" requires goods [[type,id,priceType,price]] or items [{type,id}]');
+    const greeting = typeof options.greeting === 'string' ? options.greeting : 'Welcome! Take a look at my wares.';
+    list = cmd.message(greeting, '', 0).filter(function (c) { return c.code !== 0; });
+    const first = goods[0];
+    list.push({ code: 302, indent: 0, parameters: [first[0], first[1], first[2], first[3], false] });
+    for (let i = 1; i < goods.length; i++) list.push({ code: 605, indent: 0, parameters: goods[i] });
+    list.push({ code: 0, indent: 0, parameters: [] });
+    defaultName = 'Merchant';
+  } else if (kind === 'inn') {
+    const numCost = toNum(options.cost !== undefined ? options.cost : 50, 'cost');
+    list = [
+      { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
+      { code: 401, indent: 0, parameters: ['Rest here for ' + numCost + ' gold?'] },
+      { code: 102, indent: 0, parameters: [['Yes', 'No'], 1] },
+      { code: 402, indent: 0, parameters: [0, 'Yes'] },
+      { code: 111, indent: 1, parameters: [12, '$gameParty.gold() >= ' + numCost] },
+      { code: 125, indent: 2, parameters: [1, 0, numCost] },
+      { code: 314, indent: 2, parameters: [0, 0] },
+      { code: 101, indent: 2, parameters: ['', 0, 0, 2] },
+      { code: 401, indent: 2, parameters: ['You feel refreshed!'] },
+      { code: 0, indent: 2, parameters: [] },
+      { code: 411, indent: 1, parameters: [] },
+      { code: 101, indent: 2, parameters: ['', 0, 0, 2] },
+      { code: 401, indent: 2, parameters: ['Not enough gold...'] },
+      { code: 0, indent: 2, parameters: [] },
+      { code: 412, indent: 1, parameters: [] },
+      { code: 402, indent: 0, parameters: [1, 'No'] },
+      { code: 0, indent: 0, parameters: [] },
+      { code: 404, indent: 0, parameters: [] },
+      { code: 0, indent: 0, parameters: [] },
+    ];
+    defaultName = 'Innkeeper';
+  } else if (kind === 'sign') {
+    const raw = Array.isArray(options.text) ? options.text : (typeof options.text === 'string' ? [options.text] : ['...']);
+    list = [];
+    for (const ln of raw as unknown[]) {
+      list.push({ code: 101, indent: 0, parameters: ['', 0, 0, 2] });
+      list.push({ code: 401, indent: 0, parameters: [String(ln)] });
+    }
+    list.push({ code: 0, indent: 0, parameters: [] });
+    defaultName = 'Sign';
+  } else {
+    throw new Error('Unknown kind "' + kind + '". Valid: merchant, inn, sign');
+  }
+
+  const page = {
+    conditions: createDefaultConditions(), directionFix: true,
+    image: prevImage,
+    list: list, moveFrequency: 3,
+    moveRoute: { list: [{ code: 0, parameters: [] }], repeat: true, skippable: false, wait: false },
+    moveSpeed: 2, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: false,
+  };
+  const converted = Object.assign({}, existing, { name: existing.name || defaultName, pages: [page] }) as MapEvent;
+  map.events[numEventId] = converted;
+  sanitizeEventImages(projectPath, map.events[numEventId]);
+  await writeMapJson(projectPath, getMapPath(projectPath, numMapId), map);
+  return { converted: true, kind: kind, event: converted };
 }
 
 async function createBossEvent(projectPath: string, mapId: number, x: number, y: number, name: string, troopId: number, characterName: string, characterIndex: number) {
@@ -1624,6 +1727,7 @@ export { deleteMapEvent };
 export { duplicateMap };
 export { createShop };
 export { createInn };
+export { convertEvent };
 export { createBossEvent };
 export { createPuzzleSwitch };
 export { setMapDisplayNames };

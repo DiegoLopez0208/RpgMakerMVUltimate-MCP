@@ -1,5 +1,4 @@
 import { readFile, writeFile, copyFile } from 'fs/promises';
-import path from 'path';
 import { resolveSafePath } from './security.js';
 
 /**
