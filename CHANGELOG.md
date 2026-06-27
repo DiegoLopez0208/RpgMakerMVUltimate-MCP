@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.12.1] - 2026-06-27
+
+### Changed
+- Package discoverability: added npm `keywords`, `homepage`, `repository`, `bugs`, `author` and `license` fields, and refreshed the description to reflect the 13-tool surface and the project-intelligence layer. No code changes.
+
 ## [5.12.0] - 2026-06-27
 
 ### Added

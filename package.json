@@ -1,7 +1,34 @@
 {
   "name": "rpgmaker-mv-mcp",
-  "version": "5.12.0",
-  "description": "MCP server for editing RPG Maker MV projects: 12 consolidated tools for maps, events, database, and procedural generation.",
+  "version": "5.12.1",
+  "description": "AI copilot for RPG Maker MV via MCP — 13 tools to generate maps, edit the database and events, and understand a project: validate broken references, explain why an event never fires, critique maps, and search by meaning.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "modelcontextprotocol",
+    "rpg-maker",
+    "rpg-maker-mv",
+    "rpgmaker",
+    "rpgmaker-mv",
+    "rpg",
+    "game-development",
+    "gamedev",
+    "map-generation",
+    "procedural-generation",
+    "ai",
+    "claude",
+    "llm-tools"
+  ],
+  "homepage": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/issues"
+  },
+  "author": "DiegoLopez0208",
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
