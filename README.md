@@ -44,17 +44,24 @@ RPGMAKER_PROJECT_PATH=/path/to/your/project npm start
 |---|---|
 | `query_database` | List / get by ID / search any database (actors, classes, skills, items, weapons, armors, enemies, states, troops, tilesets, common events, animations) |
 | `create_database_entry` | Create entries, with presets: `damage_skill`, `healing_skill`, `buff_skill`, `state_skill`, `boss_enemy`, `encounter_troop` |
-| `update_database_entry` | Partial updates; append commands to common events; add enemies to troops |
-| `delete_database_entry` | Delete entries (with reference-breakage warnings) |
+| `update_database_entry` | Partial updates (incl. troops & animations); append commands to common events; add enemies to troops |
+| `delete_database_entry` | Delete entries incl. troops & animations (with reference-breakage warnings) |
 | `query_map` | Map tree, full map data, events, single event, lint (`validate`), offline ASCII render |
 | `generate_map` | Knowledge-driven generation: clones a real reference map per theme (or pure procedural / blank / themed / a specific template / batch / duplicate) |
 | `edit_map` | Fill tile layers, set display names, organize the map tree, connect two maps, set encounters |
 | `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, **convert** an existing event into a merchant/inn/sign, delete, add commands, bulk-populate |
-| `manage_system` | Game title, switch/variable names, starting position |
+| `manage_system` | Game title, switch/variable names, starting position; **author a plugin** (`create_plugin`), **scaffold a new project** (`scaffold_project`), and **run the game** (`playtest`) / open it in the editor (`open_editor`) |
 | `analyze_project` | Read-only project intelligence — `overview`, `index`, `validate`, `graph`, `usage`, `explain`, `ast`, `plugins`, `critique`, `refactor`, `search` (see below) |
 | `get_project_context` | Project digest, asset index, per-tileset tile IDs, bundled-template catalog |
 | `set_project_path` | Switch projects at runtime |
 | `analyze_image` | Optional Vision-AI image analysis, plus offline tileset grid measurement and quadrant colors |
+
+## Scaffold, run & write safety
+
+- **Write safety.** Every project write is atomic (temp file + rename, so an interrupted call can't leave half-written JSON) and keeps rotated timestamped backups under `.mcp-backups/` (last N, `RPGMV_BACKUP_KEEP`, default 10). Pass `dryRun: true` to any mutating tool to preview the change without touching disk.
+- **Scaffold a new project.** `manage_system { action: "scaffold_project", destPath, title? }` clones the engine's blank template (NewData) into a new directory — the same thing the editor's *New Project* does — refusing to overwrite an existing project.
+- **Run it.** `manage_system { action: "playtest" }` launches the active project through the engine's bundled nwjs runtime (like the editor's *Playtest* button), so an agent can actually see a change running; `open_editor` opens it in RPGMV.exe. The install is found via `install` / the `RPGMAKER_MV_INSTALL` env var / the default Steam path (Windows).
+- **Author plugins.** `manage_system { action: "create_plugin", name, ... }` writes `js/plugins/<name>.js` with a correct `@plugindesc`/`@param`/`@help` header and registers it in `js/plugins.js`.
 
 ## Map generation (knowledge-driven)
 

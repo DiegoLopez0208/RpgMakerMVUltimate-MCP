@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.14.2] - 2026-07-23
+
+### Changed
+- Documentation: the README now covers the capabilities added in 5.13–5.14 — write safety (atomic writes, rotated backups, `dryRun`), project scaffolding, playtest / open-in-editor, plugin authoring, and full troop/animation CRUD. No code changes.
+
 ## [5.14.1] - 2026-07-23
 
 ### Fixed
