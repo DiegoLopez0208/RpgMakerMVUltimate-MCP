@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.14.0] - 2026-07-23
+
+### Added
+- **Run the project, not just edit it.** `manage_system` gains `playtest` and `open_editor`. `playtest` launches the active project through the engine's bundled nwjs runtime (`nwjs-win/Game.exe <project> test`) — the same thing the editor's Playtest button does — so an agent can actually see a change running; `open_editor` opens it in `RPGMV.exe`. The engine is located via `install` / the `RPGMAKER_MV_INSTALL` env var / the default Steam path, processes are spawned detached, and both are Windows-only. Verified end-to-end: `scaffold_project` → `generate_map` → `manage_map_event` → `playtest` opens a live game window.
+
 ## [5.13.0] - 2026-07-23
 
 ### Added
