@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.13.0] - 2026-07-23
+
+### Added
+- **Write safety.** All project writes are now atomic (temp file + rename, so an interrupted write can never leave a half-written JSON) and keep rotated timestamped backups under `.mcp-backups/` (last N, `RPGMV_BACKUP_KEEP`, default 10). Every mutating tool accepts `dryRun: true` to preview what it would change without touching disk.
+- **New capabilities.** Full CRUD for troops and animations (`update`/`delete`, previously rejected). `manage_system` gains `create_plugin` (authors `js/plugins/<name>.js` with a correct `@plugindesc`/`@author`/`@param`/`@help` header and registers it in `js/plugins.js`) and `scaffold_project` (clones the engine's blank NewData project into a new directory, refusing to overwrite an existing project).
+- **Map theme coverage.** `snow`, `volcano`, `ruins` and `magic_forest` now reach their real reference templates via theme affinity (`snow` was previously unreachable). Added derived templates for `beach` (sand-remapped coastal), `harbor` and `sewer` (106 → 111 templates).
+
+### Changed
+- **Input validation.** Zod schemas now cover the mutating consolidated tools (event commands, damage/effect/trait codes, layer/trigger ranges, entity/action/mode enums), validated at the router boundary without dropping fields.
+- **Adaptive tile IDs.** The procedural generator now adapts ground/water/wall tiles to the project's actual tileset (validate-and-repair against the scanned tiles) instead of assuming the RTP default IDs; RTP projects are unchanged.
+- **Script-aware analysis.** Reference extraction now parses Script commands (355/655) for `$gameSwitches`/`$gameVariables`/`$gameSelfSwitches` `setValue`/`value` and `reserveCommonEvent`, and records Plugin Commands (356). `analyze_project`'s `explain`/`validate` no longer report a switch set only from a script as "never set".
+
+### Fixed
+- Custom (non-RTP) tilesets no longer corrupt generated maps: scanned tile descriptors were being written into the tile array as objects on the no-stamp decoration path.
+- `postbuild` is now cross-platform (was failing on Windows, leaving `dist/knowledge` uncopied).
+
 ## [5.12.2] - 2026-06-27
 
 ### Changed
