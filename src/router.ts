@@ -390,8 +390,12 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         sourcePath: args.sourcePath, title: args.title,
         startMapId: args.mapId, startX: args.x, startY: args.y
       });
+    case 'playtest':
+      return executeTool('playtest_project', { install: args.install, test: args.test });
+    case 'open_editor':
+      return executeTool('open_in_editor', { install: args.install });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project');
+      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, open_editor');
   }
 }
 

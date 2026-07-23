@@ -227,7 +227,7 @@ const ManageMapEventSchema = z.object({
 });
 
 const ManageSystemSchema = z.object({
-  action: z.enum(["get", "set_title", "name_switch", "name_variable", "set_starting_position", "create_plugin", "scaffold_project"]),
+  action: z.enum(["get", "set_title", "name_switch", "name_variable", "set_starting_position", "create_plugin", "scaffold_project", "playtest", "open_editor"]),
   section: z.enum(["full", "switches", "variables", "title"]).optional(),
   title: z.string().optional(),
   id: idLike.optional(),
@@ -246,6 +246,9 @@ const ManageSystemSchema = z.object({
   // scaffold_project
   destPath: z.string().optional(),
   sourcePath: z.string().optional(),
+  // playtest / open_editor
+  install: z.string().optional(),
+  test: z.boolean().optional(),
 }).passthrough().superRefine((a, ctx) => {
   if (a.action === "create_plugin") {
     if (typeof a.name !== "string" || !/^[A-Za-z0-9_-]+$/.test(a.name)) {

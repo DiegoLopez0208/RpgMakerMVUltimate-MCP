@@ -37,6 +37,7 @@ import * as troopTools from './tools/troopTools.js';
 import * as animationTools from './tools/animationTools.js';
 import * as pluginTools from './tools/pluginTools.js';
 import * as scaffoldTools from './tools/scaffoldTools.js';
+import * as runTools from './tools/runTools.js';
 import * as projectTools from './tools/projectTools.js';
 import * as assetTools from './tools/assetTools.js';
 import { TOOL_DEFINITIONS } from './toolDefinitions.js';
@@ -464,6 +465,10 @@ case 'create_plugin':
   return await pluginTools.createPlugin(p, args as unknown as pluginTools.CreatePluginParams);
 case 'scaffold_project':
   return await scaffoldTools.scaffoldProject(p, args as unknown as scaffoldTools.ScaffoldParams);
+case 'playtest_project':
+  return await runTools.playtest(p, args as unknown as runTools.RunParams);
+case 'open_in_editor':
+  return await runTools.openInEditor(p, args as unknown as runTools.RunParams);
 
 // ── Class Tools ──
 case 'get_classes':
