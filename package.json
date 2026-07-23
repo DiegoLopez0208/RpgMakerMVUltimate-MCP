@@ -46,7 +46,7 @@
     "dev": "tsx src/index.ts",
     "clean": "rimraf dist",
     "prebuild": "rimraf dist",
-    "postbuild": "mkdir -p dist/knowledge && cp -r knowledge/. dist/knowledge/",
+    "postbuild": "node -e \"require('fs').cpSync('knowledge','dist/knowledge',{recursive:true})\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

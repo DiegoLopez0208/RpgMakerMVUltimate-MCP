@@ -1164,5 +1164,60 @@
     "width": 41,
     "height": 40,
     "eventCount": 2
+  },
+  {
+    "id": 107,
+    "name": "MAP107",
+    "category": "exterior",
+    "theme": "beach",
+    "tilesetId": 2,
+    "tilesetName": "Outside",
+    "width": 40,
+    "height": 40,
+    "eventCount": 0
+  },
+  {
+    "id": 108,
+    "name": "MAP108",
+    "category": "exterior",
+    "theme": "beach",
+    "tilesetId": 2,
+    "tilesetName": "Outside",
+    "width": 40,
+    "height": 50,
+    "eventCount": 16
+  },
+  {
+    "id": 109,
+    "name": "MAP109",
+    "category": "town",
+    "theme": "harbor",
+    "tilesetId": 2,
+    "tilesetName": "Outside",
+    "width": 40,
+    "height": 40,
+    "eventCount": 0
+  },
+  {
+    "id": 110,
+    "name": "MAP110",
+    "category": "town",
+    "theme": "harbor",
+    "tilesetId": 2,
+    "tilesetName": "Outside",
+    "width": 50,
+    "height": 40,
+    "eventCount": 0
+  },
+  {
+    "id": 111,
+    "name": "MAP111",
+    "category": "dungeon",
+    "theme": "sewer",
+    "tilesetId": 4,
+    "tilesetName": "Dungeon",
+    "width": 41,
+    "height": 30,
+    "eventCount": 4
   }
 ]

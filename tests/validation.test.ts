@@ -8,6 +8,7 @@ import {
   CreateBuffSkillSchema,
   CreateStateSkillSchema,
   RenderMapAsciiSchema,
+  validateConsolidated,
 } from "../src/utils/validation.js";
 
 describe("validation schemas", () => {
@@ -152,6 +153,97 @@ describe("validation schemas", () => {
         expect(result.data.layer).toBe(0);
         expect(result.data.show_events).toBe(true);
       }
+    });
+  });
+
+  describe("validateConsolidated (Phase 1b)", () => {
+    it("is a no-op for read-only / unschema'd tools", () => {
+      expect(() => validateConsolidated("query_database", { entity: "actors" })).not.toThrow();
+      expect(() => validateConsolidated("analyze_project", { view: "overview" })).not.toThrow();
+    });
+
+    it("accepts a well-formed create_database_entry with valid effects/damage", () => {
+      expect(() => validateConsolidated("create_database_entry", {
+        entity: "skills",
+        data: {
+          name: "Fireball",
+          damage: { type: 1, elementId: 2, formula: "a.mat * 4 - b.mdf * 2" },
+          effects: [{ code: 21, dataId: 4, value1: 1 }], // ADD_STATE
+        },
+      })).not.toThrow();
+    });
+
+    it("rejects an unknown effect code", () => {
+      expect(() => validateConsolidated("create_database_entry", {
+        entity: "skills",
+        data: { name: "Bad", effects: [{ code: 999, dataId: 1 }] },
+      })).toThrow(/effect code/i);
+    });
+
+    it("rejects a damage type out of range", () => {
+      expect(() => validateConsolidated("create_database_entry", {
+        entity: "items",
+        data: { name: "Bad", damage: { type: 9, formula: "1" } },
+      })).toThrow(/Validation error/);
+    });
+
+    it("rejects an unknown trait code", () => {
+      expect(() => validateConsolidated("create_database_entry", {
+        entity: "actors",
+        data: { name: "Hero", traits: [{ code: 99, dataId: 1, value: 1 }] },
+      })).toThrow(/trait code/i);
+    });
+
+    it("requires either entity or preset for create", () => {
+      expect(() => validateConsolidated("create_database_entry", { data: { name: "x" } })).toThrow(/entity.*preset/i);
+      expect(() => validateConsolidated("create_database_entry", { preset: "damage_skill", data: {} })).not.toThrow();
+    });
+
+    it("accepts every real MV database as an entity (verb-support is the router's job)", () => {
+      for (const entity of ["animations", "tilesets", "troops"]) {
+        expect(() => validateConsolidated("delete_database_entry", { entity, id: 1 })).not.toThrow();
+      }
+      expect(() => validateConsolidated("delete_database_entry", { entity: "foobar", id: 1 })).toThrow(/Validation error/);
+    });
+
+    it("validates update_database_entry appendCommand as an event command", () => {
+      expect(() => validateConsolidated("update_database_entry", {
+        entity: "common_events", id: 1, appendCommand: { code: 101, indent: 0, parameters: ["", 0, 0, 2] },
+      })).not.toThrow();
+      expect(() => validateConsolidated("update_database_entry", {
+        entity: "common_events", id: 1, appendCommand: { code: "not-a-number" },
+      })).toThrow(/Validation error/);
+    });
+
+    it("edit_map fill_layer bounds the layer to 0-5", () => {
+      expect(() => validateConsolidated("edit_map", { action: "fill_layer", mapId: 1, layer: 3, tileId: 0 })).not.toThrow();
+      expect(() => validateConsolidated("edit_map", { action: "fill_layer", mapId: 1, layer: 9, tileId: 0 })).toThrow(/layer/);
+    });
+
+    it("edit_map rejects an unknown action", () => {
+      expect(() => validateConsolidated("edit_map", { action: "nuke_everything" })).toThrow(/Validation error/);
+    });
+
+    it("manage_map_event bounds trigger to 0-4 and validates a command", () => {
+      expect(() => validateConsolidated("manage_map_event", { action: "create", mapId: 1, trigger: 3 })).not.toThrow();
+      expect(() => validateConsolidated("manage_map_event", { action: "create", mapId: 1, trigger: 7 })).toThrow(/trigger/);
+      expect(() => validateConsolidated("manage_map_event", {
+        action: "add_command", mapId: 1, eventId: 1, command: { code: 0.5 },
+      })).toThrow(/Validation error/);
+    });
+
+    it("manage_map_event requires mapId", () => {
+      expect(() => validateConsolidated("manage_map_event", { action: "create" })).toThrow(/Validation error/);
+    });
+
+    it("manage_system rejects an unknown action", () => {
+      expect(() => validateConsolidated("manage_system", { action: "delete_everything" })).toThrow(/Validation error/);
+      expect(() => validateConsolidated("manage_system", { action: "set_title", title: "My Game" })).not.toThrow();
+    });
+
+    it("accepts numeric-string ids without coercing them away", () => {
+      expect(() => validateConsolidated("delete_database_entry", { entity: "actors", id: "3" })).not.toThrow();
+      expect(() => validateConsolidated("edit_map", { action: "fill_layer", mapId: "1", layer: "0", tileId: "0" })).not.toThrow();
     });
   });
 });

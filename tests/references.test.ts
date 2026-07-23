@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractRefs, extractRefsFromMany, isEmptyRefSet } from "../src/intel/references.js";
+import { extractRefs, extractRefsFromMany, extractWrites, extractReads, isEmptyRefSet } from "../src/intel/references.js";
 import type { RawCommand } from "../src/intel/eventAst.js";
 
 describe("extractRefs", () => {
@@ -64,5 +64,56 @@ describe("extractRefs", () => {
       [{ code: 121, parameters: [1, 2, 0] }],
     ]);
     expect(refs.switches).toEqual([1, 2]);
+  });
+
+  describe("script (355/655) and plugin (356) commands — Phase 4", () => {
+    it("detects switches/variables/self-switches set from a Script command as writes", () => {
+      const cmds: RawCommand[] = [
+        { code: 355, parameters: ["$gameSwitches.setValue(42, true);"] },
+        { code: 655, parameters: ["$gameVariables.setValue(7, $gameVariables.value(3) + 1);"] },
+        { code: 655, parameters: ["$gameSelfSwitches.setValue([this._mapId, this._eventId, 'A'], true);"] },
+      ];
+      const writes = extractWrites(cmds);
+      expect(writes.switches).toEqual([42]);
+      expect(writes.variables).toEqual([7]);
+      expect(writes.selfSwitches).toEqual(["A"]);
+    });
+
+    it("detects switch/variable READS from $game*.value() in a Script command", () => {
+      const cmds: RawCommand[] = [
+        { code: 355, parameters: ["if ($gameSwitches.value(10) && $gameVariables.value(3) > 5) {"] },
+        { code: 655, parameters: ["}"] },
+      ];
+      const reads = extractReads(cmds);
+      expect(reads.switches).toEqual([10]);
+      expect(reads.variables).toEqual([3]);
+    });
+
+    it("regression: a switch set ONLY via a Script command is no longer invisible (fixes false \"never set\")", () => {
+      // A door gated on switch 42, which is turned ON only from a script call.
+      const setter: RawCommand[] = [{ code: 355, parameters: ["$gameSwitches.setValue(42, true);"] }];
+      const reader: RawCommand[] = [{ code: 111, parameters: [0, 42, 0] }]; // Conditional Branch: Switch 42 ON
+      expect(extractWrites(setter).switches).toContain(42); // setter is now detected
+      expect(extractReads(reader).switches).toContain(42);
+    });
+
+    it("records plugin command names (356) as opaque tokens", () => {
+      const refs = extractRefs([
+        { code: 356, parameters: ["OpenDoor 3 left"] },
+        { code: 356, parameters: ["QuestComplete main_quest"] },
+      ]);
+      expect(refs.pluginCommands).toEqual(["OpenDoor", "QuestComplete"]);
+    });
+
+    it("captures reserveCommonEvent(n) from a script as a common-event reference", () => {
+      const refs = extractRefs([{ code: 355, parameters: ["$gameTemp.reserveCommonEvent(9);"] }]);
+      expect(refs.commonEvents).toEqual([9]);
+    });
+
+    it("ignores malformed / non-string script parameters without throwing", () => {
+      expect(() => extractRefs([{ code: 355, parameters: [42] }])).not.toThrow();
+      expect(extractRefs([{ code: 355, parameters: [] }]).switches).toEqual([]);
+      expect(extractRefs([{ code: 356, parameters: [""] }]).pluginCommands).toEqual([]);
+    });
   });
 });

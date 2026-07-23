@@ -7,14 +7,82 @@ import { isTileA1, isRoofTile, isWallSideTile } from './engine.js';
 import { isStandable } from './placement.js';
 
 // Real scanned tiles for the active project's tileset (optional, set by
-// generateTileLayoutV3 when the caller passes availableTiles). Used by theme
-// fallbacks so custom tilesets don't emit blank/garbage decoration.
-interface AvailableTiles { ground?: number[]; water?: number[]; decoration?: number[]; }
+// generateTileLayoutV3 when the caller passes availableTiles). Used to adapt the
+// procedural generators to the project's ACTUAL tileset instead of the hardcoded
+// RTP table — so custom tilesets don't render ground/walls/water as garbage or
+// emit blank decoration. Every field is a flat list of base (shape-0) tile IDs.
+interface AvailableTiles {
+  ground?: number[];
+  water?: number[];
+  wallSide?: number[];
+  wallTop?: number[];
+  roof?: number[];
+  decoration?: number[];
+}
 
 interface GeneratorContext {
   stampTileset: number;
   availableTiles?: AvailableTiles;
   interiorRoom: string;
+  // Lazily-cached per-tileset-key resolved tile configs (see pickTiles).
+  _resolved?: Record<string, Record<string, number>>;
+}
+
+// assetTools scans a tileset into arrays of {tileId,kind,description} objects.
+// The generators need flat number[] of tile IDs, so normalize at the boundary.
+// Accepts either shape (numbers pass through) and is null-safe.
+function normalizeAvailableTiles(raw: unknown): AvailableTiles | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const src = raw as Record<string, unknown>;
+  const toIds = (arr: unknown): number[] => {
+    if (!Array.isArray(arr)) return [];
+    const out: number[] = [];
+    for (const e of arr) {
+      if (typeof e === 'number' && Number.isInteger(e)) out.push(e);
+      else if (e && typeof e === 'object' && Number.isInteger((e as { tileId?: number }).tileId)) out.push((e as { tileId: number }).tileId);
+    }
+    return out;
+  };
+  return {
+    ground: toIds(src.ground), water: toIds(src.water),
+    wallSide: toIds(src.wallSide), wallTop: toIds(src.wallTop),
+    roof: toIds(src.roof), decoration: toIds(src.decoration),
+  };
+}
+
+// Validate-and-repair a hardcoded TILESETS config against the project's real
+// scanned tiles. Each STRUCTURAL role (ground/water/wall/roof families) keeps its
+// hardcoded ID when that ID actually exists in the project's tileset — so RTP
+// projects are unchanged (no regression) — and is otherwise repaired to a real
+// scanned tile of the same family, so a custom tileset renders coherently instead
+// of showing the RTP guess as animated water / a blank slab. Decoration roles are
+// left alone (the list-based decoration fallback handles those).
+const GROUND_ROLES = ['grass', 'ground', 'floor', 'dirt', 'stone', 'sand', 'darkGrass', 'carpet', 'woodFloor', 'tileFloor', 'darkFloor', 'brickFloor', 'metalFloor', 'concrete', 'metal', 'asphalt', 'mountain', 'forest'];
+const WATER_ROLES = ['water', 'deepWater', 'swampWater', 'lava'];
+const WALLTOP_ROLES = ['wallTop', 'roof', 'roof2', 'roof3'];
+function resolveTilesConfig(base: Record<string, number>, avail?: AvailableTiles): Record<string, number> {
+  if (!avail) return base;
+  const has = (arr: number[] | undefined, id: number) => !!arr && arr.indexOf(id) >= 0;
+  const first = (arr?: number[]) => (arr && arr.length ? arr[0] : undefined);
+  const out: Record<string, number> = { ...base };
+  const g0 = first(avail.ground), w0 = first(avail.water), ws0 = first(avail.wallSide);
+  const wt0 = first(avail.wallTop) ?? first(avail.roof);
+  for (const k of GROUND_ROLES) if (k in out && !has(avail.ground, out[k]) && g0 !== undefined) out[k] = g0;
+  for (const k of WATER_ROLES) if (k in out && !has(avail.water, out[k]) && w0 !== undefined) out[k] = w0;
+  if ('wallSide' in out && !has(avail.wallSide, out.wallSide) && ws0 !== undefined) out.wallSide = ws0;
+  for (const k of WALLTOP_ROLES) if (k in out && !has(avail.wallTop, out[k]) && !has(avail.roof, out[k]) && wt0 !== undefined) out[k] = wt0;
+  return out;
+}
+
+// Resolve (and cache) the tile config for a TILESETS key against the project's
+// scanned tiles. With no scanned tiles it returns the hardcoded RTP config
+// unchanged, so behaviour is identical for RTP projects and for callers that
+// don't pass availableTiles.
+function pickTiles(ctx: GeneratorContext, key: string): Record<string, number> {
+  if (!ctx.availableTiles) return TILESETS[key];
+  if (!ctx._resolved) ctx._resolved = {};
+  if (!ctx._resolved[key]) ctx._resolved[key] = resolveTilesConfig(TILESETS[key], ctx.availableTiles);
+  return ctx._resolved[key];
 }
 
 // ─── mapGenerator.ts — RPG Maker MV Procedural Map Generator ───
@@ -797,7 +865,7 @@ function buildAutotileHouse(data: number[], w: number, h: number, hx: number, hy
 }
 
 function generateForestTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
-  const ts = TILESETS.outside;
+  const ts = pickTiles(ctx, 'outside');
   applyPerlinTerrain(data, w, h, perlin, ts, { scale: 0.06, waterThreshold: -0.25, deepThreshold: -0.45 });
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -885,6 +953,32 @@ const THEME_CATEGORIES: Record<string, string[]> = {
   space_interior: ['interior', 'modern']
 };
 
+// Theme affinity: the template `theme` tags that suit a requested theme, used
+// IN ADDITION to category matching. This fixes two long-standing selection gaps:
+//  (1) themed templates filed under a category the request doesn't list — e.g.
+//      the 6 "snow" templates live under town/castle/dungeon, so a snow request
+//      (categories ['exterior']) never reached ANY of them; and
+//  (2) request themes whose name differs from the template tag — volcano↔lava,
+//      ruins↔dark, magic_forest↔forest — which got no theme preference at all.
+// A template matching one of these tags is added to the candidate pool even when
+// its category isn't in THEME_CATEGORIES, and is scored with a preference bonus.
+const THEME_TEMPLATE_THEMES: Record<string, string[]> = {
+  world: ['world'],
+  town: ['town'], village: ['town'],
+  castle: ['castle', 'dark'], fortress: ['castle', 'dark'],
+  forest: ['forest'], magic_forest: ['forest'],
+  snow: ['snow'],
+  desert: ['desert'],
+  swamp: ['swamp'],
+  ruins: ['dark'],
+  beach: ['beach'],
+  harbor: ['harbor', 'town'],
+  interior: ['interior'], magic_interior: ['interior'],
+  dungeon: ['cave', 'dark'], cave: ['cave'], sewer: ['sewer', 'cave', 'dark'],
+  volcano: ['lava'],
+  space_exterior: ['sf'], space_interior: ['sf']
+};
+
 // B/C door tile ids in the RTP Outside sheets (B-sheet positions that render as
 // wooden doors). Used to detect house entrances in a cloned town/exterior
 // template so we can wire enterable-interior door events to them.
@@ -902,7 +996,7 @@ type TemplateMeta = { id: number; category: string; theme: string; width: number
 // bonus (so cloned tiles actually render on the project's tileset), and a
 // penalty for templates smaller than the request (cropping a bigger map keeps
 // real content; padding a smaller one leaves empty void).
-function scoreTemplate(t: TemplateMeta, w: number, h: number, theme: string, preferredTileset: number): number {
+function scoreTemplate(t: TemplateMeta, w: number, h: number, theme: string, preferredTileset: number, affinityThemes: string[] = []): number {
   const areaRatio = (t.width * t.height) / (w * h);
   // A template at least as big as the request is fine — we crop the best window.
   // Only mildly discourage cropping a tiny corner out of a huge map. A template
@@ -916,7 +1010,8 @@ function scoreTemplate(t: TemplateMeta, w: number, h: number, theme: string, pre
   }
   const aspectCost = Math.abs(t.width / t.height - w / h) * 0.3;
   const tilesetBonus = t.tilesetId === preferredTileset ? -0.6 : 0;
-  const themeBonus = t.theme === theme ? -0.4 : 0;
+  // Prefer an exact theme tag, then an affinity tag (snow→snow, volcano→lava).
+  const themeBonus = t.theme === theme ? -0.4 : (affinityThemes.indexOf(t.theme) >= 0 ? -0.3 : 0);
   return sizeCost + aspectCost + tilesetBonus + themeBonus;
 }
 
@@ -986,7 +1081,11 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
   }
   if (!picked) {
     const cats = THEME_CATEGORIES[theme] || [];
-    let candidates = idx.filter(function (t) { return cats.indexOf(t.category) >= 0; });
+    const affinity = THEME_TEMPLATE_THEMES[theme] || [];
+    // Candidate pool: templates matching the theme's categories OR carrying an
+    // affinity theme tag (so snow/volcano/ruins templates filed under other
+    // categories are reachable). scoreTemplate then ranks by fit.
+    let candidates = idx.filter(function (t) { return cats.indexOf(t.category) >= 0 || affinity.indexOf(t.theme) >= 0; });
     if (candidates.length === 0) return null;
     const ts = preferredTileset || THEME_TILESET[theme] || 1;
     // Hard-filter to the target tileset when any candidate matches: the cloned
@@ -996,7 +1095,7 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
     const sameTs = candidates.filter(function (t) { return t.tilesetId === ts; });
     if (sameTs.length > 0) candidates = sameTs;
     const ranked = candidates
-      .map(function (t) { return { t: t, score: scoreTemplate(t, w, h, theme, ts) }; })
+      .map(function (t) { return { t: t, score: scoreTemplate(t, w, h, theme, ts, affinity) }; })
       .sort(function (a, b) { return a.score - b.score; });
     // Pick from the top matches (weighted toward the best) so the same
     // theme+size produces different real maps across seeds instead of always
@@ -1076,8 +1175,8 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
   return doors;
 }
 
-function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, _ctx: GeneratorContext): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
-  const ts = TILESETS.outside;
+function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
+  const ts = pickTiles(ctx, 'outside');
   fillLayer(data, w, h, LAYER_GROUND1, ts.grass);
   setRegion(data, w, h, 0, 0, w - 1, h - 1, 1);
   const houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] = [];
@@ -1143,7 +1242,7 @@ const FLOOR_BY_ROOM: Record<string, number[]> = {
   library: [18, 16],
 };
 function generateInteriorTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): void {
-  const ts = TILESETS.inside;
+  const ts = pickTiles(ctx, 'inside');
   const room = ctx.interiorRoom;
   // Smart floor: chosen to fit the room type (wood for homes, carpet for inns,
   // stone/tile for shops), not a blind random pick.
@@ -1194,8 +1293,8 @@ function generateInteriorTheme(data: number[], w: number, h: number, rng: PRNG, 
   }
 }
 
-function generateCastleTheme(data: number[], w: number, h: number, _rng: PRNG, _ctx: GeneratorContext): void {
-  const ts = TILESETS.outside;
+function generateCastleTheme(data: number[], w: number, h: number, _rng: PRNG, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'outside');
   fillLayer(data, w, h, LAYER_GROUND1, ts.stone);
   fillRect(data, w, h, 0, 0, w - 1, 2, LAYER_UPPER1, ts.wallSide);
   fillRect(data, w, h, 0, h - 1, w - 1, h - 1, LAYER_UPPER1, ts.wallSide);
@@ -1218,8 +1317,8 @@ function generateCastleTheme(data: number[], w: number, h: number, _rng: PRNG, _
   setTile(data, w, h, midX, h - 1, LAYER_UPPER1, 0);
 }
 
-function generateBeachTheme(data: number[], w: number, h: number, rng: PRNG, _ctx: GeneratorContext): void {
-  const ts = TILESETS.outside;
+function generateBeachTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'outside');
   const waterLine = Math.floor(h * 0.4);
   const sandLine = Math.floor(h * 0.6);
   for (let y = 0; y < h; y++)
@@ -1244,8 +1343,8 @@ function generateBeachTheme(data: number[], w: number, h: number, rng: PRNG, _ct
   }
 }
 
-function generateDesertTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
-  const ts = TILESETS.outside;
+function generateDesertTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'outside');
   fillLayer(data, w, h, LAYER_GROUND1, ts.sand || ts.dirt);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -1273,8 +1372,8 @@ function generateDesertTheme(data: number[], w: number, h: number, rng: PRNG, pe
   setTile(data, w, h, ox + 1, oy - or + 1, LAYER_UPPER1, ts.tree);
 }
 
-function generateSwampTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
-  const ts = TILESETS.outside;
+function generateSwampTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'outside');
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
       const v = perlin.fbm(x * noiseScale(0.07, w, h), y * noiseScale(0.07, w, h), 4);
@@ -1289,8 +1388,8 @@ function generateSwampTheme(data: number[], w: number, h: number, rng: PRNG, per
   }
 }
 
-function generateRuinsTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
-  const ts = TILESETS.outside;
+function generateRuinsTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'outside');
   fillLayer(data, w, h, LAYER_GROUND1, ts.stone);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -1322,15 +1421,15 @@ function generateVillageTheme(data: number[], w: number, h: number, rng: PRNG, p
 }
 
 function generateDungeonTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): { rooms: BSPRoom[]; corridors: BSPCorridor[]; bossRoom: BSPRoom } {
-  return generateBSPDungeon(data, w, h, rng, TILESETS.dungeon, { depth: Math.max(2, Math.floor(Math.min(w, h) / 15)), minRoom: 3, margin: 1 }, ctx);
+  return generateBSPDungeon(data, w, h, rng, pickTiles(ctx, 'dungeon'), { depth: Math.max(2, Math.floor(Math.min(w, h) / 15)), minRoom: 3, margin: 1 }, ctx);
 }
 
 function generateCaveTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): { grid: number[][] } {
-  return generateCellularCave(data, w, h, rng, TILESETS.dungeon, { fillProb: 0.48, iterations: 5 }, ctx);
+  return generateCellularCave(data, w, h, rng, pickTiles(ctx, 'dungeon'), { fillProb: 0.48, iterations: 5 }, ctx);
 }
 
-function generateSnowTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
-  const ts = TILESETS.outside;
+function generateSnowTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'outside');
   fillLayer(data, w, h, LAYER_GROUND1, ts.stone);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -1345,8 +1444,8 @@ function generateSnowTheme(data: number[], w: number, h: number, rng: PRNG, perl
   }
 }
 
-function generateHarborTheme(data: number[], w: number, h: number, _rng: PRNG, _ctx: GeneratorContext): void {
-  const ts = TILESETS.outside;
+function generateHarborTheme(data: number[], w: number, h: number, _rng: PRNG, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'outside');
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
       if (y < Math.floor(h * 0.35)) { setTile(data, w, h, x, y, LAYER_GROUND1, ts.deepWater); setRegion(data, w, h, x, y, 3); }
@@ -1357,8 +1456,8 @@ function generateHarborTheme(data: number[], w: number, h: number, _rng: PRNG, _
   fillRect(data, w, h, Math.floor(w * 0.2), dockY, Math.floor(w * 0.8), dockY + 1, LAYER_GROUND1, ts.stone);
 }
 
-function generateVolcanoTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
-  const ts = TILESETS.dungeon;
+function generateVolcanoTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'dungeon');
   fillLayer(data, w, h, LAYER_GROUND1, ts.darkFloor || ts.floor);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -1375,15 +1474,15 @@ function generateVolcanoTheme(data: number[], w: number, h: number, rng: PRNG, p
 }
 
 function generateSewerTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): { rooms: BSPRoom[]; corridors: BSPCorridor[]; bossRoom: BSPRoom } {
-  return generateBSPDungeon(data, w, h, rng, TILESETS.dungeon, { depth: Math.max(2, Math.floor(Math.min(w, h) / 18)), minRoom: 3, margin: 1 }, ctx);
+  return generateBSPDungeon(data, w, h, rng, pickTiles(ctx, 'dungeon'), { depth: Math.max(2, Math.floor(Math.min(w, h) / 18)), minRoom: 3, margin: 1 }, ctx);
 }
 
 function generateFortressTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): { rooms: BSPRoom[]; corridors: BSPCorridor[]; bossRoom: BSPRoom } {
-  return generateBSPDungeon(data, w, h, rng, TILESETS.dungeon, { depth: Math.max(3, Math.floor(Math.min(w, h) / 12)), minRoom: 4, margin: 1 }, ctx);
+  return generateBSPDungeon(data, w, h, rng, pickTiles(ctx, 'dungeon'), { depth: Math.max(3, Math.floor(Math.min(w, h) / 12)), minRoom: 4, margin: 1 }, ctx);
 }
 
-function generateMagicForestTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
-  const ts = TILESETS.magic_exterior;
+function generateMagicForestTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'magic_exterior');
   applyPerlinTerrain(data, w, h, perlin, ts, { scale: 0.05, waterThreshold: -0.3 });
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -1402,7 +1501,7 @@ function generateMagicForestTheme(data: number[], w: number, h: number, rng: PRN
 }
 
 function generateMagicInteriorTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): void {
-  const ts = TILESETS.inside;
+  const ts = pickTiles(ctx, 'inside');
   generateInteriorTheme(data, w, h, rng, ctx);
   const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
   setTile(data, w, h, cx, cy - 2, LAYER_UPPER2, ts.magicDeco || 512);
@@ -1410,8 +1509,8 @@ function generateMagicInteriorTheme(data: number[], w: number, h: number, rng: P
   setTile(data, w, h, cx - 2, cy, LAYER_UPPER2, ts.magicDeco3 || 514);
 }
 
-function generateSpaceInteriorTheme(data: number[], w: number, h: number, rng: PRNG, _ctx: GeneratorContext): void {
-  const ts = TILESETS.space_interior;
+function generateSpaceInteriorTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'space_interior');
   fillLayer(data, w, h, LAYER_GROUND1, ts.metalFloor);
   // Walls on the ground layer (A4 renders its own 3D); upper stays empty.
   fillRect(data, w, h, 0, 0, w - 1, 1, LAYER_GROUND1, ts.wallSide);
@@ -1430,8 +1529,8 @@ function generateSpaceInteriorTheme(data: number[], w: number, h: number, rng: P
   }
 }
 
-function generateSpaceExteriorTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
-  const ts = TILESETS.sf_outside;
+function generateSpaceExteriorTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'sf_outside');
   fillLayer(data, w, h, LAYER_GROUND1, ts.metal);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -1448,8 +1547,8 @@ function generateSpaceExteriorTheme(data: number[], w: number, h: number, rng: P
   }
 }
 
-function generateWorldTheme(data: number[], w: number, h: number, _rng: PRNG, perlin: PerlinNoise, _ctx: GeneratorContext): void {
-  const ts = TILESETS.overworld;
+function generateWorldTheme(data: number[], w: number, h: number, _rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): void {
+  const ts = pickTiles(ctx, 'overworld');
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
       const v = perlin.fbm(x * noiseScale(0.03, w, h), y * noiseScale(0.03, w, h), 5, 2.0, 0.5);
@@ -1811,10 +1910,11 @@ async function generateTileLayoutV3(width: number, height: number, theme: string
   const ctx: GeneratorContext = {
     stampTileset: ((opts as Record<string, unknown>).tilesetId as number) || THEME_TILESET[theme] || 1,
     interiorRoom: ((opts as Record<string, unknown>).roomType as string) || 'home',
-    // Real scanned tiles for the active project's tileset (optional). When stamps
-    // are unavailable, themes fall back to these instead of the hardcoded RTP
-    // table, so custom tilesets don't emit blank/garbage decoration.
-    availableTiles: (opts as Record<string, unknown>).availableTiles as AvailableTiles | undefined,
+    // Real scanned tiles for the active project's tileset (optional). Normalized
+    // from assetTools' {tileId,...} objects into flat number[] so the generators
+    // can adapt ground/water/walls/decoration to the project's actual tileset
+    // instead of the hardcoded RTP table (and never write an object as a tile id).
+    availableTiles: normalizeAvailableTiles((opts as Record<string, unknown>).availableTiles),
   };
 
   // ── Template cloning: for themes that have matching RTP reference templates,
@@ -1989,6 +2089,8 @@ async function generateMap(opts: GeneratorOptions = {}): Promise<{
 
 export { generateTileLayoutV3, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent };
 export { scoreTemplate, bestCropOffset, dominantGround };
+export { THEME_CATEGORIES, THEME_TEMPLATE_THEMES };
+export { normalizeAvailableTiles, resolveTilesConfig, pickTiles };
 export { generateMap };
 export { generateFromTemplate };
 export { searchTemplates };

@@ -41,7 +41,7 @@ beforeAll(async () => {
   }]);
   write("System.json", {
     gameTitle: "Graph", startMapId: 1, startX: 5, startY: 5,
-    switches: ["", "GateOpen", "DeadWrite", "Used"],
+    switches: ["", "GateOpen", "DeadWrite", "Used", "ScriptGate"],
     variables: ["", "Counter"],
   });
   write("MapInfos.json", [null,
@@ -59,7 +59,15 @@ beforeAll(async () => {
     end,
   ])] });
   write("Map002.json", { ...mapBase, events: [null, ev(1, [transfer(1), transfer(4), end])] });
-  write("Map003.json", { ...mapBase, events: [null] });
+  // Switch 4 (ScriptGate) is set ONLY from a Script command and read by a
+  // conditional — before Phase 4 the script setter was invisible, so it looked
+  // "never set". (Map003 has no transfers, so connectivity assertions are unaffected.)
+  write("Map003.json", { ...mapBase, events: [null, ev(1, [
+    { code: 355, indent: 0, parameters: ["$gameSwitches.setValue(4, true);"] }, // SCRIPT-only setter
+    { code: 111, indent: 0, parameters: [0, 4, 0] },                            // If Switch(4 ScriptGate)
+    { code: 412, indent: 0, parameters: [] },
+    end,
+  ])] });
   write("Map004.json", { ...mapBase, events: [null, ev(1, [transfer(2), end])] });
 
   clearProjectIndexCache();
@@ -88,6 +96,12 @@ describe("explainSwitch", () => {
     expect(r.setters.length).toBeGreaterThan(0);
     expect(r.readers.length).toBeGreaterThan(0);
     expect(r.diagnosis).toMatch(/set in .* and read in/);
+  });
+
+  it("Phase 4: a switch set ONLY via a Script command is not reported as never-set", () => {
+    const r = explainSwitch(index, 4);
+    expect(r.setters.length).toBeGreaterThan(0);       // the $gameSwitches.setValue(4,…) is now detected
+    expect(r.diagnosis).not.toMatch(/NEVER set ON/);
   });
 });
 

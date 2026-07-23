@@ -27,6 +27,8 @@ export interface RefSet {
   states: number[];
   audio: string[];
   images: string[];
+  /** Plugin command names invoked (code 356), as opaque tokens. */
+  pluginCommands: string[];
 }
 
 interface RefAccumulator {
@@ -44,6 +46,7 @@ interface RefAccumulator {
   states: Set<number>;
   audio: Set<string>;
   images: Set<string>;
+  pluginCommands: Set<string>;
 }
 
 function newAccumulator(): RefAccumulator {
@@ -51,7 +54,7 @@ function newAccumulator(): RefAccumulator {
     switches: new Set(), variables: new Set(), selfSwitches: new Set(),
     commonEvents: new Set(), maps: new Set(), items: new Set(), weapons: new Set(),
     armors: new Set(), troops: new Set(), animations: new Set(), actors: new Set(),
-    states: new Set(), audio: new Set(), images: new Set(),
+    states: new Set(), audio: new Set(), images: new Set(), pluginCommands: new Set(),
   };
 }
 
@@ -63,8 +66,47 @@ function freeze(acc: RefAccumulator): RefSet {
     commonEvents: nums(acc.commonEvents), maps: nums(acc.maps), items: nums(acc.items),
     weapons: nums(acc.weapons), armors: nums(acc.armors), troops: nums(acc.troops),
     animations: nums(acc.animations), actors: nums(acc.actors), states: nums(acc.states),
-    audio: strs(acc.audio), images: strs(acc.images),
+    audio: strs(acc.audio), images: strs(acc.images), pluginCommands: strs(acc.pluginCommands),
   };
+}
+
+// ── Script-command (355/655) heuristic scanning ──
+// Switch/variable/self-switch access performed from a Script command is invisible
+// to structural extraction, so a switch set only via $gameSwitches.setValue(n,…)
+// was wrongly reported as "never set" (a common reason a door/event looked like it
+// never triggered). We scan the raw JS text of Script commands for the engine's
+// standard accessors. This is heuristic (regex over source text, per line) — it
+// won't catch computed ids like setValue(n, …) — so callers should treat these as
+// lower-confidence than structurally-extracted references.
+const RE_SWITCH_SET = /\$gameSwitches\s*\.\s*setValue\s*\(\s*(\d+)/g;
+const RE_SWITCH_GET = /\$gameSwitches\s*\.\s*value\s*\(\s*(\d+)/g;
+const RE_VAR_SET = /\$gameVariables\s*\.\s*setValue\s*\(\s*(\d+)/g;
+const RE_VAR_GET = /\$gameVariables\s*\.\s*value\s*\(\s*(\d+)/g;
+const RE_SELFSW_SET = /\$gameSelfSwitches\s*\.\s*setValue\s*\(\s*\[[^\]]*?,\s*['"]([A-D])['"]/g;
+const RE_SELFSW_GET = /\$gameSelfSwitches\s*\.\s*value\s*\(\s*\[[^\]]*?,\s*['"]([A-D])['"]/g;
+const RE_RESERVE_CE = /\$gameTemp\s*\.\s*reserveCommonEvent\s*\(\s*(\d+)/g;
+
+/** True for Script commands: 355 (first line) and 655 (continuation lines). */
+function isScriptCode(code: number): boolean {
+  return code === 355 || code === 655;
+}
+
+/** The raw text of a Script (355/655) or Plugin Command (356): parameters[0]. */
+function scriptTextOf(cmd: RawCommand): string {
+  const p = Array.isArray(cmd?.parameters) ? cmd.parameters! : [];
+  return typeof p[0] === "string" ? p[0] : "";
+}
+
+function scanNums(re: RegExp, text: string, set: Set<number>): void {
+  re.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) { const n = Number(m[1]); if (n > 0) set.add(n); }
+}
+
+function scanStrs(re: RegExp, text: string, set: Set<string>): void {
+  re.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) if (m[1]) set.add(m[1]);
 }
 
 /** Add every id in the inclusive range start..end to a set (handles reversed/garbage input). */
@@ -130,6 +172,19 @@ function accumulate(acc: RefAccumulator, commands: RawCommand[]): void {
       case 132: case 133: case 139: case 140:
         addAudio(acc.audio, p[0]);
         break;
+      case 355: case 655: {                                                      // Script (heuristic)
+        const t = typeof p[0] === "string" ? p[0] : "";
+        scanNums(RE_SWITCH_SET, t, acc.switches); scanNums(RE_SWITCH_GET, t, acc.switches);
+        scanNums(RE_VAR_SET, t, acc.variables); scanNums(RE_VAR_GET, t, acc.variables);
+        scanStrs(RE_SELFSW_SET, t, acc.selfSwitches); scanStrs(RE_SELFSW_GET, t, acc.selfSwitches);
+        scanNums(RE_RESERVE_CE, t, acc.commonEvents);
+        break;
+      }
+      case 356: {                                                                // Plugin Command
+        const name = (typeof p[0] === "string" ? p[0] : "").trim().split(/\s+/)[0];
+        if (name) acc.pluginCommands.add(name);
+        break;
+      }
       default: break;
     }
   }
@@ -175,6 +230,12 @@ function accumulateWrites(sw: Set<number>, va: Set<number>, ss: Set<string>, com
     if (code === 121) addRange(sw, p[0], p[1]);
     else if (code === 122) addRange(va, p[0], p[1]);
     else if (code === 123 && typeof p[0] === "string") ss.add(p[0]);
+    else if (isScriptCode(code)) {                       // Script: $game*.setValue(...) (heuristic)
+      const t = scriptTextOf(cmd);
+      scanNums(RE_SWITCH_SET, t, sw);
+      scanNums(RE_VAR_SET, t, va);
+      scanStrs(RE_SELFSW_SET, t, ss);
+    }
   }
 }
 
@@ -197,6 +258,11 @@ function accumulateReads(sw: Set<number>, va: Set<number>, ss: Set<string>, comm
       addNum(va, p[4]);
     } else if (code === 201 && p[0] === 1) {             // Transfer designated by variables
       addNum(va, p[1]); addNum(va, p[2]); addNum(va, p[3]);
+    } else if (isScriptCode(code)) {                     // Script: $game*.value(...) reads (heuristic)
+      const t = scriptTextOf(cmd);
+      scanNums(RE_SWITCH_GET, t, sw);
+      scanNums(RE_VAR_GET, t, va);
+      scanStrs(RE_SELFSW_GET, t, ss);
     }
   }
 }

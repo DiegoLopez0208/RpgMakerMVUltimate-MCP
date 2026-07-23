@@ -1,6 +1,6 @@
 import { readdirSync } from 'fs';
 import { readFile, writeFile, copyFile } from 'fs/promises';
-import { readJson, writeJson, getDataPath, getMapPath, nextId } from '../utils/fileHandler.js';
+import { readJson, writeJson, safeWrite, getDataPath, getMapPath, nextId } from '../utils/fileHandler.js';
 import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
@@ -1347,16 +1347,7 @@ async function writeMapJson(projectPath: string, filePath: string, map: RpgMaker
 }
 
 async function writeJsonDirect(filePath: string, data: unknown) {
-  const backupPath = filePath + '.bak';
-
-  try {
-    await copyFile(filePath, backupPath);
-  } catch {
-    // If backup fails (file doesn't exist yet), continue
-  }
-
-  const jsonString = JSON.stringify(data, null, 2);
-  await writeFile(filePath, jsonString, 'utf-8');
+  await safeWrite(filePath, JSON.stringify(data, null, 2));
 }
 
 async function deleteMapEvent(projectPath: string, mapId: number, eventId: number) {

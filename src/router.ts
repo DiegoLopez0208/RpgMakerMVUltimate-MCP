@@ -12,6 +12,7 @@
 import * as mapTools from './tools/mapTools.js';
 import { searchTemplates } from './utils/mapGenerator.js';
 import { analyzeProject } from './intel/analyze.js';
+import { validateConsolidated } from './utils/validation.js';
 
 type ExecuteTool = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -56,11 +57,13 @@ const CREATE_TOOL: Partial<Record<DbEntity, string>> = {
 };
 const UPDATE_TOOL: Partial<Record<DbEntity, string>> = {
   actors: 'update_actor', classes: 'update_class', skills: 'update_skill', enemies: 'update_enemy',
-  states: 'update_state', tilesets: 'update_tileset', common_events: 'update_common_event'
+  states: 'update_state', tilesets: 'update_tileset', common_events: 'update_common_event',
+  troops: 'update_troop', animations: 'update_animation'
 };
 const DELETE_TOOL: Partial<Record<DbEntity, string>> = {
   actors: 'delete_actor', classes: 'delete_class', skills: 'delete_skill',
-  enemies: 'delete_enemy', states: 'delete_state'
+  enemies: 'delete_enemy', states: 'delete_state',
+  troops: 'delete_troop', animations: 'delete_animation'
 };
 const ITEMISH_TYPE: Partial<Record<DbEntity, string>> = { items: 'item', weapons: 'weapon', armors: 'armor' };
 
@@ -151,7 +154,6 @@ async function updateDatabaseEntry(executeTool: ExecuteTool, args: Record<string
   }
   const updateTool = UPDATE_TOOL[entity];
   if (!updateTool) {
-    if (entity === 'troops') throw new Error('Troops only support addEnemyId (add a member); recreate the troop for other changes');
     throw new Error('Updating ' + entity + ' is not supported');
   }
   return executeTool(updateTool, { id: id, fields: fields });
@@ -376,8 +378,20 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         x: requireArg(args, 'x', 'manage_system action "set_starting_position"'),
         y: requireArg(args, 'y', 'manage_system action "set_starting_position"')
       });
+    case 'create_plugin':
+      return executeTool('create_plugin', {
+        name: requireArg(args, 'name', 'manage_system action "create_plugin"'),
+        description: args.description, author: args.author, help: args.help,
+        params: args.params, commands: args.commands, body: args.body, status: args.status
+      });
+    case 'scaffold_project':
+      return executeTool('scaffold_project', {
+        destPath: requireArg(args, 'destPath', 'manage_system action "scaffold_project"'),
+        sourcePath: args.sourcePath, title: args.title,
+        startMapId: args.mapId, startX: args.x, startY: args.y
+      });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position');
+      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project');
   }
 }
 
@@ -425,6 +439,9 @@ export const TOOL_NAMES = [
 ];
 
 export async function routeTool(executeTool: ExecuteTool, projectPath: string, name: string, args: Record<string, unknown>): Promise<unknown> {
+  // Structural validation of the consolidated inputs before they expand into
+  // legacy calls (no-op for tools without a schema; never rewrites args).
+  validateConsolidated(name, args);
   switch (name) {
     case 'query_database': return queryDatabase(executeTool, projectPath, args);
     case 'create_database_entry': return createDatabaseEntry(executeTool, args);

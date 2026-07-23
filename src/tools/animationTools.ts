@@ -16,4 +16,12 @@ async function getAnimation(projectPath: string, id: number) {
   return animationsCrud.getById(projectPath, id);
 }
 
-export { getAnimations, getAnimation };
+async function updateAnimation(projectPath: string, id: number, fields: Partial<Animation>) {
+  return animationsCrud.update(projectPath, id, fields);
+}
+
+async function deleteAnimation(projectPath: string, id: number) {
+  return animationsCrud.delete(projectPath, id);
+}
+
+export { getAnimations, getAnimation, updateAnimation, deleteAnimation };

@@ -48,12 +48,12 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'update_database_entry',
-    description: 'Partially update an existing database entry: only the keys in `fields` are overwritten (arrays like traits/learnings/actions are replaced wholesale, not merged); the data file is written immediately and there is no undo, so fetch current values with query_database first if you may revert. Returns the full entry after the update. Fails with an error if the ID does not exist. Special append forms that do not need `fields`: common_events + `appendCommand` inserts one event command before the list terminator; troops + `addEnemyId` adds a member at an auto-computed battle position. Plain troop updates and animations are not supported. Class params in fields accept 8 seeds (expanded to full curves) or 8 arrays of 100 per-level values. Editing tilesets affects every map using them; malformed flags break passability project-wide.',
+    description: 'Partially update an existing database entry: only the keys in `fields` are overwritten (arrays like traits/learnings/actions are replaced wholesale, not merged); the data file is written immediately and there is no undo, so fetch current values with query_database first if you may revert. Returns the full entry after the update. Fails with an error if the ID does not exist. Special append forms that do not need `fields`: common_events + `appendCommand` inserts one event command before the list terminator; troops + `addEnemyId` adds a member at an auto-computed battle position. Troops and animations also support plain `fields` updates now (e.g. rename a troop, replace its members/pages, or relabel an animation). Class params in fields accept 8 seeds (expanded to full curves) or 8 arrays of 100 per-level values. Editing tilesets affects every map using them; malformed flags break passability project-wide.',
     annotations: { title: 'Update database entry', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     inputSchema: {
       type: 'object',
       properties: {
-        entity: { type: 'string', enum: ['actors', 'classes', 'skills', 'items', 'weapons', 'armors', 'enemies', 'states', 'tilesets', 'common_events', 'troops'], description: 'Which database contains the entry' },
+        entity: { type: 'string', enum: ['actors', 'classes', 'skills', 'items', 'weapons', 'armors', 'enemies', 'states', 'tilesets', 'common_events', 'troops', 'animations'], description: 'Which database contains the entry' },
         id: { ...ID_TYPE, description: 'ID of the entry to modify (must exist; find it with query_database)' },
         fields: { type: 'object', description: 'Subset of properties to overwrite, e.g. {"name": "Hero", "price": 250}. Not needed when using appendCommand/addEnemyId' },
         appendCommand: { type: 'object', description: 'common_events only: one event command {code, indent, parameters} appended before the terminator. Common codes: 101+401=Show Text, 121=Control Switches, 122=Control Variables' },
@@ -64,12 +64,12 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'delete_database_entry',
-    description: 'DESTRUCTIVE: delete a database entry by nulling it out in its data file (written immediately; not undoable — re-create it if needed; IDs are never reused). References elsewhere are NOT cleaned up and will break at runtime: actors in the starting party, classes assigned to actors, skills in class learnings/enemy actions, items in chests/shops, enemies in troops, states in skill effects — check and update those first with query_database/update_database_entry. NEVER delete skill 1 (Attack), skill 2 (Guard) or state 1 (KO); the engine uses them directly. Supported entities: actors, classes, skills, items, weapons, armors, enemies, states. Returns the deleted object for reference; fails with an error if the ID does not exist.',
+    description: 'DESTRUCTIVE: delete a database entry by nulling it out in its data file (written immediately; not undoable — re-create it if needed; IDs are never reused). References elsewhere are NOT cleaned up and will break at runtime: actors in the starting party, classes assigned to actors, skills in class learnings/enemy actions, items in chests/shops, enemies in troops, states in skill effects, troops in map encounters — check and update those first with query_database/update_database_entry. NEVER delete skill 1 (Attack), skill 2 (Guard) or state 1 (KO); the engine uses them directly. Supported entities: actors, classes, skills, items, weapons, armors, enemies, states, troops, animations. Returns the deleted object for reference; fails with an error if the ID does not exist.',
     annotations: { title: 'Delete database entry', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     inputSchema: {
       type: 'object',
       properties: {
-        entity: { type: 'string', enum: ['actors', 'classes', 'skills', 'items', 'weapons', 'armors', 'enemies', 'states'], description: 'Which database contains the entry to delete' },
+        entity: { type: 'string', enum: ['actors', 'classes', 'skills', 'items', 'weapons', 'armors', 'enemies', 'states', 'troops', 'animations'], description: 'Which database contains the entry to delete' },
         id: { ...ID_TYPE, description: 'ID of the entry to delete (never skill 1/2 or state 1)' }
       },
       required: ['entity', 'id']
@@ -195,19 +195,28 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'manage_system',
-    description: 'Read or edit project-wide settings in data/System.json (writes are immediate). action "get" returns the requested `section`: "full" (everything — large), "switches" or "variables" (name arrays indexed by ID; unnamed entries are empty strings — use these to find free IDs), or "title". action "set_title" changes the game title shown on the title screen. "name_switch"/"name_variable" label a switch/variable by ID — documentation only, runtime values are untouched, but good names keep event logic readable. "set_starting_position" sets where new games begin {mapId, x, y} — NOT validated against existing maps, verify with query_map "infos" first; does not affect saved games. Returns the read section or the updated values.',
+    description: 'Read or edit project-wide settings in data/System.json (writes are immediate). action "get" returns the requested `section`: "full" (everything — large), "switches" or "variables" (name arrays indexed by ID; unnamed entries are empty strings — use these to find free IDs), or "title". action "set_title" changes the game title shown on the title screen. "name_switch"/"name_variable" label a switch/variable by ID — documentation only, runtime values are untouched, but good names keep event logic readable. "set_starting_position" sets where new games begin {mapId, x, y} — NOT validated against existing maps, verify with query_map "infos" first; does not affect saved games. "create_plugin" authors a new plugin: it writes js/plugins/<name>.js with a correct @plugindesc/@author/@param/@help header (and a classic-MV Game_Interpreter.pluginCommand hook when `commands` are given) and registers it in js/plugins.js (array order = load order). Re-authoring the same `name` overwrites the file and replaces its manifest entry in place. Pair with analyze_project view "plugins" to inspect the project\'s existing plugins first. "scaffold_project" creates a NEW, separate RPG Maker MV project by cloning the engine\'s blank template (NewData) into `destPath` and rewriting its title (`title`) and start position (`mapId`/`x`/`y`); the source install is `sourcePath` or the RPGMAKER_MV_INSTALL env var or the default Steam location, and it refuses to overwrite a directory that already holds a project. This does NOT switch the active project — use set_project_path afterwards. Returns the read section or the updated values.',
     annotations: { title: 'Manage system settings', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['get', 'set_title', 'name_switch', 'name_variable', 'set_starting_position'], description: 'What to do; see the tool description. Default "get"' },
+        action: { type: 'string', enum: ['get', 'set_title', 'name_switch', 'name_variable', 'set_starting_position', 'create_plugin', 'scaffold_project'], description: 'What to do; see the tool description. Default "get"' },
         section: { type: 'string', enum: ['full', 'switches', 'variables', 'title'], description: 'action "get": which part of System.json to return (default "full")' },
         title: { type: 'string', description: 'action "set_title": new game title' },
         id: { ...ID_TYPE, description: 'name_switch/name_variable: switch or variable ID to label (1-based)' },
-        name: { type: 'string', description: 'name_switch/name_variable: descriptive label, e.g. "BridgeRepaired"' },
+        name: { type: 'string', description: 'name_switch/name_variable: descriptive label. create_plugin: the plugin name (bare token — letters/digits/_/-, becomes js/plugins/<name>.js)' },
         mapId: { ...ID_TYPE, description: 'set_starting_position: map where new games start (must exist)' },
         x: { ...ID_TYPE, description: 'set_starting_position: starting tile X (should be walkable)' },
-        y: { ...ID_TYPE, description: 'set_starting_position: starting tile Y' }
+        y: { ...ID_TYPE, description: 'set_starting_position: starting tile Y' },
+        description: { type: 'string', description: 'create_plugin: @plugindesc short description' },
+        author: { type: 'string', description: 'create_plugin: @author name' },
+        help: { type: 'string', description: 'create_plugin: @help text (multi-line allowed)' },
+        params: { type: 'array', description: 'create_plugin: @param definitions [{name, type?, desc?, default?}] surfaced in js/plugins.js', items: { type: 'object' } },
+        commands: { type: 'array', description: 'create_plugin: plugin command names to document (@command) and wire a pluginCommand handler stub for', items: { type: 'string' } },
+        body: { type: 'string', description: 'create_plugin: custom JS body; omit for a safe generated skeleton' },
+        status: { type: 'boolean', description: 'create_plugin: enable the plugin in js/plugins.js (default true)' },
+        destPath: { type: 'string', description: 'scaffold_project: directory for the NEW project (must be empty of a project). title/mapId/x/y set the new game\'s title and start position' },
+        sourcePath: { type: 'string', description: 'scaffold_project: a blank-project (NewData) folder to clone; defaults to the RPGMAKER_MV_INSTALL env var or the standard Steam install' }
       },
       required: ['action']
     }

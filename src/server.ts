@@ -18,7 +18,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import sharp from 'sharp';
 
-import { validateProjectPath } from './utils/fileHandler.js';
+import { validateProjectPath, setDryRun, getDryRunLog } from './utils/fileHandler.js';
 import type { RpgMakerDbEntry, RpgMakerMap, AsciiMapResult, EventPage, EventCommand, ItemType, CreateMapV3Params } from './types/rpgmaker.js';
 import * as logger from './utils/logger.js';
 import * as actorTools from './tools/actorTools.js';
@@ -35,6 +35,8 @@ import * as tilesetTools from './tools/tilesetTools.js';
 import * as commonEventTools from './tools/commonEventTools.js';
 import * as troopTools from './tools/troopTools.js';
 import * as animationTools from './tools/animationTools.js';
+import * as pluginTools from './tools/pluginTools.js';
+import * as scaffoldTools from './tools/scaffoldTools.js';
 import * as projectTools from './tools/projectTools.js';
 import * as assetTools from './tools/assetTools.js';
 import { TOOL_DEFINITIONS } from './toolDefinitions.js';
@@ -82,11 +84,23 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
 
 /** Dispatch one tool call, consolidated or legacy. Exported for integration tests. */
 export async function dispatchTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-  if (TOOL_NAMES.includes(name)) {
-    const p = projectTools.getProjectPath() || PROJECT_PATH;
-    return routeTool(executeTool, p, name, args);
+  // Dry-run: when the caller passes dryRun:true, mutating writes are recorded but
+  // not performed, so the tool's result previews the change without touching disk.
+  // This is the single outer entry per request (nested consolidated→legacy calls go
+  // through executeTool), so toggling the module-level flag here is leak-free.
+  const dry = args && args.dryRun === true;
+  setDryRun(!!dry);
+  try {
+    const result = TOOL_NAMES.includes(name)
+      ? await routeTool(executeTool, projectTools.getProjectPath() || PROJECT_PATH, name, args)
+      : await executeTool(name, args);
+    if (dry) {
+      return { dryRun: true, wouldWrite: getDryRunLog(), result };
+    }
+    return result;
+  } finally {
+    setDryRun(false);
   }
-  return executeTool(name, args);
 }
 
 // ─── Project Context & Validation Functions ───
@@ -446,6 +460,10 @@ case 'get_plugin_status':
   return await systemTools.getPluginStatus(p);
 case 'toggle_plugin':
   return await systemTools.togglePlugin(p, args.pluginName, args.enabled);
+case 'create_plugin':
+  return await pluginTools.createPlugin(p, args as unknown as pluginTools.CreatePluginParams);
+case 'scaffold_project':
+  return await scaffoldTools.scaffoldProject(p, args as unknown as scaffoldTools.ScaffoldParams);
 
 // ── Class Tools ──
 case 'get_classes':
@@ -516,6 +534,10 @@ case 'get_troop':
   return await troopTools.getTroop(p, args.id);
 case 'create_troop':
   return await troopTools.createTroop(p, args);
+case 'update_troop':
+  return await troopTools.updateTroop(p, args.id, args.fields);
+case 'delete_troop':
+  return await troopTools.deleteTroop(p, args.id);
             case 'add_enemy_to_troop':
                 return await troopTools.addEnemyToTroop(p, args.troopId, args.enemyId);
             case 'create_random_encounter_troop':
@@ -526,6 +548,10 @@ case 'get_animations':
   return await animationTools.getAnimations(p);
 case 'get_animation':
   return await animationTools.getAnimation(p, args.id);
+case 'update_animation':
+  return await animationTools.updateAnimation(p, args.id, args.fields);
+case 'delete_animation':
+  return await animationTools.deleteAnimation(p, args.id);
 
 // ── Delete Tools ──
 case 'delete_actor':

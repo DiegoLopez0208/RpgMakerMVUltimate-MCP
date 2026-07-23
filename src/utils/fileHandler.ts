@@ -1,5 +1,108 @@
-import { readFile, writeFile, copyFile } from 'fs/promises';
+import { readFile, writeFile, copyFile, rename, mkdir, readdir, unlink, stat } from 'fs/promises';
+import { dirname, basename, join } from 'path';
 import { resolveSafePath } from './security.js';
+
+/**
+ * How many timestamped backups to keep per file (env RPGMV_BACKUP_KEEP, default 10).
+ */
+const BACKUP_KEEP = Math.max(1, parseInt(process.env.RPGMV_BACKUP_KEEP || '10', 10) || 10);
+
+/**
+ * Dry-run mode. When active, mutating writes are recorded instead of performed,
+ * so a caller can preview what a tool would change without touching disk.
+ * The tool-call queue in server.ts serializes requests, so a module-level flag
+ * is safe: only one tool executes at a time.
+ */
+let dryRunActive = false;
+const dryRunLog: { filePath: string; bytes: number }[] = [];
+
+function setDryRun(value: boolean): void {
+  dryRunActive = value;
+  dryRunLog.length = 0;
+}
+
+function isDryRun(): boolean {
+  return dryRunActive;
+}
+
+/** Snapshot of the files that would have been written during the current dry run. */
+function getDryRunLog(): { filePath: string; bytes: number }[] {
+  return dryRunLog.slice();
+}
+
+/** Compact sortable timestamp: YYYYMMDD-HHMMSS-mmm (local time). */
+function backupTimestamp(): string {
+  const d = new Date();
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-` +
+    `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(d.getMilliseconds(), 3)}`;
+}
+
+/**
+ * Copy the current version of a data file into {projectRoot}/.mcp-backups/ with a
+ * timestamped name, then prune to the newest BACKUP_KEEP for that file. Data and
+ * map files both live under {projectRoot}/data/, so the project root is the file's
+ * grandparent directory. Best-effort: never throws (a backup failure must not block
+ * the write it protects, and a missing source file just means nothing to back up).
+ */
+async function rotateBackup(filePath: string): Promise<void> {
+  try {
+    await stat(filePath); // nothing to back up if the file doesn't exist yet
+  } catch {
+    return;
+  }
+  const projectRoot = dirname(dirname(filePath));
+  const backupDir = join(projectRoot, '.mcp-backups');
+  const name = basename(filePath);
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  try {
+    await mkdir(backupDir, { recursive: true });
+    await copyFile(filePath, join(backupDir, `${base}.${backupTimestamp()}${ext}`));
+  } catch {
+    return; // if we can't even create the backup, don't block the real write
+  }
+  try {
+    const prefix = base + '.';
+    const entries = await readdir(backupDir);
+    const mine = entries.filter(e => e.startsWith(prefix) && e.endsWith(ext)).sort();
+    for (let i = 0; i < mine.length - BACKUP_KEEP; i++) {
+      await unlink(join(backupDir, mine[i])).catch(() => {});
+    }
+  } catch {
+    // pruning is best-effort
+  }
+}
+
+/**
+ * Atomic, backup-protected write for any project file. Honors dry-run.
+ *
+ * Ordering guarantees:
+ *  1. In dry-run, records the intent and returns without touching disk.
+ *  2. Rotates a timestamped backup of the current file (keeps the last N).
+ *  3. Writes to a `.tmp` sibling, then renames it over the target. rename() is
+ *     atomic on the same volume, so an interrupted write can never leave a
+ *     half-written JSON in place — the old file survives until the rename.
+ * The legacy single-level `.bak` is still produced for backward compatibility.
+ */
+async function safeWrite(filePath: string, content: string): Promise<void> {
+  if (dryRunActive) {
+    dryRunLog.push({ filePath, bytes: Buffer.byteLength(content, 'utf-8') });
+    console.error(`[DRY-RUN] would write ${filePath}`);
+    return;
+  }
+  await rotateBackup(filePath);
+  try {
+    await copyFile(filePath, filePath + '.bak');
+  } catch {
+    // legacy .bak: file may not exist yet
+  }
+  const tmpPath = filePath + '.tmp';
+  await writeFile(tmpPath, content, 'utf-8');
+  await rename(tmpPath, filePath);
+  console.error(`[WRITE] ${filePath}`);
+}
 
 /**
  * Get the full path to a data file in the RPG Maker MV project.
@@ -39,18 +142,7 @@ async function readJson(projectPath: string, filename: string) {
  */
 async function writeJson(projectPath: string, filename: string, data: unknown) {
   const filePath = getDataPath(projectPath, filename);
-  const backupPath = filePath + '.bak';
-
-  // Create backup of existing file before overwriting
-  try {
-    await copyFile(filePath, backupPath);
-  } catch (_) {
-    // If backup fails (e.g. file doesn't exist yet), continue
-  }
-
-  const jsonString = JSON.stringify(data, null, 2);
-  await writeFile(filePath, jsonString, 'utf-8');
-  console.error(`[WRITE] ${filePath}`);
+  await safeWrite(filePath, JSON.stringify(data, null, 2));
 }
 
 /**
@@ -104,6 +196,10 @@ export { getDataPath };
 export { getMapPath };
 export { readJson };
 export { writeJson };
+export { safeWrite };
+export { setDryRun };
+export { isDryRun };
+export { getDryRunLog };
 export { ensureArray };
 export { nextId };
 export { validateProjectPath };

@@ -42,6 +42,14 @@ async function createTroop(projectPath: string, params: TroopParams) {
   }));
 }
 
+async function updateTroop(projectPath: string, id: number, fields: Partial<Troop>) {
+  return troopsCrud.update(projectPath, id, fields);
+}
+
+async function deleteTroop(projectPath: string, id: number) {
+  return troopsCrud.delete(projectPath, id);
+}
+
 async function addEnemyToTroop(projectPath: string, troopId: number, enemyId: number) {
   const troop = await troopsCrud.getById(projectPath, troopId);
   if (!troop) throw new Error("Troop " + troopId + " not found");
@@ -63,4 +71,4 @@ async function createRandomEncounterTroop(projectPath: string, params: { name?: 
   return createTroop(projectPath, { name: params.name || "Troop", members, note: params.note || "" });
 }
 
-export { getTroops, getTroop, createTroop, addEnemyToTroop, createRandomEncounterTroop };
+export { getTroops, getTroop, createTroop, updateTroop, deleteTroop, addEnemyToTroop, createRandomEncounterTroop };

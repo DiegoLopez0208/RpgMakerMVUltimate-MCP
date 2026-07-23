@@ -144,7 +144,41 @@ describe("query/update/delete round trip", () => {
   });
 
   it("refuses to delete unsupported entities", async () => {
-    await expect(dispatchTool("delete_database_entry", { entity: "troops", id: 1 })).rejects.toThrow(/not supported/);
+    // tilesets/common_events have no delete path (removing a tileset would break
+    // every map that uses it); troops and animations ARE deletable now.
+    await expect(dispatchTool("delete_database_entry", { entity: "tilesets", id: 1 })).rejects.toThrow(/not supported/);
+  });
+
+  it("supports full troop CRUD: create → update fields → delete (Phase 3b)", async () => {
+    const created = await dispatchTool("create_database_entry", { entity: "troops", data: { name: "Goblin Ambush", members: [{ enemyId: 1, x: 300, y: 300, hidden: false }] } }) as any;
+    expect(created.id).toBeGreaterThan(0);
+    expect(created.name).toBe("Goblin Ambush");
+
+    // Plain `fields` update (previously rejected — troops only allowed addEnemyId).
+    const renamed = await dispatchTool("update_database_entry", { entity: "troops", id: created.id, fields: { name: "Goblin Horde" } }) as any;
+    expect(renamed.name).toBe("Goblin Horde");
+    expect(renamed.members.length).toBe(1); // untouched fields preserved
+
+    const deleted = await dispatchTool("delete_database_entry", { entity: "troops", id: created.id }) as any;
+    expect(deleted).toBeDefined();
+    const gone = await dispatchTool("query_database", { entity: "troops", id: created.id });
+    expect(gone).toBeNull();
+  });
+
+  it("supports animation update and delete (Phase 3b)", async () => {
+    // Seed an animation to edit (creation stays editor-only).
+    const anims = JSON.parse(readFileSync(path.join(projectDir, "data", "Animations.json"), "utf-8"));
+    while (anims.length <= 2) anims.push(null);
+    anims[2] = { id: 2, name: "Slash" };
+    writeFileSync(path.join(projectDir, "data", "Animations.json"), JSON.stringify(anims));
+
+    const updated = await dispatchTool("update_database_entry", { entity: "animations", id: 2, fields: { name: "Heavy Slash" } }) as any;
+    expect(updated.name).toBe("Heavy Slash");
+
+    const deleted = await dispatchTool("delete_database_entry", { entity: "animations", id: 2 }) as any;
+    expect(deleted).toBeDefined();
+    const gone = await dispatchTool("query_database", { entity: "animations", id: 2 });
+    expect(gone).toBeNull();
   });
 });
 
