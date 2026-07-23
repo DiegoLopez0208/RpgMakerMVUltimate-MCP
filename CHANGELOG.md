@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.14.1] - 2026-07-23
+
+### Fixed
+- **`playtest` now actually runs the game.** 5.14.0 launched `nwjs-win/Game.exe`, which is a deploy runtime pinned by its own `package.json` to `www/index.html` — so it ignored the project path and showed `ERR_FILE_NOT_FOUND`. playtest now auto-selects an nwjs runtime whose directory has no sibling `package.json` (e.g. `nwjs-win-test/game.exe`), so the project path is honored and the project renders. Verified live end-to-end: an MCP-scaffolded project with a generated town map opens and is playable. A `gameExe` param allows overriding the runtime.
+
 ## [5.14.0] - 2026-07-23
 
 ### Added

@@ -17,8 +17,9 @@ import path from 'path';
 const DEFAULT_INSTALL = 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\RPG Maker MV';
 
 export interface RunParams {
-  install?: string; // RPG Maker MV install root (contains nwjs-win/ and RPGMV.exe)
-  test?: boolean;   // playtest: run in test mode (default true; false = plain run)
+  install?: string;  // RPG Maker MV install root (contains the nwjs runtime and RPGMV.exe)
+  gameExe?: string;  // explicit path to the nwjs game exe (overrides auto-detection)
+  test?: boolean;    // playtest: run in test mode (default true; false = plain run)
 }
 
 function installRoot(params?: RunParams): string {
@@ -27,6 +28,43 @@ function installRoot(params?: RunParams): string {
 
 async function pathExists(p: string): Promise<boolean> {
   try { await access(p); return true; } catch { return false; }
+}
+
+// Candidate nwjs runtimes shipped with the engine, most-preferred first.
+// CRUCIAL: a runtime only runs an arbitrary project (passed as an argument) when
+// its OWN directory has no package.json — otherwise nwjs binds to that sibling
+// manifest (nwjs-win/Game.exe is a deploy template pinned to its own www/, so it
+// ignores the project path and shows ERR_FILE_NOT_FOUND). nwjs-win-test/game.exe
+// has no sibling manifest, so it honors the project path.
+const RUNTIME_CANDIDATES: [string, string][] = [
+  ['nwjs-win-test', 'game.exe'],
+  ['nwjs-win', 'Game.exe'],
+];
+
+/**
+ * Resolve the nwjs game exe to launch a project with. Prefers a runtime whose
+ * directory has no package.json (so the project path argument is honored); falls
+ * back to the first existing exe otherwise. An explicit params.gameExe wins.
+ */
+async function resolveGameExe(install: string, params?: RunParams): Promise<string> {
+  if (params?.gameExe) {
+    if (!(await pathExists(params.gameExe))) throw new Error('gameExe not found: ' + params.gameExe);
+    return params.gameExe;
+  }
+  let firstExisting: string | null = null;
+  for (const [dir, exe] of RUNTIME_CANDIDATES) {
+    const exePath = path.join(install, dir, exe);
+    if (!(await pathExists(exePath))) continue;
+    if (firstExisting === null) firstExisting = exePath;
+    // A sibling package.json would pin nwjs to that runtime's own app — skip it.
+    if (!(await pathExists(path.join(install, dir, 'package.json')))) return exePath;
+  }
+  if (firstExisting) return firstExisting; // last resort (may be deploy-bound)
+  throw new Error(
+    'No nwjs runtime found under "' + install + '" (looked for ' +
+    RUNTIME_CANDIDATES.map(([d, e]) => d + '/' + e).join(', ') +
+    '). Set the RPGMAKER_MV_INSTALL env var or pass install/gameExe.'
+  );
 }
 
 /**
@@ -40,11 +78,9 @@ export async function playtest(projectPath: string, params?: RunParams) {
     throw new Error('Not a runnable MV project (missing index.html/package.json): ' + projectPath);
   }
   const install = installRoot(params);
-  const gameExe = path.join(install, 'nwjs-win', 'Game.exe');
-  if (!(await pathExists(gameExe))) {
-    throw new Error('nwjs runtime not found at "' + gameExe + '". Set the RPGMAKER_MV_INSTALL env var or pass install.');
-  }
+  const gameExe = await resolveGameExe(install, params);
   const testMode = params?.test !== false;
+  // The project path is the nwjs app root; a trailing "test" puts MV in playtest mode.
   const args = testMode ? [projectPath, 'test'] : [projectPath];
   const child = spawn(gameExe, args, { detached: true, stdio: 'ignore', windowsHide: false });
   child.unref();

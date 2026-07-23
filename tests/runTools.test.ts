@@ -31,7 +31,7 @@ describe("playtest (Phase: run)", () => {
     writeFileSync(path.join(dir, "package.json"), JSON.stringify({ main: "index.html" }));
     const emptyInstall = mkdtempSync(path.join(tmpdir(), "rpgmv-install-"));
     try {
-      await expect(playtest(dir, { install: emptyInstall })).rejects.toThrow(/nwjs runtime not found/);
+      await expect(playtest(dir, { install: emptyInstall })).rejects.toThrow(/No nwjs runtime found/);
     } finally {
       rmSync(emptyInstall, { recursive: true, force: true });
     }
