@@ -35,6 +35,8 @@ jobs:
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create the GitHub Release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -55,3 +57,22 @@ jobs:
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create GitHub Release from CHANGELOG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Extract this version's CHANGELOG section (regex-free: match the heading prefix).
+          awk -v hdr="## [$VERSION]" '
+            substr($0,1,length(hdr))==hdr {grab=1; next}
+            grab && substr($0,1,4)=="## [" {exit}
+            grab {print}
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists — skipping."
+          elif [ -s RELEASE_NOTES.md ]; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --latest
+          else
+            echo "No CHANGELOG entry for $VERSION — generating notes instead."
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --latest
+          fi
