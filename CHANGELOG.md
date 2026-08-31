@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.16.0] - 2026-08-31
+
+### Added
+- **`analyze_project` view `balance`.** Scores every database entry on a power metric and compares it against its PEERS rather than against thresholds invented by the tool, so it works on a game at any power level: damage per MP for skills, gold per point of ATK+MAT for weapons, gold per point of DEF+MDF for armors, HP per point of EXP for enemies. The comparison is leave-one-out — an entry is judged against statistics it had no hand in creating, which is what stops a badly broken entry from dragging the mean toward itself until it stops looking unusual. Narrow with `category`, loosen or tighten with `thresholdSd` (default 2). Each outlier carries a sentence about what it means for the player.
+- **A damage-formula reader that never executes anything** (`src/utils/formulaEval.ts`). Tokenise, shunting-yard, evaluate: arithmetic, unary minus, parentheses, game variables and the Math functions damage formulas actually use. A formula it cannot read statically comes back with a reason rather than a number, and `balance` lists those under `unreadableFormulas` instead of scoring them as zero damage — scoring them zero would pull every average down and hide the outliers the analysis exists to find.
+- **`validate` now reads dialogue text.** `\N[id]` is resolved by the engine at draw time rather than from any structural parameter, so an id pointing at no actor passed every existing check and the editor showed nothing wrong; the line simply rendered in-game with a hole where the name should be. References are collected from every text-bearing command: 401 and 405 lines, 102 choice arrays, and 402 branch labels.
+
+### Notes
+Both features are ideas taken from the [Efold499e fork](https://github.com/Efold499e/RpgMakerMVUltimate-MCP), reimplemented rather than ported. Two deliberate departures:
+
+- that version scores a damage formula by substituting the six stat names and passing the rest to `eval()`. Substitution sanitises the tokens it knows and leaves the rest of the string intact, so a crafted `Skills.json` runs arbitrary code in whoever analyses the project — which matters precisely because this is a tool you point at projects you did not write.
+- it also validates `\I[n]` against `Items.json`. That escape is an icon index (`processEscapeCharacter` case `'I'` calls `processDrawIcon`, which indexes IconSet.png), not an item id, so the check flags every valid icon on a project with few items. Icon indices are still collected here; nothing validates them against the database.
+
 ## [5.15.0] - 2026-08-31
 
 ### Added
