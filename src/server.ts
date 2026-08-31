@@ -38,6 +38,9 @@ import * as animationTools from './tools/animationTools.js';
 import * as pluginTools from './tools/pluginTools.js';
 import * as scaffoldTools from './tools/scaffoldTools.js';
 import * as runTools from './tools/runTools.js';
+import * as bridgeTools from './tools/bridgeTools.js';
+import * as semanticMapTools from './tools/semanticMapTools.js';
+import { mineProject } from './intel/templateMiner.js';
 import * as projectTools from './tools/projectTools.js';
 import * as assetTools from './tools/assetTools.js';
 import { TOOL_DEFINITIONS } from './toolDefinitions.js';
@@ -312,18 +315,20 @@ interface ToolArgs {
   characterIndex: number; count: number; cost: number; mpCost: number;
   scope: number; paramId: number; turns: number; chance: number;
   element: number; animationId: number; encounterStep: number;
-  map_id: number; resize_max: number;
+  map_id: number; resize_max: number; port: number; telemetryInterval: number;
+  limit: number; timeoutMs: number; direction: number;
   // strings
   name: string; title: string; path: string; query: string; type: ItemType;
   kind: string; characterName: string; switchName: string; doorName: string;
   formula: string; pluginName: string; prompt: string; image_path: string;
-  base64PNG: string; eventType: string;
+  base64PNG: string; eventType: string; file: string; action: string;
   // booleans
   enabled: boolean; show_events: boolean; show_regions: boolean;
+  peek: boolean; wait: boolean;
   // structural
   pages: EventPage[]; command: EventCommand; fields: Record<string, unknown>;
   items: Record<string, unknown>[]; goods: unknown[][]; dialogues: string[];
-  enemyIds: number[]; encounters: Record<string, unknown>[];
+  enemyIds: number[]; encounters: Record<string, unknown>[]; types: string[];
   names: Record<string, unknown>[]; folders: Record<string, unknown>[];
   posA: Record<string, number>; posB: Record<string, number>;
   opts: Record<string, unknown>; options: Record<string, unknown>; batch: unknown[];
@@ -469,6 +474,28 @@ case 'playtest_project':
   return await runTools.playtest(p, args as unknown as runTools.RunParams);
 case 'open_in_editor':
   return await runTools.openInEditor(p, args as unknown as runTools.RunParams);
+
+// ── Live bridge (playtest telemetry + hot reload) ──
+case 'install_bridge_plugin':
+  return await bridgeTools.installBridgePlugin(p, args as { port?: number; telemetryInterval?: number });
+case 'bridge_start':
+  return await bridgeTools.bridgeStart(p, args.port === undefined ? undefined : Number(args.port));
+case 'bridge_stop':
+  return await bridgeTools.bridgeStop();
+case 'bridge_status':
+  return bridgeTools.bridgeStatus();
+case 'bridge_telemetry':
+  return bridgeTools.bridgeTelemetry(args as { limit?: number; types?: string[]; peek?: boolean });
+case 'bridge_command':
+  return await bridgeTools.bridgeCommand(args as unknown as Record<string, unknown>);
+case 'bridge_screenshot':
+  return await bridgeTools.bridgeScreenshot(p, args as { timeoutMs?: number });
+
+// ── Learn from the project's own maps, and build from what was learned ──
+case 'mine_templates':
+  return await mineProject(p, args as unknown as { minDistinctTiles?: number; limit?: number });
+case 'generate_map_semantic':
+  return await semanticMapTools.createMapSemantic(p, args as unknown as semanticMapTools.SemanticMapParams);
 
 // ── Class Tools ──
 case 'get_classes':

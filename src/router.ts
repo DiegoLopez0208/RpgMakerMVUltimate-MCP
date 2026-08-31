@@ -235,8 +235,14 @@ async function generateMap(executeTool: ExecuteTool, projectPath: string, args: 
     case 'template':
       requireArg(args, 'templateId', 'generate_map mode "template"');
       return mapTools.createMapFromTemplate(projectPath, args);
+    case 'semantic': {
+      const semArgs = Object.assign({}, args);
+      delete semArgs.mode;
+      delete semArgs.theme;
+      return executeTool('generate_map_semantic', semArgs);
+    }
     default:
-      throw new Error('Unknown mode "' + mode + '". Valid modes: blank, themed, procedural, batch, duplicate, template');
+      throw new Error('Unknown mode "' + mode + '". Valid modes: blank, themed, procedural, batch, duplicate, template, semantic');
   }
 }
 
@@ -394,8 +400,28 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
       return executeTool('playtest_project', { install: args.install, test: args.test });
     case 'open_editor':
       return executeTool('open_in_editor', { install: args.install });
+    case 'install_bridge_plugin':
+      return executeTool('install_bridge_plugin', { port: args.port, telemetryInterval: args.telemetryInterval });
+    case 'bridge_start':
+      return executeTool('bridge_start', { port: args.port });
+    case 'bridge_stop':
+      return executeTool('bridge_stop', {});
+    case 'bridge_status':
+      return executeTool('bridge_status', {});
+    case 'bridge_telemetry':
+      return executeTool('bridge_telemetry', { limit: args.limit, types: args.types, peek: args.peek });
+    case 'bridge_command':
+      return executeTool('bridge_command', {
+        action: requireArg(args, 'command', 'manage_system action "bridge_command"'),
+        file: args.file, mapId: args.mapId, x: args.x, y: args.y,
+        direction: args.direction, wait: args.wait, timeoutMs: args.timeoutMs
+      });
+    case 'bridge_screenshot':
+      return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs });
+    case 'mine_templates':
+      return executeTool('mine_templates', { minDistinctTiles: args.minDistinctTiles, limit: args.limit });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, open_editor');
+      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, bridge_screenshot, mine_templates');
   }
 }
 

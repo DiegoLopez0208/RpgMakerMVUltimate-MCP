@@ -50,8 +50,8 @@ RPGMAKER_PROJECT_PATH=/path/to/your/project npm start
 | `generate_map` | Knowledge-driven generation: clones a real reference map per theme (or pure procedural / blank / themed / a specific template / batch / duplicate) |
 | `edit_map` | Fill tile layers, set display names, organize the map tree, connect two maps, set encounters |
 | `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, **convert** an existing event into a merchant/inn/sign, delete, add commands, bulk-populate |
-| `manage_system` | Game title, switch/variable names, starting position; **author a plugin** (`create_plugin`), **scaffold a new project** (`scaffold_project`), and **run the game** (`playtest`) / open it in the editor (`open_editor`) |
-| `analyze_project` | Read-only project intelligence — `overview`, `index`, `validate`, `graph`, `usage`, `explain`, `ast`, `plugins`, `critique`, `refactor`, `search` (see below) |
+| `manage_system` | Game title, switch/variable names, starting position; **author a plugin** (`create_plugin`), **scaffold a new project** (`scaffold_project`), **run the game** (`playtest`) / open it in the editor (`open_editor`), **learn from the project** (`mine_templates`), and the **live bridge** (`bridge_*`) |
+| `analyze_project` | Read-only project intelligence — `overview`, `index`, `validate`, `graph`, `usage`, `explain`, `ast`, `plugins`, `critique`, `metrics`, `refactor`, `search` (see below) |
 | `get_project_context` | Project digest, asset index, per-tileset tile IDs, bundled-template catalog |
 | `set_project_path` | Switch projects at runtime |
 | `analyze_image` | Optional Vision-AI image analysis, plus offline tileset grid measurement and quadrant colors |
@@ -84,6 +84,37 @@ Combat themes (dungeon/cave/world/fortress/sewer/volcano) auto-wire random encou
 
 **Themes:** `forest` `town` `village` `castle` `dungeon` `cave` `beach` `desert` `swamp` `ruins` `interior` `snow` `harbor` `volcano` `sewer` `fortress` `magic_forest` `magic_interior` `space_interior` `space_exterior` `world`
 
+## The live bridge (see what the game actually did)
+
+`playtest` on its own is fire-and-forget: the game opens and nothing comes back. The bridge closes that loop.
+
+```
+manage_system { action: "install_bridge_plugin" }   # once per project
+manage_system { action: "bridge_start" }            # opens ws://127.0.0.1:32123
+manage_system { action: "playtest" }                # the game connects on its own
+manage_system { action: "bridge_telemetry", types: ["exception", "log"] }
+```
+
+- **Telemetry.** Exceptions with stack traces, `console.error`/`warn`, scene changes, player position, which event command is executing (so a hung event can be pinpointed), FPS and heap. Frames are consumed as you read them unless you pass `peek`.
+- **Hot reload.** `bridge_command { command: "reload_map" }` re-reads the current `MapXXX.json` from disk and rebuilds the scene **without losing party state** — it reserves a transfer to the player's own position with `_needsMapReload`, which is the engine's own reload seam, rather than rebuilding `Spriteset_Map` by hand. `reload_database` re-reads one data file (Actors/Classes/Skills/Items/Weapons/Armors/Enemies/Troops/States/CommonEvents); `System.json` and `Tilesets.json` need a fresh playtest and are refused with an explanation.
+- **Screenshots.** `bridge_screenshot` saves a PNG under `.mcp-cache/screenshots/` and returns the path, ready for `analyze_image`.
+
+**Security.** The plugin's first statement is `if (!Utils.isNwjs() || !Utils.isOptionValid('test')) return;`, so a deployed build never opens a socket. The server binds `127.0.0.1` only, refuses any upgrade carrying a browser `Origin` (cross-site WebSocket hijacking), and requires the session token written to `.mcp-bridge.json` — compared in constant time — within 5 seconds or the connection is dropped. The command surface is a fixed allowlist with **no `eval` primitive**.
+
+## Tileset-independent generation
+
+The 106 bundled templates are raw MV map JSON, so they only look right on RTP tilesets. `mode: "semantic"` keeps the layout abstract until the last moment:
+
+```
+manage_system { action: "mine_templates" }          # learn from THIS project
+generate_map { mode: "semantic", tilesetId: 5, rooms: 6, seed: 42 }
+```
+
+- **Mining** reads every map in the project and derives semantic layouts (ground / wall / water / prop / door, with multi-tile props kept whole), a **tileset profile** per tileset saying which concrete tile the project uses for each role, and token adjacency counts. Nothing in the project is modified; everything lands in `.mcp-cache/`.
+- **Generating** lays out a *mission* first — entrance, key, locked door, treasure, boss, exit, side rooms — as a graph, then paints it through the profile. Because the lock is an edge and the key sits on the entrance side of it, the map is **solvable by construction**. Autotile shapes are recomputed at the end from the finished neighbourhood, never chosen cell by cell.
+- The result includes `markers` naming the cell of every mission role, which is where to place events with `manage_map_event`.
+- Pass a mined `templateId` (e.g. `"mined-3"`) to re-materialise one of the project's **own** maps onto a different tileset.
+
 ## Offline map inspection
 
 No API needed:
@@ -103,6 +134,7 @@ Read-only — it understands the whole project instead of re-reading files, so a
 - `{ view: "ast", mapId, eventId }` — an event's logic as a readable tree.
 - `{ view: "plugins" }` — what plugins the project uses, their parameters and commands.
 - `{ view: "critique", mapId }` — a designer-style review of one map (dead space, empty/cluttered, event spread, monotony) with justified suggestions.
+- `{ view: "metrics", mapId }` — the same map **measured** instead of judged: flood-fill reachability from the real entry point (stranded tiles and events with no reachable tile beside them are softlocks, not style notes), dead-space ratio against the band for `expected`, the walkable area thinned to a skeleton and read as a graph (endpoints, junctions, loops, critical path, linearity), Shannon entropy over 5×5 windows for monotony, and — when the map has encounters — how many steps the player is from a shop/inn/save point.
 - `{ view: "refactor" }` — duplicated event logic worth extracting into a Common Event.
 - `{ view: "search", query: "the blacksmith" }` — find things by meaning across names, dialogue and descriptions.
 
@@ -162,9 +194,11 @@ This server is actively developed and **feedback is very welcome** — bug repor
 
 ### Known limitations & roadmap
 
-- Decoration/object semantics are best-effort; rare multi-tile objects may be placed as single tiles.
+- Decoration/object semantics are best-effort in the RTP-template path; rare multi-tile objects may be placed as single tiles. The mined path (`mine_templates`) keeps multi-tile props whole.
 - Town and dungeon layouts keep improving — planned: central plaza/well landmark, houses in rows facing roads, fences/yards, richer road networks, more dungeon-room variety.
+- `mode: "semantic"` currently generates dungeon-shaped missions (rooms and corridors). Town and open-world mission grammars are next, as is using the mined adjacency counts to decorate rather than only to describe.
 - Vision AI is optional and requires your own endpoint.
+- The bridge is Windows/nwjs playtest only, and needs the plugin installed in the project.
 
 ## Development
 
