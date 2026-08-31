@@ -19,6 +19,7 @@ import { parseEventCommands, astToOutline, type RawCommand } from "./eventAst.js
 import { analyzePlugins } from "./plugins.js";
 import { critiqueMap, type CritiqueEvent } from "./critique.js";
 import { computeMapMetrics, type MetricEvent } from "./mapMetrics.js";
+import { analyseBalance } from "./balance.js";
 import { detectDuplicates, type RefactorSource } from "./refactor.js";
 import { gatherDocuments, rankDocuments } from "./search.js";
 
@@ -149,6 +150,12 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
       .map((e) => ({ id: num(e.id), name: String(e.name ?? ""), x: num(e.x), y: num(e.y) }));
     return critiqueMap(map as unknown as { width: number; height: number; data: number[] }, flags, events, mapId);
   }
+  if (view === "balance") {
+    return analyseBalance(projectPath, {
+      thresholdSd: args.thresholdSd !== undefined ? num(args.thresholdSd) : undefined,
+      category: args.category !== undefined ? String(args.category) : undefined,
+    });
+  }
   if (view === "metrics") {
     const mapId = num(args.mapId);
     if (!mapId) throw new Error('view "metrics" requires mapId');
@@ -226,6 +233,6 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
       throw new Error(`Unknown target "${target}". Valid: switch, variable, map`);
     }
     default:
-      throw new Error(`Unknown view "${view}". Valid: overview, index, validate, graph, usage, explain, ast, plugins, critique, metrics, refactor, search`);
+      throw new Error(`Unknown view "${view}". Valid: overview, index, validate, graph, usage, explain, ast, plugins, critique, metrics, balance, refactor, search`);
   }
 }

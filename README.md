@@ -51,7 +51,7 @@ RPGMAKER_PROJECT_PATH=/path/to/your/project npm start
 | `edit_map` | Fill tile layers, set display names, organize the map tree, connect two maps, set encounters |
 | `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, **convert** an existing event into a merchant/inn/sign, delete, add commands, bulk-populate |
 | `manage_system` | Game title, switch/variable names, starting position; **author a plugin** (`create_plugin`), **scaffold a new project** (`scaffold_project`), **run the game** (`playtest`) / open it in the editor (`open_editor`), **learn from the project** (`mine_templates`), and the **live bridge** (`bridge_*`) |
-| `analyze_project` | Read-only project intelligence — `overview`, `index`, `validate`, `graph`, `usage`, `explain`, `ast`, `plugins`, `critique`, `metrics`, `refactor`, `search` (see below) |
+| `analyze_project` | Read-only project intelligence — `overview`, `index`, `validate`, `graph`, `usage`, `explain`, `ast`, `plugins`, `critique`, `metrics`, `balance`, `refactor`, `search` (see below) |
 | `get_project_context` | Project digest, asset index, per-tileset tile IDs, bundled-template catalog |
 | `set_project_path` | Switch projects at runtime |
 | `analyze_image` | Optional Vision-AI image analysis, plus offline tileset grid measurement and quadrant colors |
@@ -127,7 +127,7 @@ No API needed:
 Read-only — it understands the whole project instead of re-reading files, so an agent can reason about a game it didn't build. All offline.
 
 - `{ view: "overview" }` — **call this first** on an unfamiliar project: counts, a health summary, and maps unreachable from the start.
-- `{ view: "validate" }` — every consistency problem at once: broken transfers, missing map files, dangling common-event/item/troop references, duplicate IDs, unused switches/variables, unreachable maps.
+- `{ view: "validate" }` — every consistency problem at once: broken transfers, missing map files, dangling common-event/item/troop references, duplicate IDs, unused switches/variables, unreachable maps, and actor names written into dialogue as `\N[id]` that do not resolve (the engine renders those as a blank, so nothing else catches them).
 - `{ view: "explain", target: "switch", id }` — why something never happens, e.g. *"Switch 12 is read/gated in 3 places but is **never set ON**"* (the usual cause of a door that never opens). `target: "map"` reports what a deletion would strand.
 - `{ view: "usage", kind: "variable", id }` — every event/common-event/troop that touches it (with read/write roles).
 - `{ view: "graph" }` — the map transfer network and reachability.
@@ -135,6 +135,7 @@ Read-only — it understands the whole project instead of re-reading files, so a
 - `{ view: "plugins" }` — what plugins the project uses, their parameters and commands.
 - `{ view: "critique", mapId }` — a designer-style review of one map (dead space, empty/cluttered, event spread, monotony) with justified suggestions.
 - `{ view: "metrics", mapId }` — the same map **measured** instead of judged: flood-fill reachability from the real entry point (stranded tiles and events with no reachable tile beside them are softlocks, not style notes), dead-space ratio against the band for `expected`, the walkable area thinned to a skeleton and read as a graph (endpoints, junctions, loops, critical path, linearity), Shannon entropy over 5×5 windows for monotony, and — when the map has encounters — how many steps the player is from a shop/inn/save point.
+- `{ view: "balance" }` — every database entry scored against its **peers** rather than against invented thresholds, so it works on a game at any power level: damage per MP for skills, gold per point of ATK+MAT for weapons, gold per point of DEF+MDF for armors, HP per point of EXP for enemies. Each entry is left out of its own statistics, which is what stops a badly broken one from dragging the mean far enough to hide itself. Damage formulas are **parsed, never executed**; one that cannot be read statically is listed under `unreadableFormulas` instead of counted as zero damage. Narrow with `category`, loosen with `thresholdSd`.
 - `{ view: "refactor" }` — duplicated event logic worth extracting into a Common Event.
 - `{ view: "search", query: "the blacksmith" }` — find things by meaning across names, dialogue and descriptions.
 

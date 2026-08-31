@@ -29,6 +29,18 @@ export interface RefSet {
   images: string[];
   /** Plugin command names invoked (code 356), as opaque tokens. */
   pluginCommands: string[];
+  /** Actor ids referenced from dialogue text via the \N[id] escape code. */
+  textActors: number[];
+  /**
+   * Icon indices referenced from dialogue text via the \I[n] escape code.
+   *
+   * NOT item ids: processEscapeCharacter case 'I' calls processDrawIcon, which
+   * indexes IconSet.png. Checking these against Items.json would flag every
+   * perfectly valid icon on a project with few items, so validate.ts
+   * deliberately leaves them alone; they are collected because they are still
+   * the honest answer to "what does this line reference".
+   */
+  textIcons: number[];
 }
 
 interface RefAccumulator {
@@ -47,6 +59,8 @@ interface RefAccumulator {
   audio: Set<string>;
   images: Set<string>;
   pluginCommands: Set<string>;
+  textActors: Set<number>;
+  textIcons: Set<number>;
 }
 
 function newAccumulator(): RefAccumulator {
@@ -55,6 +69,7 @@ function newAccumulator(): RefAccumulator {
     commonEvents: new Set(), maps: new Set(), items: new Set(), weapons: new Set(),
     armors: new Set(), troops: new Set(), animations: new Set(), actors: new Set(),
     states: new Set(), audio: new Set(), images: new Set(), pluginCommands: new Set(),
+    textActors: new Set(), textIcons: new Set(),
   };
 }
 
@@ -67,6 +82,7 @@ function freeze(acc: RefAccumulator): RefSet {
     weapons: nums(acc.weapons), armors: nums(acc.armors), troops: nums(acc.troops),
     animations: nums(acc.animations), actors: nums(acc.actors), states: nums(acc.states),
     audio: strs(acc.audio), images: strs(acc.images), pluginCommands: strs(acc.pluginCommands),
+    textActors: nums(acc.textActors), textIcons: nums(acc.textIcons),
   };
 }
 
@@ -131,11 +147,36 @@ function addAudio(set: Set<string>, v: unknown): void {
   }
 }
 
+
+// ── Dialogue escape codes ──
+// \N[id] resolves to an actor name at draw time and \I[n] draws an icon.
+// Neither is a structural parameter, so a broken \N id is invisible to every
+// other check here and to the editor: the line simply renders with a blank
+// where the name should be. Both patterns are case-insensitive, matching the
+// engine's own regexes.
+const TEXT_ACTOR_CODE = /\\N\[(\d+)\]/gi;
+const TEXT_ICON_CODE = /\\I\[(\d+)\]/gi;
+
+function collectTextCodes(acc: RefAccumulator, value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const v of value) collectTextCodes(acc, v);
+    return;
+  }
+  if (typeof value !== 'string' || value === '') return;
+  for (const m of value.matchAll(TEXT_ACTOR_CODE)) addNum(acc.textActors, Number(m[1]));
+  for (const m of value.matchAll(TEXT_ICON_CODE)) addNum(acc.textIcons, Number(m[1]));
+}
+
 function accumulate(acc: RefAccumulator, commands: RawCommand[]): void {
   for (const cmd of commands) {
     const code = Number(cmd?.code);
     const p = Array.isArray(cmd?.parameters) ? cmd.parameters! : [];
     switch (code) {
+      // Text-bearing commands: 401/405 carry one line each, 102 an array of
+      // choices, 402 the chosen branch's label.
+      case 401: case 405: collectTextCodes(acc, p[0]); break;                    // Show Text / Scroll Text data
+      case 102: collectTextCodes(acc, p[0]); break;                              // Show Choices
+      case 402: collectTextCodes(acc, p[1]); break;                              // When [choice]
       case 121: addRange(acc.switches, p[0], p[1]); break;                       // Control Switches
       case 122:                                                                  // Control Variables
         addRange(acc.variables, p[0], p[1]);

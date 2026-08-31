@@ -1094,3 +1094,56 @@ describe("semantic pipeline through the consolidated tools", () => {
       .rejects.toThrow(/Cannot hot-reload/);
   });
 });
+
+// The balance lens routed through the consolidated tool. Runs last because it
+// rewrites Skills.json, which earlier tests read.
+describe("balance analysis through analyze_project", () => {
+  interface BalanceReport {
+    thresholdSd: number;
+    outlierCount: number;
+    categories: { category: string; sampled: number; outliers: { id: number; direction: string }[] }[];
+    unreadableFormulas: { id: number; reason: string }[];
+  }
+
+  beforeAll(() => {
+    writeFileSync(path.join(projectDir, "data", "Skills.json"), JSON.stringify([null,
+      { id: 1, name: "Attack", mpCost: 0, damage: { type: 1, formula: "a.atk * 4 - b.def * 2" } },
+      { id: 2, name: "Guard", mpCost: 0, damage: { type: 0, formula: "" } },
+      { id: 3, name: "Fire", mpCost: 10, damage: { type: 1, formula: "100" } },
+      { id: 4, name: "Ice", mpCost: 10, damage: { type: 1, formula: "110" } },
+      { id: 5, name: "Bolt", mpCost: 10, damage: { type: 1, formula: "90" } },
+      { id: 6, name: "Wind", mpCost: 10, damage: { type: 1, formula: "105" } },
+      { id: 7, name: "Apocalypse", mpCost: 10, damage: { type: 1, formula: "5000" } },
+      { id: 8, name: "Situational", mpCost: 10, damage: { type: 1, formula: "a.hp > 50 ? 300 : 30" } },
+    ]));
+  });
+
+  it("names the skill that is out of line with the rest", async () => {
+    const report = await dispatchTool("analyze_project", { view: "balance", category: "skills" }) as BalanceReport;
+    const skills = report.categories.find((c) => c.category === "skills")!;
+
+    expect(report.thresholdSd).toBe(2);
+    expect(skills.sampled).toBe(5);           // the four peers plus Apocalypse
+    expect(skills.outliers.map((o) => o.id)).toEqual([7]);
+    expect(skills.outliers[0].direction).toBe("high");
+  });
+
+  it("sets the unreadable formula aside instead of scoring it zero", async () => {
+    const report = await dispatchTool("analyze_project", { view: "balance", category: "skills" }) as BalanceReport;
+    expect(report.unreadableFormulas.map((f) => f.id)).toEqual([8]);
+    expect(report.unreadableFormulas[0].reason).toMatch(/unsupported syntax/);
+  });
+
+  it("takes a looser threshold", async () => {
+    // Judged against peers it had no hand in averaging, Apocalypse sits around
+    // 570 SD out, so silencing it takes a genuinely absurd threshold.
+    const loud = await dispatchTool("analyze_project", { view: "balance", thresholdSd: 100 }) as BalanceReport;
+    const silent = await dispatchTool("analyze_project", { view: "balance", thresholdSd: 1000 }) as BalanceReport;
+    expect(loud.outlierCount).toBe(1);
+    expect(silent.outlierCount).toBe(0);
+  });
+
+  it("rejects a view it does not have", async () => {
+    await expect(dispatchTool("analyze_project", { view: "vibes" })).rejects.toThrow(/Valid: .*balance/);
+  });
+});
