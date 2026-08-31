@@ -206,12 +206,29 @@ describe('command surface', () => {
 });
 
 describe('generated plugin', () => {
+  it('is syntactically valid JavaScript', () => {
+    const spec = buildBridgePlugin();
+    expect(() => new Function(spec.body)).not.toThrow();
+  });
+
   it('guards on playtest before doing anything', () => {
     const spec = buildBridgePlugin();
-    const guardIndex = spec.body.indexOf("isOptionValid('test')");
+    const guardIndex = spec.body.indexOf('if (!isPlaytest()) return');
     expect(guardIndex).toBeGreaterThan(-1);
     // The guard must precede the socket, or a deployed build could open a port.
     expect(guardIndex).toBeLessThan(spec.body.indexOf('new WebSocket'));
+  });
+
+  it('recognises a direct-runtime test token after the project-path argument', () => {
+    const spec = buildBridgePlugin();
+    expect(spec.body).toContain('for (var i = 0; i < nw.App.argv.length; i++)');
+    expect(spec.body).toContain("String(nw.App.argv[i]).split('&').indexOf('test') >= 0");
+  });
+
+  it('resolves the project root under the chrome-extension NW.js scheme', () => {
+    const spec = buildBridgePlugin();
+    expect(spec.body).toContain("window.location.protocol !== 'file:'");
+    expect(spec.body).toContain('path.resolve(process.cwd())');
   });
 
   it('never exposes an eval primitive', () => {
@@ -226,6 +243,14 @@ describe('generated plugin', () => {
     expect(spec.params.find((p) => p.name === 'Fallback Port')?.default).toBe(40100);
     expect(spec.body).toContain('40100');
     expect(spec.body).toContain("PluginManager.parameters('McpBridge')");
+  });
+
+  it('records credential-free startup failures before a socket can report them', () => {
+    const spec = buildBridgePlugin();
+    expect(spec.body).toContain("var DIAGNOSTIC = '.mcp-bridge-plugin.log'");
+    expect(spec.body).toContain("diagnose('handshake read failed:");
+    expect(spec.body).toContain("diagnose('socket error:");
+    expect(spec.body).not.toContain("diagnose('token");
   });
 });
 

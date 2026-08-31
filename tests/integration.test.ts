@@ -384,10 +384,26 @@ describe("generate_map and edit_map", () => {
   it("edit_map connect creates a transfer event on both maps", async () => {
     const result = await dispatchTool("edit_map", {
       action: "connect", mapIdA: 1, mapIdB: generatedMapId,
-      posA: { x: 0, y: 0 }, posB: { x: 1, y: 1 }
+      posA: { x: 0, y: 0, trigger: 0 }, posB: { x: 1, y: 1, trigger: 1 }
     }) as any;
     expect(result.eventA).toBeDefined();
     expect(result.eventB).toBeDefined();
+    expect(result.eventA.pages[0].trigger).toBe(0);
+    expect(result.eventB.pages[0].trigger).toBe(1);
+  });
+
+  it("populate preserves explicit names and zero-valued coordinates for every preset", async () => {
+    const chest = await dispatchTool("manage_map_event", {
+      action: "populate", mapId: 1, eventType: "chest", count: 1,
+      opts: { name: "Named Chest", x: 0, y: 0 }
+    }) as any;
+    expect(chest.added[0]).toMatchObject({ name: "Named Chest", x: 0, y: 0 });
+
+    const boss = await dispatchTool("manage_map_event", {
+      action: "populate", mapId: 1, eventType: "boss", count: 1,
+      opts: { name: "Named Boss", troopId: 1, x: 0, y: 1 }
+    }) as any;
+    expect(boss.added[0]).toMatchObject({ name: "Named Boss", x: 0, y: 1 });
   });
 });
 

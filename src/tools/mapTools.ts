@@ -1,5 +1,5 @@
 import { readdirSync } from 'fs';
-import { readFile, writeFile, copyFile } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import { readJson, writeJson, safeWrite, getDataPath, getMapPath, nextId } from '../utils/fileHandler.js';
 import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
@@ -468,13 +468,13 @@ async function connectMaps(projectPath: string, mapIdA: number, mapIdB: number, 
   if (flagsA) { const s = nearestStandable(mapA, flagsA, posA.x, posA.y); posA = { ...posA, x: s.x, y: s.y }; }
   if (flagsB) { const s = nearestStandable(mapB, flagsB, posB.x, posB.y); posB = { ...posB, x: s.x, y: s.y }; }
   const newIdA = nextId(mapA.events);
-  const evA = makeTransferEvent(newIdA, posA.x, posA.y, numMapIdB, posB.x, posB.y, posA.trigger || 1);
+  const evA = makeTransferEvent(newIdA, posA.x, posA.y, numMapIdB, posB.x, posB.y, posA.trigger ?? 1);
   while (mapA.events.length <= newIdA) mapA.events.push(null);
   mapA.events[newIdA] = evA;
   await writeMapJson(projectPath, getMapPath(projectPath, numMapIdA), mapA);
 
   const newIdB = nextId(mapB.events);
-  const evB = makeTransferEvent(newIdB, posB.x, posB.y, numMapIdA, posA.x, posA.y, posB.trigger || 1);
+  const evB = makeTransferEvent(newIdB, posB.x, posB.y, numMapIdA, posA.x, posA.y, posB.trigger ?? 1);
   while (mapB.events.length <= newIdB) mapB.events.push(null);
   mapB.events[newIdB] = evB;
   await writeMapJson(projectPath, getMapPath(projectPath, numMapIdB), mapB);
@@ -486,16 +486,22 @@ async function populateMapEvents(projectPath: string, mapId: number, eventType: 
   const numMapId = toNum(mapId, 'mapId');
   const map = await getMap(projectPath, numMapId) as RpgMakerMap;
   opts = opts || {};
-  const numCount = toNum(count || 3, 'count');
+  const numCount = toNum(count ?? 3, 'count');
   const added: unknown[] = [];
   for (let i = 0; i < numCount!; i++) {
-        const x = (opts.x as number) || Math.floor(Math.random() * (map.width - 4)) + 2;
-        const y = (opts.y as number) || Math.floor(Math.random() * (map.height - 4)) + 2;
+        const x = opts.x !== undefined ? toNum(opts.x, 'opts.x') : Math.floor(Math.random() * (map.width - 4)) + 2;
+        const y = opts.y !== undefined ? toNum(opts.y, 'opts.y') : Math.floor(Math.random() * (map.height - 4)) + 2;
         const newId = nextId(map.events);
-        let ev;
+        let ev: MapEvent;
         if (eventType === 'npc') ev = makeNpcEvent(newId, x, y, (opts.name as string) || 'NPC');
-        else if (eventType === 'chest') ev = makeChestEvent(newId, x, y);
-        else if (eventType === 'boss') ev = makeBossEvent(newId, x, y, (opts.troopId as number) || 1);
+        else if (eventType === 'chest') {
+          ev = makeChestEvent(newId, x, y);
+          if (opts.name) ev.name = String(opts.name);
+        }
+        else if (eventType === 'boss') {
+          ev = makeBossEvent(newId, x, y, opts.troopId !== undefined ? toNum(opts.troopId, 'opts.troopId') : 1);
+          if (opts.name) ev.name = String(opts.name);
+        }
         else ev = makeNpcEvent(newId, x, y, eventType || 'Event');
         while (map.events.length <= newId) map.events.push(null);
         map.events[newId] = ev;

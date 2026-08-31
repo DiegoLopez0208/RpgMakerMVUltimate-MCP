@@ -11,6 +11,7 @@ import {
   THEME_TEMPLATE_THEMES,
   THEME_TILESET,
   TILESETS,
+  generateFromTemplate,
   generateTileLayoutV3,
   normalizeAvailableTiles,
   resolveTilesConfig,
@@ -184,6 +185,18 @@ describe("mapGenerator template routing (Phase 2a)", () => {
   });
 
   describe("end-to-end clone", () => {
+    it("normalizes editor-only high bits in template shadow layers", async () => {
+      // These four bundled maps contain shadow masks such as 0x40000005,
+      // 0x80000001 and 0xc0000005. MV renders only the low nibble; generated
+      // project data should therefore contain canonical values 0..15.
+      for (const templateId of [12, 14, 15, 25]) {
+        const m = await generateFromTemplate(templateId) as { data: number[]; width: number; height: number };
+        const layerSize = m.width * m.height;
+        const shadows = m.data.slice(4 * layerSize, 5 * layerSize);
+        expect(shadows.every((value) => value >= 0 && value <= 15)).toBe(true);
+      }
+    });
+
     it("snow generation clones a real template (overlay building/decoration tiles present, all tile IDs valid)", async () => {
       const m = await generateTileLayoutV3(40, 30, "snow", { seed: 11, addEvents: false, tilesetId: 2 } as never) as { data: number[] };
       // B/C/D/E overlay tiles occupy ids 1..1535 and only appear in hand-authored

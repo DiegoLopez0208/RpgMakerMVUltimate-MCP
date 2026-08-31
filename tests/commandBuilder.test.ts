@@ -2,10 +2,6 @@ import { describe, it, expect } from "vitest";
 import { cmd } from "../src/utils/commandBuilder.js";
 
 describe("commandBuilder", () => {
-  const assertValidCommand = (result: unknown) => {
-    expect(result).toBeDefined();
-  };
-
   describe("message", () => {
     it("should create show text commands", () => {
       const result = cmd.message("Hello", "Actor1", 0);
