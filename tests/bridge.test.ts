@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, access } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
+import { connect, type Socket } from 'net';
 
 import { originAllowed, acceptKey, encodeFrame, decodeFrame } from '../src/bridge/wsServer.js';
 import { startBridge, stopBridge, statusBridge, drainTelemetry, requestCommand, sendCommand } from '../src/bridge/bridge.js';
@@ -29,6 +30,9 @@ function clientFrame(text: string, opcode = 0x1): Buffer {
   return Buffer.concat([header, mask, masked]);
 }
 
+/** CR LF, spelled out so no build step can mangle the escape. */
+const CRLF = String.fromCharCode(13, 10);
+
 const projects: string[] = [];
 
 async function tempProject(): Promise<string> {
@@ -37,24 +41,104 @@ async function tempProject(): Promise<string> {
   return dir;
 }
 
-/** Connect a client and resolve once the server has accepted its token. */
-function connectAuthed(port: number, token: string): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket('ws://127.0.0.1:' + port);
-    const fail = setTimeout(() => reject(new Error('client never connected')), 4000);
-    ws.addEventListener('open', () => {
-      ws.send(JSON.stringify({ type: 'auth', token }));
-      // The server answers an accepted auth with a ping command.
-      ws.addEventListener('message', function onMsg(ev) {
-        const msg = JSON.parse(String((ev as MessageEvent).data));
-        if (msg.requestId === 'auth-ok') {
-          ws.removeEventListener('message', onMsg);
-          clearTimeout(fail);
-          resolve(ws);
-        }
+/**
+ * A WebSocket client built on `net`, standing in for the game.
+ *
+ * Node only exposes a global WebSocket from v22, and the package supports 18
+ * and 20, so the tests cannot use it. This is the client half of the same
+ * protocol wsServer speaks: the upgrade handshake, masked text frames out,
+ * unmasked frames in.
+ */
+class TestClient {
+  private socket: Socket | null = null;
+  private buf = Buffer.alloc(0);
+  private handlers: ((msg: Record<string, unknown>) => void)[] = [];
+  private closeHandlers: (() => void)[] = [];
+
+  connect(port: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const socket = connect(port, '127.0.0.1');
+      this.socket = socket;
+      const timer = setTimeout(() => reject(new Error('handshake timed out')), 4000);
+      let handshakeDone = false;
+
+      socket.on('connect', () => {
+        const request = [
+          'GET / HTTP/1.1',
+          'Host: 127.0.0.1:' + port,
+          'Upgrade: websocket',
+          'Connection: Upgrade',
+          'Sec-WebSocket-Key: ' + randomBytes(16).toString('base64'),
+          'Sec-WebSocket-Version: 13',
+          '', '',
+        ].join(CRLF);
+        socket.write(request);
       });
+
+      socket.on('data', (chunk: Buffer) => {
+        this.buf = Buffer.concat([this.buf, chunk]);
+        if (!handshakeDone) {
+          const end = this.buf.indexOf(CRLF + CRLF);
+          if (end === -1) return;
+          const head = this.buf.subarray(0, end).toString('utf-8');
+          this.buf = this.buf.subarray(end + 4);
+          handshakeDone = true;
+          clearTimeout(timer);
+          if (!head.startsWith('HTTP/1.1 101')) { reject(new Error('upgrade refused: ' + head.split(CRLF)[0])); return; }
+          resolve();
+        }
+        this.drain();
+      });
+
+      socket.on('error', () => { clearTimeout(timer); reject(new Error('socket error')); });
+      socket.on('close', () => { for (const h of this.closeHandlers) h(); });
     });
-    ws.addEventListener('error', () => { clearTimeout(fail); reject(new Error('socket error')); });
+  }
+
+  /** Server-to-client frames are never masked, so decodeFrame would reject them. */
+  private drain(): void {
+    for (;;) {
+      if (this.buf.length < 2) return;
+      const opcode = this.buf[0] & 0x0f;
+      let len = this.buf[1] & 0x7f;
+      let offset = 2;
+      if (len === 126) {
+        if (this.buf.length < 4) return;
+        len = this.buf.readUInt16BE(2);
+        offset = 4;
+      }
+      if (this.buf.length < offset + len) return;
+      const payload = this.buf.subarray(offset, offset + len);
+      this.buf = this.buf.subarray(offset + len);
+      if (opcode !== 0x1) continue; // close/ping/pong are not part of these assertions
+      let msg: Record<string, unknown>;
+      try { msg = JSON.parse(payload.toString('utf-8')) as Record<string, unknown>; } catch { continue; }
+      for (const h of this.handlers) h(msg);
+    }
+  }
+
+  onMessage(handler: (msg: Record<string, unknown>) => void): void { this.handlers.push(handler); }
+  onClose(handler: () => void): void { this.closeHandlers.push(handler); }
+
+  send(payload: unknown): void {
+    if (!this.socket) throw new Error('not connected');
+    this.socket.write(clientFrame(JSON.stringify(payload)));
+  }
+
+  close(): void { this.socket?.destroy(); }
+}
+
+/** Connect a client and resolve once the server has accepted its token. */
+async function connectAuthed(port: number, token: string): Promise<TestClient> {
+  const client = new TestClient();
+  await client.connect(port);
+  return new Promise<TestClient>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('server never acknowledged auth')), 4000);
+    // The server answers an accepted auth with a ping command.
+    client.onMessage((msg) => {
+      if (msg.requestId === 'auth-ok') { clearTimeout(timer); resolve(client); }
+    });
+    client.send({ type: 'auth', token });
   });
 }
 
@@ -176,8 +260,8 @@ describe('bridge session', () => {
 
     expect(statusBridge().authenticatedClients).toBe(1);
 
-    ws.send(JSON.stringify({ type: 'exception', message: 'TypeError: undefined is not a function' }));
-    ws.send(JSON.stringify({ type: 'player_state', mapId: 3, x: 7, y: 9, direction: 2, isMoving: false }));
+    ws.send({ type: 'exception', message: 'TypeError: undefined is not a function' });
+    ws.send({ type: 'player_state', mapId: 3, x: 7, y: 9, direction: 2, isMoving: false });
     await new Promise((r) => setTimeout(r, 150));
 
     const all = drainTelemetry({ peek: true });
@@ -196,11 +280,12 @@ describe('bridge session', () => {
     const dir = await tempProject();
     const status = await startBridge(dir, 0);
 
+    const client = new TestClient();
+    await client.connect(status.port!);
     const closed = await new Promise<boolean>((resolve) => {
-      const ws = new WebSocket('ws://127.0.0.1:' + status.port);
       const timer = setTimeout(() => resolve(false), 4000);
-      ws.addEventListener('open', () => ws.send(JSON.stringify({ type: 'auth', token: 'deadbeef'.repeat(4) })));
-      ws.addEventListener('close', () => { clearTimeout(timer); resolve(true); });
+      client.onClose(() => { clearTimeout(timer); resolve(true); });
+      client.send({ type: 'auth', token: 'deadbeef'.repeat(4) });
     });
 
     expect(closed).toBe(true);
@@ -213,10 +298,9 @@ describe('bridge session', () => {
     const ws = await connectAuthed(status.port!, status.token!);
 
     // Stand in for the game: answer get_state with a state dump.
-    ws.addEventListener('message', (ev) => {
-      const msg = JSON.parse(String((ev as MessageEvent).data));
+    ws.onMessage((msg) => {
       if (msg.action === 'get_state') {
-        ws.send(JSON.stringify({ type: 'state_dump', requestId: msg.requestId, switches: { 3: true }, variables: { 1: 42 } }));
+        ws.send({ type: 'state_dump', requestId: msg.requestId, switches: { 3: true }, variables: { 1: 42 } });
       }
     });
 
