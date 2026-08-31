@@ -416,16 +416,19 @@ export function computeMapMetrics(
     largestRegionShare: largestShare,
   };
 
-  const band = DEAD_SPACE_BANDS[opts.expected ?? 'exterior'];
+  const expected = opts.expected ?? 'exterior';
+  // "a exterior map" reads as a bug in the tool, so pick the article.
+  const kind = `${'aeiou'.includes(expected[0]) ? 'an' : 'a'} ${expected}`;
+  const band = DEAD_SPACE_BANDS[expected];
   if (deadSpaceRatio > band[1]) {
     verdicts.push({
       metric: 'space.deadSpaceRatio', value: deadSpaceRatio, band: 'high',
-      message: `${Math.round(deadSpaceRatio * 100)}% of the rectangle is unreachable — above the ${Math.round(band[1] * 100)}% expected for a ${opts.expected ?? 'exterior'} map. Shrink the map or open up the blocked area.`,
+      message: `${Math.round(deadSpaceRatio * 100)}% of the rectangle is unreachable — above the ${Math.round(band[1] * 100)}% expected for ${kind} map. Shrink the map or open up the blocked area.`,
     });
   } else if (deadSpaceRatio < band[0]) {
     verdicts.push({
       metric: 'space.deadSpaceRatio', value: deadSpaceRatio, band: 'low',
-      message: `Only ${Math.round(deadSpaceRatio * 100)}% of the map is non-playable — below the ${Math.round(band[0] * 100)}% expected for a ${opts.expected ?? 'exterior'} map. Wide open space with no structure reads as unfinished.`,
+      message: `Only ${Math.round(deadSpaceRatio * 100)}% of the map is non-playable — below the ${Math.round(band[0] * 100)}% expected for ${kind} map. Wide open space with no structure reads as unfinished.`,
     });
   }
   if (strandedTiles > 0) {
