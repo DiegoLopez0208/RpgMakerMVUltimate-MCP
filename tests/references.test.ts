@@ -117,3 +117,46 @@ describe("extractRefs", () => {
     });
   });
 });
+
+describe("dialogue escape codes", () => {
+  it("picks the actor id out of a Show Text line", () => {
+    const refs = extractRefs([
+      { code: 101, indent: 0, parameters: ["", 0, 0, 2] },
+      { code: 401, indent: 0, parameters: ["Welcome back, \\N[3]!"] },
+      { code: 0, indent: 0, parameters: [] },
+    ]);
+    expect(refs.textActors).toEqual([3]);
+  });
+
+  it("matches the engine's case-insensitive regex", () => {
+    const refs = extractRefs([{ code: 401, indent: 0, parameters: ["\\n[7] and \\N[8]"] }]);
+    expect(refs.textActors).toEqual([7, 8]);
+  });
+
+  it("needs the backslash — a bare N[9] is just prose", () => {
+    const refs = extractRefs([{ code: 401, indent: 0, parameters: ["The MOUNTAIN[9] is tall."] }]);
+    expect(refs.textActors).toEqual([]);
+  });
+
+  it("reads choices and their branches too", () => {
+    const refs = extractRefs([
+      { code: 102, indent: 0, parameters: [["Ask \\N[2]", "Leave"], 1] },
+      { code: 402, indent: 0, parameters: [0, "Ask \\N[4]"] },
+    ]);
+    expect(refs.textActors).toEqual([2, 4]);
+  });
+
+  it("keeps icon indices apart from actors, because \\I is not an item id", () => {
+    const refs = extractRefs([{ code: 401, indent: 0, parameters: ["Take this \\I[87] from \\N[1]"] }]);
+    expect(refs.textIcons).toEqual([87]);
+    expect(refs.textActors).toEqual([1]);
+    // \I[87] indexes IconSet.png; it must never be mistaken for item 87.
+    expect(refs.items).toEqual([]);
+  });
+
+  it("stays quiet on plain text", () => {
+    const refs = extractRefs([{ code: 401, indent: 0, parameters: ["Just a line."] }]);
+    expect(refs.textActors).toEqual([]);
+    expect(refs.textIcons).toEqual([]);
+  });
+});

@@ -4,8 +4,8 @@
  * Surfaces the broken references, dead content and dangling links that the
  * editor never warns about: transfers to non-existent maps, events that call
  * missing common events / items / troops, switches and variables that are
- * declared but never touched, duplicate database IDs, and maps the player can
- * never reach.
+ * declared but never touched, duplicate database IDs, maps the player can
+ * never reach, and actor names written into dialogue that do not resolve.
  *
  * Roadmap #10 (Validaciones automáticas).
  */
@@ -85,6 +85,24 @@ export function validateProject(index: ProjectIndex): ValidationReport {
     }
     for (const id of src.refs.commonEvents) {
       if (!commonIds.has(id)) issues.push({ severity: "error", category: "dangling-ref", entity: "common_events", id, message: `${src.label} calls common event ${id}, which does not exist` });
+    }
+  }
+
+  // 4b. Actor names embedded in dialogue.
+  // \N[id] is resolved by the engine at draw time, not by any structural
+  // parameter, so a bad id passes every other check and the editor shows
+  // nothing wrong — the line just renders with a hole where the name was.
+  {
+    const actors = entityIds.actors ?? new Set<number>();
+    for (const src of index.refSources) {
+      for (const id of src.refs.textActors) {
+        if (!actors.has(id)) {
+          issues.push({
+            severity: "error", category: "broken-text-code", entity: "actors", id,
+            message: `${src.label} writes \\N[${id}] in dialogue, but actor ${id} does not exist — the line will render with a blank name`,
+          });
+        }
+      }
     }
   }
 

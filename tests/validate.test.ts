@@ -50,6 +50,8 @@ beforeAll(async () => {
     { code: 201, indent: 0, parameters: [0, 7, 5, 5, 0, 0] }, // transfer to non-existent map 7
     { code: 117, indent: 0, parameters: [9] },                // call non-existent common event 9
     { code: 126, indent: 0, parameters: [3, 0, 0, 1] },       // change item 3 (does not exist)
+    { code: 101, indent: 0, parameters: ["", 0, 0, 2] },
+    { code: 401, indent: 0, parameters: ["Well met, \\N[99]!"] }, // actor 99 does not exist
     end,
   ])] });
 
@@ -79,6 +81,16 @@ describe("validateProject", () => {
   it("warns about a named-but-unused switch", () => {
     const r = validateProject(index);
     expect(r.issues.some((i) => i.category === "unused-switch" && i.id === 1)).toBe(true);
+  });
+
+  it("catches an actor name written into dialogue that cannot resolve", () => {
+    const r = validateProject(index);
+    const issue = r.issues.find((i) => i.category === "broken-text-code");
+    expect(issue).toBeDefined();
+    expect(issue!.severity).toBe("error");
+    expect(issue!.id).toBe(99);
+    // The message has to show the escape code as authored, backslash included.
+    expect(issue!.message).toContain("\\N[99]");
   });
 
   it("summarises issues by severity", () => {
