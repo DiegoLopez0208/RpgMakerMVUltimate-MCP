@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.15.0] - 2026-08-31
+
+### Added
+- **The live bridge: the game talks back.** `playtest` used to be fire-and-forget. `manage_system` gains `install_bridge_plugin`, `bridge_start`, `bridge_status`, `bridge_telemetry`, `bridge_command`, `bridge_screenshot` and `bridge_stop`. The generated `js/plugins/McpBridge.js` connects out to a loopback WebSocket and streams exceptions (with stack traces), `console.error`/`warn`, scene changes, player position, the event command currently executing, FPS and heap. `bridge_command "reload_map"` re-reads the current map from disk and rebuilds the scene **without losing party state**, using the engine's own reload seam (a reserved transfer with `Game_Player._needsMapReload`) rather than hand-rebuilding `Spriteset_Map`; `reload_database` hot-reloads one data file, and refuses `System.json`/`Tilesets.json` with an explanation because those need a fresh playtest. `bridge_screenshot` writes a PNG for `analyze_image`.
+  - Security: the plugin returns immediately unless `Utils.isNwjs() && Utils.isOptionValid('test')`, so a deployed build never opens a socket. The server binds `127.0.0.1` only, refuses upgrades carrying a browser `Origin` (cross-site WebSocket hijacking), and requires the session token from `.mcp-bridge.json`, compared in constant time, within 5 seconds. The command surface is a fixed allowlist with no `eval` primitive.
+  - The WebSocket server is hand-rolled over `http` + `crypto` (~230 LOC): no new runtime dependency.
+- **`analyze_project` view `metrics`.** Measures a map instead of judging it: flood-fill reachability from the real entry point (stranded walkable tiles, and events with no reachable tile beside them — softlocks, not style notes), dead-space ratio against a band for `expected` interior/dungeon/exterior, the walkable area thinned with Zhang-Suen and read as a graph (endpoints, junctions, cycles, critical path, linearity), Shannon entropy over 5x5 tile windows for monotony, and — for maps with encounters — how many steps the player is from a shop/inn/save point.
+- **`manage_system` action `mine_templates`.** Reads every map in the project and derives, into `.mcp-cache/`: semantic layouts with the art stripped out (multi-tile props kept whole, doors and points of interest inferred from event commands), a **tileset profile** per tileset naming the concrete tile the project uses for ground/wall/water/roof by observed frequency, and token adjacency counts. The project itself is not modified. This is what makes generation work on tilesets the bundled RTP templates cannot target.
+- **`generate_map` mode `semantic`.** Lays out a *mission* — entrance, key, locked door, treasure, boss, exit, side rooms — as a graph, then materialises it through a tileset profile, so one layout works on any tileset including DLC and third-party packs. The key always sits on the entrance side of the lock, so the map is solvable by construction; autotile shapes are recomputed from the finished neighbourhood at the end. Returns `markers` naming the cell of every mission role. Pass a mined `templateId` to re-materialise one of the project's own maps onto a different tileset.
+
+### Fixed
+- The consolidated `manage_system` and `generate_map` Zod schemas rejected every new action and mode with a bare `Invalid enum value`; `validateConsolidated` now knows about them.
+
 ## [5.14.2] - 2026-07-23
 
 ### Changed
