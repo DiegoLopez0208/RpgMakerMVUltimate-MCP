@@ -379,8 +379,13 @@ describe('the project root, executed', () => {
   it('falls back to the working directory under chrome-extension:', () => {
     // Recent NW.js serves index.html from an extension origin, where the
     // pathname says nothing about where the project lives.
-    const r = runPlugin({ optionValid: true, protocol: 'chrome-extension:', cwd: 'C:/games/Demo', handshake });
-    expect(r.reads[0]).toBe(nodePath.join('C:/games/Demo', '.mcp-bridge.json'));
+    //
+    // The cwd has to be absolute *for the host platform*: path.resolve treats
+    // "C:/games/Demo" as relative on POSIX and prefixes the real cwd, which is
+    // a property of the test, not of the plugin.
+    const cwd = nodePath.resolve(tmpdir(), 'DemoProject');
+    const r = runPlugin({ optionValid: true, protocol: 'chrome-extension:', cwd, handshake });
+    expect(r.reads[0]).toBe(nodePath.join(cwd, '.mcp-bridge.json'));
   });
 });
 
