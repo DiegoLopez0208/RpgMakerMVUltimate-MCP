@@ -1,0 +1,49 @@
+name: Publish to the MCP Registry
+
+# The npm publish in ci.yml already runs on a version tag. This is separate on
+# purpose: registry publishing is idempotent per version but npm publish is not,
+# so a retry here must never risk re-running that. workflow_dispatch exists to
+# backfill a version that was tagged before this workflow did.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or ref to publish from (defaults to the current branch)'
+        required: false
+
+permissions:
+  contents: read
+  id-token: write   # the registry authenticates this repo through GitHub OIDC
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Check server.json matches package.json
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          SRV="$(node -p "require('./server.json').version")"
+          PKGREF="$(node -p "require('./server.json').packages[0].version")"
+          if [ "$SRV" != "$PKG" ] || [ "$PKGREF" != "$PKG" ]; then
+            echo "::error::server.json ($SRV / package ref $PKGREF) does not match package.json ($PKG)"
+            exit 1
+          fi
+          echo "Publishing $PKG"
+
+      - name: Install mcp-publisher
+        run: |
+          VERSION="$(curl -sSf https://api.github.com/repos/modelcontextprotocol/registry/releases/latest | jq -r .tag_name)"
+          curl -sSfL "https://github.com/modelcontextprotocol/registry/releases/download/${VERSION}/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Publish
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
