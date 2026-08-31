@@ -36,6 +36,25 @@ jobs:
           fi
           echo "Publishing $PKG"
 
+      - name: Wait for the version to appear on npm
+        # Both workflows fire on the same tag and run in parallel, and the
+        # registry refuses a version it cannot find on npm. The npm publish in
+        # ci.yml takes about a minute, so this one has to wait for it rather
+        # than assume it already happened. Also makes a backfill dispatch safe
+        # to run at any time.
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          for attempt in $(seq 1 40); do
+            if npm view "rpgmaker-mv-mcp@${VERSION}" version >/dev/null 2>&1; then
+              echo "rpgmaker-mv-mcp@${VERSION} is on npm"
+              exit 0
+            fi
+            echo "attempt ${attempt}: rpgmaker-mv-mcp@${VERSION} not on npm yet"
+            sleep 15
+          done
+          echo "::error::rpgmaker-mv-mcp@${VERSION} never appeared on npm after 10 minutes"
+          exit 1
+
       - name: Install mcp-publisher
         run: |
           VERSION="$(curl -sSf https://api.github.com/repos/modelcontextprotocol/registry/releases/latest | jq -r .tag_name)"
