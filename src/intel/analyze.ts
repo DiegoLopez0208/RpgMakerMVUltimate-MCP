@@ -18,6 +18,7 @@ import { validateProject, type Severity } from "./validate.js";
 import { parseEventCommands, astToOutline, type RawCommand } from "./eventAst.js";
 import { analyzePlugins } from "./plugins.js";
 import { critiqueMap, type CritiqueEvent } from "./critique.js";
+import { computeMapMetrics, type MetricEvent } from "./mapMetrics.js";
 import { detectDuplicates, type RefactorSource } from "./refactor.js";
 import { gatherDocuments, rankDocuments } from "./search.js";
 
@@ -53,6 +54,31 @@ async function eventCommandList(projectPath: string, args: Args): Promise<RawCom
   const page = pages[pageIdx];
   if (!page) throw new Error(`Page ${pageIdx} not found on event ${args.eventId}`);
   return (page.list as RawCommand[]) ?? [];
+}
+
+/**
+ * Command codes that make an event a place to recover: a shop, a save point,
+ * or the Recover All an inn runs. The tension metric measures how far the
+ * player ever is from one of these.
+ */
+const SAFE_COMMAND_CODES = new Set([302, 314, 352]);
+
+/** Map events shaped for mapMetrics, with the "somewhere safe" flag resolved. */
+function metricEvents(map: Record<string, unknown>): MetricEvent[] {
+  const raw = Array.isArray(map.events) ? map.events : [];
+  const out: MetricEvent[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const ev = e as Record<string, unknown>;
+    const pages = Array.isArray(ev.pages) ? (ev.pages as Record<string, unknown>[]) : [];
+    let safe = false;
+    for (const page of pages) {
+      const list = Array.isArray(page?.list) ? (page.list as RawCommand[]) : [];
+      if (list.some((c) => SAFE_COMMAND_CODES.has(num(c?.code)))) { safe = true; break; }
+    }
+    out.push({ id: num(ev.id), name: String(ev.name ?? ""), x: num(ev.x), y: num(ev.y), safe });
+  }
+  return out;
 }
 
 /** Every event-page and common-event command list, labelled, for refactor analysis. */
@@ -123,6 +149,33 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
       .map((e) => ({ id: num(e.id), name: String(e.name ?? ""), x: num(e.x), y: num(e.y) }));
     return critiqueMap(map as unknown as { width: number; height: number; data: number[] }, flags, events, mapId);
   }
+  if (view === "metrics") {
+    const mapId = num(args.mapId);
+    if (!mapId) throw new Error('view "metrics" requires mapId');
+    const map = (await getMap(projectPath, mapId)) as Record<string, unknown>;
+    const flags = await loadTilesetFlags(projectPath, num(map.tilesetId)).catch(() => null);
+    const events = metricEvents(map);
+
+    // Measure from where the player actually arrives when this is the start map;
+    // otherwise the metrics fall back to the largest walkable region.
+    let entry: { x: number; y: number } | null = null;
+    try {
+      const system = (await readJson(projectPath, "System.json")) as Record<string, unknown>;
+      if (num(system?.startMapId) === mapId) entry = { x: num(system.startX), y: num(system.startY) };
+    } catch { /* no System.json → no entry point, fall back */ }
+
+    const encounters = Array.isArray(map.encounterList) ? map.encounterList.length : 0;
+    const expected = ["interior", "dungeon", "exterior"].includes(String(args.expected))
+      ? (String(args.expected) as "interior" | "dungeon" | "exterior")
+      : undefined;
+    return computeMapMetrics(
+      map as unknown as { width: number; height: number; data: number[] },
+      flags,
+      events,
+      { entry, encounterCount: encounters, expected },
+      mapId,
+    );
+  }
 
   const index = await getProjectIndex(projectPath);
 
@@ -173,6 +226,6 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
       throw new Error(`Unknown target "${target}". Valid: switch, variable, map`);
     }
     default:
-      throw new Error(`Unknown view "${view}". Valid: overview, index, validate, graph, usage, explain, ast, plugins, critique, refactor, search`);
+      throw new Error(`Unknown view "${view}". Valid: overview, index, validate, graph, usage, explain, ast, plugins, critique, metrics, refactor, search`);
   }
 }

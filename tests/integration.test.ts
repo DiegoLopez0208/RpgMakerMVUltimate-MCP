@@ -981,3 +981,116 @@ describe("analyze_project (intelligence layer)", () => {
     expect(codes).toContain(302);                     // shop processing wired in
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The tileset-independent path: learn from the project, then build from what was
+// learned. These run last because they give the fixture a real tileset, which
+// the earlier tests deliberately do without.
+// ─────────────────────────────────────────────────────────────────────────────
+interface MinedProfiles { mapsKept: number; profiles: Record<string, { tiles: Record<string, number>; tilesetName?: string }> }
+interface BuiltMap { mapId: number; width: number; height: number; droppedProps: number;
+  source: { kind: string; templateId?: string }; profileUsed: { tiles: Record<string, number> };
+  markers: { x: number; y: number; role: string }[] }
+interface BridgeState { running: boolean; authenticatedClients: number }
+
+describe("semantic pipeline through the consolidated tools", () => {
+  const GROUND = 2816;          // A2 kind 0
+  const WALL = 5888 + 8 * 48;   // A4 kind 8, a wall side
+  const WATER = 2048;           // A1 kind 0
+
+  beforeAll(() => {
+    const flags = new Array(8192).fill(0);
+    for (let id = 5888; id < 8192; id++) flags[id] = 15;
+    writeFileSync(path.join(projectDir, "data", "Tilesets.json"), JSON.stringify([
+      null, { id: 1, name: "Fixture Dungeon", mode: 0, tilesetNames: [], flags, note: "" },
+    ]));
+
+    // A hand-made map worth learning from: a walled room with a pond.
+    const width = 14, height = 12;
+    const data = new Array(width * height * 6).fill(0);
+    const put = (x: number, y: number, z: number, id: number) => { data[(z * height + y) * width + x] = id; };
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const edge = x === 0 || y === 0 || x === width - 1 || y === height - 1;
+        put(x, y, 0, edge ? WALL : GROUND);
+      }
+    }
+    for (let x = 5; x <= 7; x++) put(x, 5, 0, WATER);
+    put(3, 3, 2, 48);
+    put(4, 3, 2, 49);
+
+    writeFileSync(path.join(projectDir, "data", "Map002.json"), JSON.stringify({
+      width, height, tilesetId: 1, displayName: "", data, events: [null],
+      encounterList: [], encounterStep: 30,
+      bgm: { name: "", pan: 0, pitch: 100, volume: 90 }, bgs: { name: "", pan: 0, pitch: 100, volume: 90 },
+      autoplayBgm: false, autoplayBgs: false, battleback1Name: "", battleback2Name: "",
+      disableDashing: false, note: "", parallaxLoopX: false, parallaxLoopY: false,
+      parallaxName: "", parallaxShow: true, parallaxSx: 0, parallaxSy: 0,
+      scrollType: 0, specifyBattleback: false,
+    }));
+    const infos = dataFile("MapInfos.json");
+    while (infos.length <= 2) infos.push(null);
+    infos[2] = { id: 2, name: "Learnable", order: 2, parentId: 0, expanded: false, scrollX: 0, scrollY: 0 };
+    writeFileSync(path.join(projectDir, "data", "MapInfos.json"), JSON.stringify(infos));
+  });
+
+  it("learns which tile plays each role from the project's own maps", async () => {
+    const mined = await dispatchTool("manage_system", { action: "mine_templates", minDistinctTiles: 4 }) as MinedProfiles;
+    expect(mined.mapsKept).toBeGreaterThan(0);
+    expect(mined.profiles["1"].tiles.ground).toBe(GROUND);
+    expect(mined.profiles["1"].tiles.wall).toBe(WALL);
+    expect(mined.profiles["1"].tilesetName).toBe("Fixture Dungeon");
+  });
+
+  it("builds a mission-shaped map painted with those tiles", async () => {
+    const built = await dispatchTool("generate_map", {
+      mode: "semantic", name: "Mission", width: 30, height: 22, tilesetId: 1, seed: 5,
+    }) as BuiltMap;
+    expect(built.mapId).toBeGreaterThan(0);
+    expect(built.markers.map((m) => m.role)).toEqual(expect.arrayContaining(["entrance", "boss"]));
+    expect(built.profileUsed.tiles.ground).toBe(GROUND);
+
+    const map = dataFile(`Map${String(built.mapId).padStart(3, "0")}.json`);
+    expect(map.data.length).toBe(30 * 22 * 6);
+    expect(map.tilesetId).toBe(1);
+    // Autotile kinds come from the profile even though shapes were recomputed.
+    const kinds = new Set(map.data.slice(0, 30 * 22).map((t: number) => autotileKind(t)));
+    expect(kinds.has(autotileKind(GROUND))).toBe(true);
+    expect(kinds.has(autotileKind(WALL))).toBe(true);
+
+    const infos = dataFile("MapInfos.json");
+    expect(infos[built.mapId].name).toBe("Mission");
+  });
+
+  it("re-materialises one of the project's own layouts on demand", async () => {
+    const built = await dispatchTool("generate_map", {
+      mode: "semantic", name: "Reskinned", tilesetId: 1, templateId: "mined-2",
+    }) as BuiltMap;
+    expect(built.source).toEqual({ kind: "mined", templateId: "mined-2" });
+    expect(built.width).toBe(14);
+    expect(built.height).toBe(12);
+    // Same tileset, so the mined decorations come along.
+    expect(built.droppedProps).toBe(0);
+  });
+
+  it("says how to fix it when the template does not exist", async () => {
+    await expect(dispatchTool("generate_map", { mode: "semantic", tilesetId: 1, templateId: "mined-999" }))
+      .rejects.toThrow(/No mined template/);
+  });
+
+  it("reports the bridge as stopped rather than failing", async () => {
+    const status = await dispatchTool("manage_system", { action: "bridge_status" }) as BridgeState;
+    expect(status.running).toBe(false);
+    expect(status.authenticatedClients).toBe(0);
+  });
+
+  it("refuses a bridge command with no bridge running", async () => {
+    await expect(dispatchTool("manage_system", { action: "bridge_command", command: "reload_map" }))
+      .rejects.toThrow(/not running/);
+  });
+
+  it("refuses to hot-reload a file the engine cannot hot-reload", async () => {
+    await expect(dispatchTool("manage_system", { action: "bridge_command", command: "reload_database", file: "System.json" }))
+      .rejects.toThrow(/Cannot hot-reload/);
+  });
+});

@@ -170,7 +170,13 @@ const DeleteDatabaseEntrySchema = z.object({
 }).passthrough();
 
 const GenerateMapSchema = z.object({
-  mode: z.enum(["blank", "themed", "procedural", "batch", "duplicate", "template"]).optional(),
+  mode: z.enum(["blank", "themed", "procedural", "batch", "duplicate", "template", "semantic"]).optional(),
+  // mode "semantic": the mission shape, and whether the mined props come along
+  rooms: idLike.optional(),
+  sideRooms: idLike.optional(),
+  locked: z.boolean().optional(),
+  loop: z.boolean().optional(),
+  keepProps: z.boolean().optional(),
   width: idLike.optional(),
   height: idLike.optional(),
   tilesetId: idLike.optional(),
@@ -227,7 +233,13 @@ const ManageMapEventSchema = z.object({
 });
 
 const ManageSystemSchema = z.object({
-  action: z.enum(["get", "set_title", "name_switch", "name_variable", "set_starting_position", "create_plugin", "scaffold_project", "playtest", "open_editor"]),
+  action: z.enum([
+    "get", "set_title", "name_switch", "name_variable", "set_starting_position",
+    "create_plugin", "scaffold_project", "playtest", "open_editor",
+    "mine_templates",
+    "install_bridge_plugin", "bridge_start", "bridge_stop", "bridge_status",
+    "bridge_telemetry", "bridge_command", "bridge_screenshot",
+  ]),
   section: z.enum(["full", "switches", "variables", "title"]).optional(),
   title: z.string().optional(),
   id: idLike.optional(),
@@ -243,6 +255,19 @@ const ManageSystemSchema = z.object({
   commands: z.array(z.string()).optional(),
   body: z.string().optional(),
   status: z.boolean().optional(),
+  // mine_templates
+  minDistinctTiles: idLike.optional(),
+  // the live bridge
+  port: idLike.optional(),
+  telemetryInterval: idLike.optional(),
+  command: z.enum(["ping", "get_state", "reload_map", "reload_database", "capture_screenshot", "teleport_player"]).optional(),
+  file: z.string().optional(),
+  types: z.array(z.string()).optional(),
+  limit: idLike.optional(),
+  peek: z.boolean().optional(),
+  wait: z.boolean().optional(),
+  timeoutMs: idLike.optional(),
+  direction: idLike.optional(),
   // scaffold_project
   destPath: z.string().optional(),
   sourcePath: z.string().optional(),
