@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.16.1] - 2026-08-31
+
+### Fixed
+- **The live bridge never connected on a real playtest.** Two independent causes, both about how the runtime is launched. `Utils.isOptionValid` only inspects `nw.App.argv[0]`, but `playtest` spawns `game.exe <projectPath> test`, so the project path sat in `argv[0]` and the test token in `argv[1]`: the plugin guard was never true and the plugin returned on its first statement. And recent NW.js serves `index.html` from a `chrome-extension://` origin, where the pathname says nothing about where the project lives, so the handshake file was never found. The guard now scans every argument, and the project root falls back to `process.cwd()` — with `playtest` spawning `cwd: projectPath` so that fallback is correct by construction rather than by luck. Without it the game inherited the MCP server's directory and looked for the handshake in the wrong place entirely.
+- **Editor-only bits in the bundled template shadow layers.** MV renders the shadow layer as a four-bit quadrant mask; four cells across Map012, Map014, Map015 and Map025 carry values outside 0-15 (for example `0x40000005`). Harmless in-engine, but it produced non-canonical project data and made the project's own validator report `invalid_shadow`. Normalised with `& 0x0f` on both materialisation paths.
+- **Three cases where `||` swallowed a legitimate zero.** MV trigger `0` is Action Button, so `trigger || 1` silently turned every explicitly-Action-Button transfer into Player Touch. `opts.x || …` replaced a requested column or row `0` with a random coordinate. `count || 3` turned a request for zero events into three.
+- `process && process.cwd` in the generated plugin threw `ReferenceError` rather than short-circuiting when the global was absent.
+
+### Added
+- A credential-free diagnostic log at `.mcp-cache/bridge-plugin.log`, because a socket that fails before it connects cannot report why it failed.
+- `npm run lint` as a real gate. The baseline was 102 errors; test files now scope `no-explicit-any` off (they deliberately inspect untyped MV JSON) and the genuinely unused imports are gone.
+
+### Changed
+- The bridge tests now **execute** the generated plugin against stubbed engine globals and assert what it did — whether it opened a socket, which path it read the handshake from, whether the token ever reached disk — instead of asserting on its source text, which passed for any refactor that broke the behaviour and failed for any that preserved it.
+- The README no longer claims a deployed build can never open a socket. Scanning all of `argv` is right given how `playtest` launches, but it is wider than the engine's own check, and the docs now say so.
+
 ## [5.16.0] - 2026-08-31
 
 ### Added
