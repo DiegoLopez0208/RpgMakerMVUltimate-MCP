@@ -88,7 +88,8 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     var FALLBACK_PORT = Number(parameters['Fallback Port'] || ${port});
     var INTERVAL = Number(parameters['Telemetry Interval'] || ${interval});
     var HANDSHAKE = '.mcp-bridge.json';
-    var DIAGNOSTIC = '.mcp-bridge-plugin.log';
+    var DIAGNOSTIC_DIR = '.mcp-cache';
+    var DIAGNOSTIC = 'bridge-plugin.log';
     var RETRY_MS = 3000;
 
     var fs = require('fs');
@@ -103,11 +104,19 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     // Keep a small credential-free lifecycle log next to the handshake file.
     // The live socket cannot report why it failed before it has connected, so
     // without this file a bad path or WebSocket rejection is invisible.
+    // Alongside the screenshots rather than loose in the project root, so the
+    // bridge leaves exactly one directory behind.
+    function diagnosticFile() {
+        var dir = path.join(projectRoot(), DIAGNOSTIC_DIR);
+        try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* already there, or unwritable */ }
+        return path.join(dir, DIAGNOSTIC);
+    }
+
     function diagnose(message) {
         if (diagnosticSeen[message]) return;
         diagnosticSeen[message] = true;
         try {
-            if (!diagnosticPath) diagnosticPath = path.join(projectRoot(), DIAGNOSTIC);
+            if (!diagnosticPath) diagnosticPath = diagnosticFile();
             fs.appendFileSync(diagnosticPath, new Date().toISOString() + ' ' + message + '\\n', 'utf8');
         } catch (e) { /* diagnostics must never interrupt the game */ }
     }
@@ -116,7 +125,9 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     // in that mode the process working directory is the project root. Older
     // runtimes use file:///C:/... and can be resolved from the pathname.
     function projectRoot() {
-        if (window.location.protocol !== 'file:' && process && process.cwd) {
+        // typeof, not a truthiness check: a bare \`process\` throws ReferenceError
+        // rather than short-circuiting when the global is absent.
+        if (window.location.protocol !== 'file:' && typeof process !== 'undefined' && process.cwd) {
             return path.resolve(process.cwd());
         }
         var p = decodeURIComponent(window.location.pathname);
@@ -399,7 +410,7 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     };
 
     try {
-        diagnosticPath = path.join(projectRoot(), DIAGNOSTIC);
+        diagnosticPath = diagnosticFile();
         fs.writeFileSync(diagnosticPath, new Date().toISOString() + ' plugin loaded; root=' + projectRoot() + '\\n', 'utf8');
     } catch (e) { /* the bridge can still try its fallback port */ }
     connect();

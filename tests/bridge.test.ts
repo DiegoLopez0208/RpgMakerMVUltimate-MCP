@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, readFile, rm, access } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import nodePath, { join } from 'path';
 import { randomBytes } from 'crypto';
 import { connect, type Socket } from 'net';
 
@@ -219,18 +219,6 @@ describe('generated plugin', () => {
     expect(guardIndex).toBeLessThan(spec.body.indexOf('new WebSocket'));
   });
 
-  it('recognises a direct-runtime test token after the project-path argument', () => {
-    const spec = buildBridgePlugin();
-    expect(spec.body).toContain('for (var i = 0; i < nw.App.argv.length; i++)');
-    expect(spec.body).toContain("String(nw.App.argv[i]).split('&').indexOf('test') >= 0");
-  });
-
-  it('resolves the project root under the chrome-extension NW.js scheme', () => {
-    const spec = buildBridgePlugin();
-    expect(spec.body).toContain("window.location.protocol !== 'file:'");
-    expect(spec.body).toContain('path.resolve(process.cwd())');
-  });
-
   it('never exposes an eval primitive', () => {
     const spec = buildBridgePlugin();
     expect(spec.body).not.toMatch(/\beval\s*\(/);
@@ -244,13 +232,176 @@ describe('generated plugin', () => {
     expect(spec.body).toContain('40100');
     expect(spec.body).toContain("PluginManager.parameters('McpBridge')");
   });
+});
 
-  it('records credential-free startup failures before a socket can report them', () => {
-    const spec = buildBridgePlugin();
-    expect(spec.body).toContain("var DIAGNOSTIC = '.mcp-bridge-plugin.log'");
-    expect(spec.body).toContain("diagnose('handshake read failed:");
-    expect(spec.body).toContain("diagnose('socket error:");
-    expect(spec.body).not.toContain("diagnose('token");
+/**
+ * The plugin only ever runs inside the game, so the tests that matter run its
+ * generated source against stubbed engine globals and assert what it DID —
+ * whether it opened a socket, where it looked for the handshake — rather than
+ * what its source text says. Asserting on the text passes for any refactor that
+ * breaks the behaviour and fails for any that preserves it.
+ */
+interface RunOptions {
+  nwjs?: boolean;
+  /** What Utils.isOptionValid('test') returns — MV only inspects argv[0]. */
+  optionValid?: boolean;
+  argv?: string[] | null;
+  protocol?: string;
+  pathname?: string;
+  cwd?: string;
+  handshake?: { port: number; token: string } | null;
+}
+
+interface RunResult {
+  required: string[];
+  socketUrls: string[];
+  reads: string[];
+  writes: { path: string; content: string }[];
+  mkdirs: string[];
+}
+
+function runPlugin(opts: RunOptions = {}): RunResult {
+  const result: RunResult = { required: [], socketUrls: [], reads: [], writes: [], mkdirs: [] };
+
+  const fsStub = {
+    readFileSync: (p: string) => {
+      result.reads.push(p);
+      if (!opts.handshake) throw new Error('ENOENT: no such file');
+      return JSON.stringify(opts.handshake);
+    },
+    writeFileSync: (p: string, content: string) => { result.writes.push({ path: p, content }); },
+    appendFileSync: (p: string, content: string) => { result.writes.push({ path: p, content }); },
+    mkdirSync: (p: string) => { result.mkdirs.push(p); },
+  };
+
+  const requireStub = (mod: string) => {
+    result.required.push(mod);
+    if (mod === 'fs') return fsStub;
+    if (mod === 'path') return nodePath;
+    return {};
+  };
+
+  class SocketStub {
+    readyState = 0;
+    onopen: (() => void) | null = null;
+    onmessage: ((e: unknown) => void) | null = null;
+    onclose: ((e: unknown) => void) | null = null;
+    onerror: ((e: unknown) => void) | null = null;
+    constructor(url: string) { result.socketUrls.push(url); }
+    send() { /* never reached: the stub never opens */ }
+  }
+
+  const utils = {
+    isNwjs: () => opts.nwjs !== false,
+    isOptionValid: () => (opts.optionValid ? 1 : 0),
+    RPGMAKER_VERSION: '1.6.2',
+  };
+  const nw = opts.argv === null ? undefined : { App: { argv: opts.argv ?? [] } };
+  const windowStub = {
+    location: { protocol: opts.protocol ?? 'file:', pathname: opts.pathname ?? '/C:/games/Demo/index.html' },
+    addEventListener: () => {},
+    process: undefined,
+  };
+  const processStub = { cwd: () => opts.cwd ?? 'C:/cwd', memoryUsage: () => ({ heapUsed: 0 }) };
+
+  const body = buildBridgePlugin().body;
+  const fn = new Function(
+    'Utils', 'nw', 'window', 'process', 'require', 'WebSocket',
+    'PluginManager', 'SceneManager', 'Scene_Map', 'Game_Interpreter', 'Graphics',
+    'setTimeout', 'console',
+    body,
+  );
+  fn(
+    utils, nw, windowStub, processStub, requireStub, SocketStub,
+    { parameters: () => ({}) },
+    { goto: () => {}, _scene: null, snap: () => null },
+    { prototype: { update: () => {}, onMapLoaded: () => {} } },
+    { prototype: { executeCommand: () => {}, currentCommand: () => null } },
+    { frameCount: 0 },
+    () => 0,                       // no retries: one pass per run
+    { error: () => {}, warn: () => {} },
+  );
+  return result;
+}
+
+describe('the playtest guard, executed', () => {
+  it('does nothing at all outside nwjs', () => {
+    const r = runPlugin({ nwjs: false, optionValid: true });
+    expect(r.required).toEqual([]);   // it never even reached require('fs')
+    expect(r.writes).toEqual([]);
+    expect(r.socketUrls).toEqual([]);
+  });
+
+  it('runs when the engine itself reports playtest', () => {
+    const r = runPlugin({ optionValid: true, handshake: { port: 32123, token: 'a'.repeat(32) } });
+    expect(r.required).toContain('fs');
+    expect(r.socketUrls).toEqual(['ws://127.0.0.1:32123']);
+  });
+
+  it('runs when the test token trails the project path in argv', () => {
+    // Utils.isOptionValid only inspects argv[0], and playtest launches
+    // `game.exe <projectPath> test`, so the engine's own check is false here.
+    const r = runPlugin({
+      optionValid: false,
+      argv: ['C:/games/Demo', 'test'],
+      handshake: { port: 32123, token: 'a'.repeat(32) },
+    });
+    expect(r.socketUrls).toEqual(['ws://127.0.0.1:32123']);
+  });
+
+  it('stays dormant on a deployed build with no test token anywhere', () => {
+    const r = runPlugin({ optionValid: false, argv: ['C:/games/Demo'] });
+    expect(r.required).toEqual([]);
+    expect(r.socketUrls).toEqual([]);
+  });
+
+  it('stays dormant when a path merely contains the word test', () => {
+    // Only a whole argument (or an &-separated token) counts, so
+    // C:/games/test/Demo must not be mistaken for a playtest flag.
+    const r = runPlugin({ optionValid: false, argv: ['C:/games/test/Demo'] });
+    expect(r.socketUrls).toEqual([]);
+  });
+
+  it('survives a runtime with no nw global', () => {
+    const r = runPlugin({ optionValid: false, argv: null });
+    expect(r.socketUrls).toEqual([]);
+  });
+});
+
+describe('the project root, executed', () => {
+  const handshake = { port: 32123, token: 'a'.repeat(32) };
+
+  it('derives it from the pathname under the file: scheme', () => {
+    const r = runPlugin({ optionValid: true, protocol: 'file:', pathname: '/C:/games/Demo/index.html', handshake });
+    expect(r.reads[0]).toBe(nodePath.join('C:/games/Demo', '.mcp-bridge.json'));
+  });
+
+  it('falls back to the working directory under chrome-extension:', () => {
+    // Recent NW.js serves index.html from an extension origin, where the
+    // pathname says nothing about where the project lives.
+    const r = runPlugin({ optionValid: true, protocol: 'chrome-extension:', cwd: 'C:/games/Demo', handshake });
+    expect(r.reads[0]).toBe(nodePath.join('C:/games/Demo', '.mcp-bridge.json'));
+  });
+});
+
+describe('the diagnostic log, executed', () => {
+  it('goes into .mcp-cache rather than loose in the project root', () => {
+    const r = runPlugin({ optionValid: true, protocol: 'file:', pathname: '/C:/games/Demo/index.html' });
+    expect(r.mkdirs).toContain(nodePath.join('C:/games/Demo', '.mcp-cache'));
+    expect(r.writes.every((w) => w.path.includes('.mcp-cache'))).toBe(true);
+  });
+
+  it('records why startup failed when there is no handshake yet', () => {
+    const r = runPlugin({ optionValid: true, handshake: null });
+    const written = r.writes.map((w) => w.content).join('');
+    expect(written).toMatch(/plugin loaded/);
+    expect(written).toMatch(/handshake read failed|waiting for bridge handshake/);
+  });
+
+  it('never writes the token to disk', () => {
+    const token = 'deadbeef'.repeat(4);
+    const r = runPlugin({ optionValid: true, handshake: { port: 32123, token } });
+    for (const w of r.writes) expect(w.content).not.toContain(token);
   });
 });
 
