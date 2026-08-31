@@ -1064,6 +1064,25 @@ function dominantGround(map: { width: number; height: number; data: number[] }):
   return best;
 }
 
+// RPG Maker MV renders the shadow layer as a four-bit quadrant mask
+// (`shadowBits & 0x0f`). A few official/sample maps carry editor-only bits in
+// the upper part of that integer (for example 0x40000005). Copying those raw
+// values is visually harmless in-engine, but produces non-canonical project
+// data and makes our own map validator report `invalid_shadow`. Strip the
+// ignored bits whenever a bundled template is materialised.
+function normalizeShadowBits(value: number | undefined): number {
+  return (value ?? 0) & 0x0f;
+}
+
+function normalizeTemplateShadows(data: number[], width: number, height: number): number[] {
+  const normalized = data.slice();
+  const layerSize = width * height;
+  const start = LAYER_SHADOW * layerSize;
+  const end = start + layerSize;
+  for (let i = start; i < end; i++) normalized[i] = normalizeShadowBits(normalized[i]);
+  return normalized;
+}
+
 async function cloneTemplateForTheme(data: number[], w: number, h: number, theme: string, templateId?: number, rng?: PRNG, preferredTileset?: number): Promise<{ x: number; y: number }[] | null> {
   const idxPath = path.join(import.meta.dirname, "..", "knowledge", "map-templates.json");
   let idx: TemplateMeta[];
@@ -1139,7 +1158,9 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
       for (let x = 0; x < Math.min(w, tw); x++) {
         const srcIdx = (layer * th + (y + oy)) * tw + (x + ox);
         const dstIdx = (layer * h + (y + padY)) * w + (x + padX);
-        data[dstIdx] = map.data[srcIdx];
+        data[dstIdx] = layer === LAYER_SHADOW
+          ? normalizeShadowBits(map.data[srcIdx])
+          : map.data[srcIdx];
       }
     }
   }
@@ -1840,7 +1861,7 @@ function makeTransferEvent(id: number, x: number, y: number, destMapId: number, 
         { code: 0, indent: 0, parameters: [] }
       ],
       moveFrequency: 3, moveRoute: { list: [{ code: 0, indent: 0, parameters: [] as unknown[] }], repeat: true, skippable: false, wait: false },
-      moveSpeed: 2, moveType: 0, priorityType: 0, stepAnime: false, through: true, trigger: trigger || 1, walkAnime: false
+      moveSpeed: 2, moveType: 0, priorityType: 0, stepAnime: false, through: true, trigger: trigger ?? 1, walkAnime: false
     }]
   };
 }
@@ -2049,7 +2070,7 @@ async function generateFromTemplate(templateId: number, opts: GeneratorOptions =
   const w = (opts as Record<string, number>).width || map.width;
   const h = (opts as Record<string, number>).height || map.height;
   if (w === map.width && h === map.height) {
-    return { data: map.data.slice(), width: w, height: h, events: (opts as Record<string, boolean>).keepEvents ? (map.events || []) : [] };
+    return { data: normalizeTemplateShadows(map.data, w, h), width: w, height: h, events: (opts as Record<string, boolean>).keepEvents ? (map.events || []) : [] };
   }
   const data = new Array(w * h * 6).fill(0) as number[];
   for (let layer = 0; layer < 6; layer++) {
@@ -2057,7 +2078,9 @@ async function generateFromTemplate(templateId: number, opts: GeneratorOptions =
       for (let x = 0; x < Math.min(w, map.width); x++) {
         const srcIdx = (layer * map.height + y) * map.width + x;
         const dstIdx = (layer * h + y) * w + x;
-        data[dstIdx] = map.data[srcIdx];
+        data[dstIdx] = layer === LAYER_SHADOW
+          ? normalizeShadowBits(map.data[srcIdx])
+          : map.data[srcIdx];
       }
     }
   }

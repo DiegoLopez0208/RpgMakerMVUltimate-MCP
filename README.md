@@ -171,7 +171,9 @@ sequenceDiagram
 - **📸 Screenshots** — `bridge_screenshot` saves a PNG under `.mcp-cache/screenshots/` and returns the path, ready for `analyze_image`.
 
 > ### 🔒 Security
-> The plugin's **first statement** is `if (!Utils.isNwjs() || !Utils.isOptionValid('test')) return;`, so a deployed build never opens a socket.
+> The plugin **returns before anything else runs** unless the game is under NW.js *and* was launched with a `test` argument. A deployed build a player double-clicks never reaches the socket code, or even `require('fs')`.
+>
+> It checks every argument rather than only `argv[0]` the way `Utils.isOptionValid` does, because `playtest` passes the project path first. So a deployed build *deliberately* launched with a literal `test` argument would get past the guard — and then find no handshake file, and never connect.
 >
 > The server binds `127.0.0.1` only, refuses any upgrade carrying a browser `Origin` (cross-site WebSocket hijacking), and requires the session token from `.mcp-bridge.json` — compared in constant time — within 5 seconds or the connection is dropped.
 >

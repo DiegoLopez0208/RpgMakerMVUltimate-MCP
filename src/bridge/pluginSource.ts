@@ -69,14 +69,27 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     body: `(function () {
     'use strict';
 
-    // Playtest guard. Utils.isNwjs() is false on web/mobile deployments;
-    // isOptionValid('test') is false for a normal launch of a deployed build.
-    if (typeof Utils === 'undefined' || !Utils.isNwjs() || !Utils.isOptionValid('test')) return;
+    // Playtest guard. MV 1.6.1 only checks nw.App.argv[0], but a direct launch
+    // through the bundled runtime can put the project path first and "test"
+    // in a later argument. Inspect every argument without weakening the guard:
+    // deployed builds still have no test token and never open a socket.
+    function isPlaytest() {
+        if (typeof Utils === 'undefined' || !Utils.isNwjs()) return false;
+        if (Utils.isOptionValid('test')) return true;
+        if (typeof nw === 'undefined' || !nw.App || !nw.App.argv) return false;
+        for (var i = 0; i < nw.App.argv.length; i++) {
+            if (String(nw.App.argv[i]).split('&').indexOf('test') >= 0) return true;
+        }
+        return false;
+    }
+    if (!isPlaytest()) return;
 
     var parameters = PluginManager.parameters('${BRIDGE_PLUGIN_NAME}');
     var FALLBACK_PORT = Number(parameters['Fallback Port'] || ${port});
     var INTERVAL = Number(parameters['Telemetry Interval'] || ${interval});
     var HANDSHAKE = '.mcp-bridge.json';
+    var DIAGNOSTIC_DIR = '.mcp-cache';
+    var DIAGNOSTIC = 'bridge-plugin.log';
     var RETRY_MS = 3000;
 
     var fs = require('fs');
@@ -85,11 +98,38 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     var ws = null;
     var authed = false;
     var pendingReload = null;
+    var diagnosticPath = null;
+    var diagnosticSeen = {};
 
-    // index.html sits in the project root during playtest, so its directory is
-    // where the MCP server wrote the handshake file. window.location.pathname
-    // looks like /C:/games/MyProject/index.html on Windows.
+    // Keep a small credential-free lifecycle log next to the handshake file.
+    // The live socket cannot report why it failed before it has connected, so
+    // without this file a bad path or WebSocket rejection is invisible.
+    // Alongside the screenshots rather than loose in the project root, so the
+    // bridge leaves exactly one directory behind.
+    function diagnosticFile() {
+        var dir = path.join(projectRoot(), DIAGNOSTIC_DIR);
+        try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* already there, or unwritable */ }
+        return path.join(dir, DIAGNOSTIC);
+    }
+
+    function diagnose(message) {
+        if (diagnosticSeen[message]) return;
+        diagnosticSeen[message] = true;
+        try {
+            if (!diagnosticPath) diagnosticPath = diagnosticFile();
+            fs.appendFileSync(diagnosticPath, new Date().toISOString() + ' ' + message + '\\n', 'utf8');
+        } catch (e) { /* diagnostics must never interrupt the game */ }
+    }
+
+    // Modern MV's NW.js runtime exposes index.html as chrome-extension://...;
+    // in that mode the process working directory is the project root. Older
+    // runtimes use file:///C:/... and can be resolved from the pathname.
     function projectRoot() {
+        // typeof, not a truthiness check: a bare \`process\` throws ReferenceError
+        // rather than short-circuiting when the global is absent.
+        if (window.location.protocol !== 'file:' && typeof process !== 'undefined' && process.cwd) {
+            return path.resolve(process.cwd());
+        }
         var p = decodeURIComponent(window.location.pathname);
         if (p.charAt(0) === '/' && /^\\/[A-Za-z]:/.test(p)) p = p.slice(1);
         return path.dirname(p);
@@ -99,6 +139,7 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
         try {
             return JSON.parse(fs.readFileSync(path.join(projectRoot(), HANDSHAKE), 'utf8'));
         } catch (e) {
+            diagnose('handshake read failed: ' + String((e && e.message) || e));
             return null;
         }
     }
@@ -112,16 +153,18 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
         var hs = readHandshake();
         var port = hs && hs.port ? hs.port : FALLBACK_PORT;
         var token = hs && hs.token ? hs.token : null;
-        if (!token) { setTimeout(connect, RETRY_MS); return; }
+        if (!token) { diagnose('waiting for bridge handshake'); setTimeout(connect, RETRY_MS); return; }
 
         try {
             ws = new WebSocket('ws://127.0.0.1:' + port);
         } catch (e) {
+            diagnose('WebSocket construction failed: ' + String((e && e.message) || e));
             setTimeout(connect, RETRY_MS);
             return;
         }
 
         ws.onopen = function () {
+            diagnose('socket open on port ' + port);
             authed = true; // the server closes the socket if the token is wrong
             try { ws.send(JSON.stringify({ type: 'auth', token: token })); } catch (e) { /* ignore */ }
             send({
@@ -143,13 +186,16 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
             }
         };
 
-        ws.onclose = function () {
+        ws.onclose = function (event) {
+            diagnose('socket closed: code=' + String(event && event.code) + ' reason=' + String((event && event.reason) || ''));
             authed = false;
             ws = null;
             setTimeout(connect, RETRY_MS);
         };
 
-        ws.onerror = function () { /* onclose handles the retry */ };
+        ws.onerror = function (event) {
+            diagnose('socket error: ' + String((event && event.message) || 'unspecified WebSocket error'));
+        };
     }
 
     function handleCommand(msg) {
@@ -363,6 +409,10 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
         return _Game_Interpreter_executeCommand.call(this);
     };
 
+    try {
+        diagnosticPath = diagnosticFile();
+        fs.writeFileSync(diagnosticPath, new Date().toISOString() + ' plugin loaded; root=' + projectRoot() + '\\n', 'utf8');
+    } catch (e) { /* the bridge can still try its fallback port */ }
     connect();
 })();
 `,

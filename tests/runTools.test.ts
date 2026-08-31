@@ -1,8 +1,21 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { playtest, openInEditor } from "../src/tools/runTools.js";
+
+// One test needs to see the options playtest spawns with, without launching a
+// game. vi.hoisted keeps the recorder reachable from the hoisted mock factory.
+const { spawnCalls } = vi.hoisted(() => ({
+  spawnCalls: [] as { cmd: string; args: string[]; opts: Record<string, unknown> }[],
+}));
+
+vi.mock("child_process", () => ({
+  spawn: (cmd: string, args: string[], opts: Record<string, unknown>) => {
+    spawnCalls.push({ cmd, args, opts });
+    return { pid: 4242, unref: () => {} };
+  },
+}));
 
 // These tests exercise validation/location logic only — they never actually spawn
 // the engine (no install is provided and the project is deliberately incomplete),
@@ -23,6 +36,29 @@ describe("playtest (Phase: run)", () => {
 
   it("requires an active project path", async () => {
     await expect(playtest("", { install: dir })).rejects.toThrow(/requires an active project path/);
+  });
+
+  it("launches the game FROM the project directory", async () => {
+    // The bridge plugin falls back to process.cwd() to find the project root,
+    // because recent NW.js serves index.html from a chrome-extension origin
+    // that says nothing about where the project lives. Inheriting the MCP
+    // server's directory instead would send it looking for the handshake file
+    // somewhere else entirely.
+    spawnCalls.length = 0;
+    writeFileSync(path.join(dir, "index.html"), "<html></html>");
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ main: "index.html" }));
+    const install = mkdtempSync(path.join(tmpdir(), "rpgmv-install-"));
+    mkdirSync(path.join(install, "nwjs-win-test"));
+    writeFileSync(path.join(install, "nwjs-win-test", "game.exe"), "");
+    try {
+      const result = await playtest(dir, { install });
+      expect(result.launched).toBe(true);
+      expect(spawnCalls).toHaveLength(1);
+      expect(spawnCalls[0].opts.cwd).toBe(dir);
+      expect(spawnCalls[0].args).toEqual([dir, "test"]);
+    } finally {
+      rmSync(install, { recursive: true, force: true });
+    }
   });
 
   it("errors clearly when the nwjs runtime is missing from the install", async () => {

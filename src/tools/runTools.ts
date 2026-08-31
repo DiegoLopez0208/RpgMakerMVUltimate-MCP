@@ -82,7 +82,11 @@ export async function playtest(projectPath: string, params?: RunParams) {
   const testMode = params?.test !== false;
   // The project path is the nwjs app root; a trailing "test" puts MV in playtest mode.
   const args = testMode ? [projectPath, 'test'] : [projectPath];
-  const child = spawn(gameExe, args, { detached: true, stdio: 'ignore', windowsHide: false });
+  // Launch FROM the project. Recent NW.js serves index.html as chrome-extension://,
+  // so a plugin inside the game cannot derive the project root from its location and
+  // falls back to process.cwd(); without this the game would inherit the MCP server's
+  // directory and the bridge would look for the handshake file in the wrong place.
+  const child = spawn(gameExe, args, { cwd: projectPath, detached: true, stdio: 'ignore', windowsHide: false });
   child.unref();
   return { launched: true, pid: child.pid ?? null, exe: gameExe, project: projectPath, testMode };
 }
