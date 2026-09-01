@@ -238,7 +238,7 @@ const ManageSystemSchema = z.object({
     "create_plugin", "scaffold_project", "playtest", "open_editor",
     "mine_templates",
     "install_bridge_plugin", "bridge_start", "bridge_stop", "bridge_status",
-    "bridge_telemetry", "bridge_command", "bridge_screenshot",
+    "bridge_telemetry", "bridge_command", "take_screenshot", "bridge_screenshot",
   ]),
   section: z.enum(["full", "switches", "variables", "title"]).optional(),
   title: z.string().optional(),
@@ -267,6 +267,7 @@ const ManageSystemSchema = z.object({
   peek: z.boolean().optional(),
   wait: z.boolean().optional(),
   timeoutMs: idLike.optional(),
+  screenshotName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
   direction: idLike.optional(),
   // scaffold_project
   destPath: z.string().optional(),
@@ -285,6 +286,11 @@ const ManageSystemSchema = z.object({
   }
 });
 
+const TakeScreenshotSchema = z.object({
+  name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
+  timeoutMs: idLike.optional(),
+});
+
 /**
  * Schemas keyed by consolidated tool name. A tool absent here is not validated
  * at this layer (read-only tools, plugin toggles). Values expose Zod's safeParse.
@@ -297,6 +303,7 @@ export const CONSOLIDATED_SCHEMAS: Record<string, { safeParse: (a: unknown) => {
   edit_map: EditMapSchema,
   manage_map_event: ManageMapEventSchema,
   manage_system: ManageSystemSchema,
+  take_screenshot: TakeScreenshotSchema,
 };
 
 /**

@@ -53,7 +53,7 @@ afterAll(() => {
 
 describe("consolidated tool surface", () => {
   it("exposes exactly 13 tools, all annotated and described", () => {
-    expect(TOOL_DEFINITIONS.length).toBe(13);
+    expect(TOOL_DEFINITIONS.length).toBe(14);
     for (const t of TOOL_DEFINITIONS) {
       expect(t.annotations, t.name).toBeDefined();
       expect(t.description.length, t.name).toBeGreaterThan(120);
@@ -1102,6 +1102,12 @@ describe("semantic pipeline through the consolidated tools", () => {
 
   it("refuses a bridge command with no bridge running", async () => {
     await expect(dispatchTool("manage_system", { action: "bridge_command", command: "reload_map" }))
+      .rejects.toThrow(/not running/);
+  });
+
+  it("exposes take_screenshot as a first-class MCP tool", async () => {
+    expect(TOOL_DEFINITIONS.some((tool) => tool.name === "take_screenshot")).toBe(true);
+    await expect(dispatchTool("take_screenshot", { name: "qa-proof" }))
       .rejects.toThrow(/not running/);
   });
 
