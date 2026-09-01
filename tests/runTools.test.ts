@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { playtest, openInEditor } from "../src/tools/runTools.js";
@@ -76,6 +76,8 @@ describe("playtest (Phase: run)", () => {
 
 describe("openInEditor (Phase: run)", () => {
   it("errors clearly when the editor exe is missing from the install", async () => {
+    mkdirSync(path.join(dir, "data"), { recursive: true });
+    writeFileSync(path.join(dir, "data", "System.json"), "{}");
     const emptyInstall = mkdtempSync(path.join(tmpdir(), "rpgmv-install-"));
     try {
       await expect(openInEditor(dir, { install: emptyInstall })).rejects.toThrow(/Editor not found/);
@@ -86,5 +88,53 @@ describe("openInEditor (Phase: run)", () => {
 
   it("requires an active project path", async () => {
     await expect(openInEditor("", { install: dir })).rejects.toThrow(/requires an active project path/);
+  });
+
+  it("refuses a directory that is not an MV project, without leaving a descriptor behind", async () => {
+    // The repair writes into whatever directory it is pointed at, so the guard
+    // rejecting a non-project has to run BEFORE that write — otherwise a typo in
+    // the project path scatters Game.rpgproject files across the disk.
+    const install = mkdtempSync(path.join(tmpdir(), "rpgmv-editor-install-"));
+    writeFileSync(path.join(install, "RPGMV.exe"), "");
+    try {
+      await expect(openInEditor(dir, { install })).rejects.toThrow(/Not an RPG Maker MV project/);
+      expect(existsSync(path.join(dir, "Game.rpgproject"))).toBe(false);
+    } finally {
+      rmSync(install, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs a missing Game.rpgproject and launches that file", async () => {
+    spawnCalls.length = 0;
+    mkdirSync(path.join(dir, "data"), { recursive: true });
+    writeFileSync(path.join(dir, "data", "System.json"), "{}");
+    const install = mkdtempSync(path.join(tmpdir(), "rpgmv-editor-install-"));
+    writeFileSync(path.join(install, "RPGMV.exe"), "");
+    try {
+      const result = await openInEditor(dir, { install });
+      const projectFile = path.join(dir, "Game.rpgproject");
+      expect(result.createdProjectFile).toBe(true);
+      expect(readFileSync(projectFile, "utf-8")).toBe("RPGMV 1.6.2");
+      expect(spawnCalls[0].args).toEqual([projectFile]);
+      expect(spawnCalls[0].opts.cwd).toBe(dir);
+    } finally {
+      rmSync(install, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves an existing Game.rpgproject descriptor", async () => {
+    spawnCalls.length = 0;
+    mkdirSync(path.join(dir, "data"), { recursive: true });
+    writeFileSync(path.join(dir, "data", "System.json"), "{}");
+    writeFileSync(path.join(dir, "Game.rpgproject"), "RPGMV 1.6.1");
+    const install = mkdtempSync(path.join(tmpdir(), "rpgmv-editor-install-"));
+    writeFileSync(path.join(install, "RPGMV.exe"), "");
+    try {
+      const result = await openInEditor(dir, { install });
+      expect(result.createdProjectFile).toBe(false);
+      expect(readFileSync(path.join(dir, "Game.rpgproject"), "utf-8")).toBe("RPGMV 1.6.1");
+    } finally {
+      rmSync(install, { recursive: true, force: true });
+    }
   });
 });

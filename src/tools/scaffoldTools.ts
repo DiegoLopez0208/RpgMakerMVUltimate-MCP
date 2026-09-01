@@ -13,6 +13,7 @@ import { cp, readFile, writeFile, access, mkdir } from 'fs/promises';
 import path from 'path';
 
 const DEFAULT_INSTALL = 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\RPG Maker MV';
+const RPGPROJECT_CONTENT = 'RPGMV 1.6.2';
 
 export interface ScaffoldParams {
   destPath: string;
@@ -53,6 +54,14 @@ export async function scaffoldProject(_projectPath: string, params: ScaffoldPara
   await mkdir(destPath, { recursive: true });
   await cp(source, destPath, { recursive: true });
 
+  // Steam's NewData template can omit this descriptor. RPGMV.exe expects the
+  // file path (not just the directory); without it open_editor shows a blank
+  // grey editor shell even though the project data was cloned correctly.
+  const projectFile = path.join(destPath, 'Game.rpgproject');
+  if (!(await pathExists(projectFile))) {
+    await writeFile(projectFile, RPGPROJECT_CONTENT, 'utf-8');
+  }
+
   // Rewrite the copied System.json with the requested title / start position.
   const sysPath = path.join(destPath, 'data', 'System.json');
   const system = JSON.parse((await readFile(sysPath, 'utf-8')).replace(/^﻿/, '')) as Record<string, unknown>;
@@ -64,6 +73,7 @@ export async function scaffoldProject(_projectPath: string, params: ScaffoldPara
 
   return {
     created: destPath,
+    projectFile,
     source,
     title: system.gameTitle,
     startMapId: system.startMapId,

@@ -1,5 +1,5 @@
 /**
- * router.ts — routes the 12 consolidated tools onto the existing
+ * router.ts — routes the consolidated MCP tools onto the existing
  * per-operation implementations (the same code paths the 101 legacy tools use).
  *
  * Most branches translate (toolName, args) into a legacy tool invocation via
@@ -416,12 +416,13 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         file: args.file, mapId: args.mapId, x: args.x, y: args.y,
         direction: args.direction, wait: args.wait, timeoutMs: args.timeoutMs
       });
+    case 'take_screenshot':
     case 'bridge_screenshot':
-      return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs });
+      return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.screenshotName });
     case 'mine_templates':
       return executeTool('mine_templates', { minDistinctTiles: args.minDistinctTiles, limit: args.limit });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, bridge_screenshot, mine_templates');
+      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates');
   }
 }
 
@@ -464,7 +465,7 @@ async function analyzeImage(executeTool: ExecuteTool, args: Record<string, unkno
 export const TOOL_NAMES = [
   'query_database', 'create_database_entry', 'update_database_entry', 'delete_database_entry',
   'query_map', 'generate_map', 'edit_map', 'manage_map_event',
-  'manage_system', 'get_project_context', 'set_project_path', 'analyze_image',
+  'manage_system', 'take_screenshot', 'get_project_context', 'set_project_path', 'analyze_image',
   'list_plugins', 'get_plugin_status', 'toggle_plugin', 'analyze_project'
 ];
 
@@ -482,6 +483,7 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
     case 'edit_map': return editMap(executeTool, args);
     case 'manage_map_event': return manageMapEvent(executeTool, args);
     case 'manage_system': return manageSystem(executeTool, args);
+    case 'take_screenshot': return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.name });
     case 'list_plugins': return executeTool('list_plugins', {});
     case 'get_plugin_status': return executeTool('get_plugin_status', {});
     case 'toggle_plugin': return executeTool('toggle_plugin', { pluginName: requireArg(args, 'pluginName', 'toggle_plugin'), enabled: requireArg(args, 'enabled', 'toggle_plugin') });

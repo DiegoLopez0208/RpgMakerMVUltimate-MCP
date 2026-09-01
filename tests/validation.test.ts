@@ -239,6 +239,12 @@ describe("validation schemas", () => {
     it("manage_system rejects an unknown action", () => {
       expect(() => validateConsolidated("manage_system", { action: "delete_everything" })).toThrow(/Validation error/);
       expect(() => validateConsolidated("manage_system", { action: "set_title", title: "My Game" })).not.toThrow();
+      expect(() => validateConsolidated("manage_system", { action: "take_screenshot", screenshotName: "boss-room" })).not.toThrow();
+    });
+
+    it("take_screenshot accepts safe names and rejects path traversal", () => {
+      expect(() => validateConsolidated("take_screenshot", { name: "collision-proof" })).not.toThrow();
+      expect(() => validateConsolidated("take_screenshot", { name: "../outside" })).toThrow(/Validation error/);
     });
 
     it("accepts numeric-string ids without coercing them away", () => {

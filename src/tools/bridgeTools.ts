@@ -107,7 +107,11 @@ function stamp(): string {
  * than the base64 so the agent can hand it straight to `analyze_image` without
  * a megabyte of payload passing through the conversation.
  */
-export async function bridgeScreenshot(projectPath: string, args: { timeoutMs?: number } = {}) {
+export async function bridgeScreenshot(projectPath: string, args: { timeoutMs?: number; name?: string } = {}) {
+  const name = args.name === undefined ? 'screenshot' : String(args.name).trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) {
+    throw new Error('Screenshot name must be 1-64 characters using only letters, numbers, "_" or "-".');
+  }
   const reply = await requestCommand({ action: 'capture_screenshot' }, args.timeoutMs ?? 15000);
   if (reply.type !== 'screenshot_result') {
     const message = reply.type === 'error' ? reply.message : 'unexpected frame "' + reply.type + '"';
@@ -115,8 +119,8 @@ export async function bridgeScreenshot(projectPath: string, args: { timeoutMs?: 
   }
   const dir = resolveSafePath(projectPath, '.mcp-cache', 'screenshots');
   await mkdir(dir, { recursive: true });
-  const file = resolveSafePath(projectPath, '.mcp-cache', 'screenshots', 'screenshot-' + stamp() + '.png');
+  const file = resolveSafePath(projectPath, '.mcp-cache', 'screenshots', name + '-' + stamp() + '.png');
   const bytes = Buffer.from(reply.base64, 'base64');
   await writeFile(file, bytes);
-  return { path: file, bytes: bytes.length, mimeType: reply.mimeType };
+  return { path: file, bytes: bytes.length, mimeType: reply.mimeType, name };
 }

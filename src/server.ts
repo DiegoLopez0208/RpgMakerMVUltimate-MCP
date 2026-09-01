@@ -53,7 +53,7 @@ const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
 let toolCallQueue: Promise<void> = Promise.resolve();
 
 // Zod validation applied before dispatch, keyed by (legacy) tool name.
-// The 12 consolidated tools route through these same legacy names, so validation applies to both.
+// Consolidated tools route through these same legacy names, so validation applies to both.
 const SCHEMA_MAP: Record<string, { safeParse: (a: unknown) => { success: boolean; data?: unknown; error?: unknown } }> = {
   analyze_screenshot: AnalyzeScreenshotSchema,
   create_map: CreateMapSchema,
@@ -489,7 +489,7 @@ case 'bridge_telemetry':
 case 'bridge_command':
   return await bridgeTools.bridgeCommand(args as unknown as Record<string, unknown>);
 case 'bridge_screenshot':
-  return await bridgeTools.bridgeScreenshot(p, args as { timeoutMs?: number });
+  return await bridgeTools.bridgeScreenshot(p, args as { timeoutMs?: number; name?: string });
 
 // ── Learn from the project's own maps, and build from what was learned ──
 case 'mine_templates':
@@ -966,7 +966,7 @@ export async function main() {
     { capabilities: { tools: {} } }
   );
 
-  // Default: the 12 consolidated tools. RPGMV_LEGACY_TOOLS=1 additionally
+  // Default: the consolidated tools. RPGMV_LEGACY_TOOLS=1 additionally
   // advertises the legacy names (calls to legacy names always work either way).
   const legacyMode = process.env.RPGMV_LEGACY_TOOLS === '1';
   const advertisedTools = legacyMode

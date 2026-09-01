@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, readFile, rm, access } from 'fs/promises';
 import { tmpdir } from 'os';
-import nodePath, { join } from 'path';
+import nodePath, { basename, join } from 'path';
 import { randomBytes } from 'crypto';
 import { connect, type Socket } from 'net';
 
@@ -10,6 +10,7 @@ import { startBridge, stopBridge, statusBridge, drainTelemetry, requestCommand, 
 import type { Handshake } from '../src/bridge/protocol.js';
 import { HOT_RELOADABLE, isCommandAction } from '../src/bridge/protocol.js';
 import { buildBridgePlugin, BRIDGE_PLUGIN_NAME } from '../src/bridge/pluginSource.js';
+import { bridgeScreenshot } from '../src/tools/bridgeTools.js';
 
 /** Mask a payload the way a conforming client must, so decodeFrame accepts it. */
 function clientFrame(text: string, opcode = 0x1): Buffer {
@@ -508,5 +509,35 @@ describe('bridge session', () => {
     const dir = await tempProject();
     await startBridge(dir, 0);
     await expect(requestCommand({ action: 'ping' }, 500)).rejects.toThrow(/No authenticated game client/);
+  });
+
+  it('captures a named screenshot through the authenticated bridge', async () => {
+    const dir = await tempProject();
+    const status = await startBridge(dir, 0);
+    const ws = await connectAuthed(status.port!, status.token!);
+    const png = Buffer.from('fake-png-for-bridge-test');
+
+    ws.onMessage((msg) => {
+      if (msg.action === 'capture_screenshot') {
+        ws.send({
+          type: 'screenshot_result', requestId: msg.requestId,
+          mimeType: 'image/png', base64: png.toString('base64'),
+        });
+      }
+    });
+
+    const result = await bridgeScreenshot(dir, { name: 'boss-room', timeoutMs: 4000 });
+    expect(result.name).toBe('boss-room');
+    expect(basename(result.path)).toMatch(/^boss-room-\d{8}-\d{6}-\d{3}\.png$/);
+    expect(await readFile(result.path)).toEqual(png);
+    expect(result.bytes).toBe(png.length);
+    expect(result.mimeType).toBe('image/png');
+
+    ws.close();
+  });
+
+  it('rejects an unsafe screenshot name before contacting the game', async () => {
+    await expect(bridgeScreenshot('C:/unused', { name: '../outside' }))
+      .rejects.toThrow(/Screenshot name/);
   });
 });

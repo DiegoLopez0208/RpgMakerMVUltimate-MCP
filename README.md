@@ -160,7 +160,7 @@ sequenceDiagram
     S->>G: reload_map
     G->>G: reserveTransfer + _needsMapReload
     G-->>S: reload_complete
-    A->>S: bridge_screenshot
+    A->>S: take_screenshot
     S->>G: capture_screenshot
     G-->>S: PNG in base64
     S-->>A: path for analyze_image
@@ -168,7 +168,7 @@ sequenceDiagram
 
 - **📡 Telemetry** — exceptions with stack traces, `console.error`/`warn`, scene changes, player position, *which event command is executing* (so a hung event can be pinpointed), FPS and heap. Frames are consumed as you read them unless you pass `peek`.
 - **♻️ Hot reload** — `reload_map` re-reads the current `MapXXX.json` and rebuilds the scene **without losing party state**: it reserves a transfer to the player's own position with `_needsMapReload`, the engine's own reload seam, rather than rebuilding `Spriteset_Map` by hand. `reload_database` re-reads one data file; `System.json` and `Tilesets.json` need a fresh playtest and are refused with an explanation.
-- **📸 Screenshots** — `bridge_screenshot` saves a PNG under `.mcp-cache/screenshots/` and returns the path, ready for `analyze_image`.
+- **📸 Screenshots** — `take_screenshot { name: "collision-proof" }` captures the live playtest through the MCP plugin, saves a timestamped PNG under `.mcp-cache/screenshots/`, and returns its path for inspection or QA evidence. No shell screenshot command is involved. `manage_system { action: "bridge_screenshot" }` remains as a compatibility alias.
 
 > ### 🔒 Security
 > The plugin **returns before anything else runs** unless the game is under NW.js *and* was launched with a `test` argument. A deployed build a player double-clicks never reaches the socket code, or even `require('fs')`.
@@ -247,7 +247,7 @@ Narrow with `category`, loosen or tighten with `thresholdSd` (default 2).
 
 <br>
 
-## 🧰 The 13 tools
+## 🧰 The 14 tools
 
 <details>
 <summary>Click to expand the full surface</summary>
@@ -264,7 +264,8 @@ Narrow with `category`, loosen or tighten with `thresholdSd` (default 2).
 | `generate_map` | Knowledge-driven, semantic, procedural, blank, themed, template, batch or duplicate |
 | `edit_map` | Fill tile layers, set display names, organize the map tree, connect two maps, set encounters |
 | `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, **convert** an NPC into a merchant/inn/sign in place, delete, add commands, bulk-populate |
-| `manage_system` | Title, switch/variable names, starting position, **author a plugin**, **scaffold a project**, **playtest**, **open in editor**, **mine templates**, and the **live bridge** |
+| `manage_system` | Title, switch/variable names, starting position, **author a plugin**, **scaffold an editor-openable project**, **playtest**, **open/repair in editor**, **mine templates**, and the **live bridge** |
+| `take_screenshot` | Capture and name a live playtest PNG through the authenticated MCP bridge |
 | `analyze_project` | The read-only intelligence layer above |
 | `get_project_context` | Project digest, asset index, per-tileset tile IDs, bundled-template catalog |
 | `set_project_path` | Switch projects at runtime |

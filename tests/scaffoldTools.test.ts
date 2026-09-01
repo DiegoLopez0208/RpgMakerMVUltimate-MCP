@@ -39,6 +39,8 @@ describe("scaffoldProject (Phase 3a)", () => {
     expect(existsSync(path.join(dest, "data", "Actors.json"))).toBe(true);
     expect(existsSync(path.join(dest, "img", "characters", "Actor1.png"))).toBe(true);
     expect(existsSync(path.join(dest, "js", "plugins.js"))).toBe(true);
+    expect(readFileSync(path.join(dest, "Game.rpgproject"), "utf-8")).toBe("RPGMV 1.6.2");
+    expect(res.projectFile).toBe(path.join(dest, "Game.rpgproject"));
     // System.json rewritten.
     const sys = JSON.parse(readFileSync(path.join(dest, "data", "System.json"), "utf-8"));
     expect(sys.gameTitle).toBe("My Game");
