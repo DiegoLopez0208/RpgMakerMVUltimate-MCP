@@ -488,6 +488,33 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
         }
     };
 
+    // MV can lose most glyphs when a message is completed in a single fast
+    // update under some NW.js/Canvas combinations. Consolidate plain message
+    // pages once at completion; escape-code messages keep MV's native path.
+    if (typeof Window_Message !== 'undefined') {
+        var _Window_Message_onEndOfText = Window_Message.prototype.onEndOfText;
+        Window_Message.prototype.onEndOfText = function () {
+            var rawText = $gameMessage.allText();
+            if (rawText && rawText.indexOf('\\\\') < 0) {
+                var lines = rawText.split('\\n');
+                var startX = this.newLineX();
+                this.contents.clear();
+                this.resetFontSettings();
+                if ($gameMessage.faceName()) this.drawMessageFace();
+                for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+                    this.contents.drawText(
+                        lines[lineIndex],
+                        startX,
+                        lineIndex * this.lineHeight(),
+                        this.contents.width - startX,
+                        this.lineHeight()
+                    );
+                }
+            }
+            _Window_Message_onEndOfText.call(this);
+        };
+    }
+
     var frameCounter = 0;
     var lastFrameCount = 0;
     var lastFpsAt = Date.now();

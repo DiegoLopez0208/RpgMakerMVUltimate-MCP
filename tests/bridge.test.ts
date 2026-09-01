@@ -233,6 +233,13 @@ describe('generated plugin', () => {
     expect(spec.body).toContain('40100');
     expect(spec.body).toContain("PluginManager.parameters('McpBridge')");
   });
+
+  it('consolidates completed plain messages for NW.js canvas compatibility', () => {
+    const body = buildBridgePlugin().body;
+    expect(body).toContain('Window_Message.prototype.onEndOfText');
+    expect(body).toContain("rawText.split('\\n')");
+    expect(body).toContain('this.contents.drawText(');
+  });
 });
 
 /**
