@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from "path";
+import { createRequire } from 'module';
 import { readFile, access, readdir } from 'fs/promises';
 
 /**
@@ -46,6 +47,23 @@ import * as assetTools from './tools/assetTools.js';
 import { TOOL_DEFINITIONS } from './toolDefinitions.js';
 import { TOOL_DEFINITIONS_LEGACY } from './toolDefinitionsLegacy.js';
 import { routeTool, TOOL_NAMES } from './router.js';
+
+/**
+ * The version advertised in the MCP handshake — the only version a client sees.
+ * It used to be a literal here and silently drifted two releases behind the
+ * published package (5.14.2 while npm shipped 5.16.1), so it is read from
+ * package.json instead: `../package.json` resolves to the package root both from
+ * dist/server.js when installed and from src/server.ts under vitest.
+ */
+export const SERVER_VERSION: string = (function () {
+  try {
+    const pkg = createRequire(import.meta.url)('../package.json') as { version?: string };
+    return pkg.version || '0.0.0-unknown';
+  } catch {
+    // An odd version in the handshake beats a server that refuses to start.
+    return '0.0.0-unknown';
+  }
+})();
 
 const PROJECT_PATH = process.env.RPGMAKER_PROJECT_PATH || '';
 
@@ -962,7 +980,7 @@ export async function main() {
   }
 
   const server = new Server(
-    { name: 'rpgmaker-mv-mcp', version: '5.14.2' },
+    { name: 'rpgmaker-mv-mcp', version: SERVER_VERSION },
     { capabilities: { tools: {} } }
   );
 
