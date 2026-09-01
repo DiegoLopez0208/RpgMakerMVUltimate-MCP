@@ -264,7 +264,7 @@ Narrow with `category`, loosen or tighten with `thresholdSd` (default 2).
 | `generate_map` | Knowledge-driven, semantic, procedural, blank, themed, template, batch or duplicate |
 | `edit_map` | Fill tile layers, set display names, organize the map tree, connect two maps, set encounters |
 | `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, **convert** an NPC into a merchant/inn/sign in place, delete, add commands, bulk-populate |
-| `manage_system` | Title, switch/variable names, starting position, **author a plugin**, **scaffold a project**, **playtest**, **open in editor**, **mine templates**, and the **live bridge** |
+| `manage_system` | Title, switch/variable names, starting position, **author a plugin**, **scaffold an editor-openable project**, **playtest**, **open/repair in editor**, **mine templates**, and the **live bridge** |
 | `take_screenshot` | Capture and name a live playtest PNG through the authenticated MCP bridge |
 | `analyze_project` | The read-only intelligence layer above |
 | `get_project_context` | Project digest, asset index, per-tileset tile IDs, bundled-template catalog |

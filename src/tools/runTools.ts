@@ -11,10 +11,11 @@
  * server doesn't block on them.
  */
 import { spawn } from 'child_process';
-import { access } from 'fs/promises';
+import { access, writeFile } from 'fs/promises';
 import path from 'path';
 
 const DEFAULT_INSTALL = 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\RPG Maker MV';
+const RPGPROJECT_CONTENT = 'RPGMV 1.6.2';
 
 export interface RunParams {
   install?: string;  // RPG Maker MV install root (contains the nwjs runtime and RPGMV.exe)
@@ -92,20 +93,32 @@ export async function playtest(projectPath: string, params?: RunParams) {
 }
 
 /**
- * Open the project in the RPGMV.exe editor (best-effort). Note: the MV editor
- * opens a project through its Game.rpgproject file; a freshly-cloned project may
- * not have one until saved once in the editor, so this may just launch the editor.
+ * Open the project in RPGMV.exe through Game.rpgproject. Steam's NewData folder
+ * does not always contain that descriptor, so legacy/scaffolded projects are
+ * repaired before launch instead of silently opening an empty editor shell.
  */
 export async function openInEditor(projectPath: string, params?: RunParams) {
   if (!projectPath) throw new Error('openInEditor requires an active project path.');
+  if (!(await pathExists(path.join(projectPath, 'data', 'System.json')))) {
+    throw new Error('Not an RPG Maker MV project (missing data/System.json): ' + projectPath);
+  }
   const install = installRoot(params);
   const editorExe = path.join(install, 'RPGMV.exe');
   if (!(await pathExists(editorExe))) {
     throw new Error('Editor not found at "' + editorExe + '". Set the RPGMAKER_MV_INSTALL env var or pass install.');
   }
   const rpgproject = path.join(projectPath, 'Game.rpgproject');
-  const target = (await pathExists(rpgproject)) ? rpgproject : projectPath;
-  const child = spawn(editorExe, [target], { detached: true, stdio: 'ignore', windowsHide: false });
+  let createdProjectFile = false;
+  if (!(await pathExists(rpgproject))) {
+    await writeFile(rpgproject, RPGPROJECT_CONTENT, { encoding: 'utf-8', flag: 'wx' });
+    createdProjectFile = true;
+  }
+  const child = spawn(editorExe, [rpgproject], {
+    cwd: projectPath, detached: true, stdio: 'ignore', windowsHide: false,
+  });
   child.unref();
-  return { launched: true, pid: child.pid ?? null, exe: editorExe, opened: target };
+  return {
+    launched: true, pid: child.pid ?? null, exe: editorExe,
+    opened: rpgproject, createdProjectFile,
+  };
 }
