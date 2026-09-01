@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import path from "path";
 import sharp from "sharp";
 
-import { dispatchTool } from "../src/server.js";
+import { dispatchTool, SERVER_VERSION } from "../src/server.js";
 import * as projectTools from "../src/tools/projectTools.js";
 import { TOOL_DEFINITIONS } from "../src/toolDefinitions.js";
 import { TOOL_DEFINITIONS_LEGACY } from "../src/toolDefinitionsLegacy.js";
@@ -52,6 +52,15 @@ afterAll(() => {
 });
 
 describe("consolidated tool surface", () => {
+  it("advertises the published package version in the MCP handshake", () => {
+    // This string was a literal for two releases and drifted to 5.14.2 while npm
+    // shipped 5.16.1. It is the only version a client ever sees, so pin it to the
+    // package rather than to a number someone has to remember to bump.
+    const pkg = JSON.parse(readFileSync(path.join(__dirname, "..", "package.json"), "utf-8"));
+    expect(SERVER_VERSION).toBe(pkg.version);
+    expect(SERVER_VERSION).not.toBe("0.0.0-unknown");
+  });
+
   it("exposes exactly 14 tools, all annotated and described", () => {
     expect(TOOL_DEFINITIONS.length).toBe(14);
     for (const t of TOOL_DEFINITIONS) {
