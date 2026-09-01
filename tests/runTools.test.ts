@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { playtest, openInEditor } from "../src/tools/runTools.js";
@@ -88,6 +88,20 @@ describe("openInEditor (Phase: run)", () => {
 
   it("requires an active project path", async () => {
     await expect(openInEditor("", { install: dir })).rejects.toThrow(/requires an active project path/);
+  });
+
+  it("refuses a directory that is not an MV project, without leaving a descriptor behind", async () => {
+    // The repair writes into whatever directory it is pointed at, so the guard
+    // rejecting a non-project has to run BEFORE that write — otherwise a typo in
+    // the project path scatters Game.rpgproject files across the disk.
+    const install = mkdtempSync(path.join(tmpdir(), "rpgmv-editor-install-"));
+    writeFileSync(path.join(install, "RPGMV.exe"), "");
+    try {
+      await expect(openInEditor(dir, { install })).rejects.toThrow(/Not an RPG Maker MV project/);
+      expect(existsSync(path.join(dir, "Game.rpgproject"))).toBe(false);
+    } finally {
+      rmSync(install, { recursive: true, force: true });
+    }
   });
 
   it("repairs a missing Game.rpgproject and launches that file", async () => {

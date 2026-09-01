@@ -110,8 +110,16 @@ export async function openInEditor(projectPath: string, params?: RunParams) {
   const rpgproject = path.join(projectPath, 'Game.rpgproject');
   let createdProjectFile = false;
   if (!(await pathExists(rpgproject))) {
-    await writeFile(rpgproject, RPGPROJECT_CONTENT, { encoding: 'utf-8', flag: 'wx' });
-    createdProjectFile = true;
+    // 'wx' so a descriptor that appeared between the check and the write is never
+    // clobbered — the editor writes this file too, and its version string is the
+    // project's, not ours. Losing that race produces the state we wanted anyway,
+    // so EEXIST means "already repaired", not a failure to open the project.
+    try {
+      await writeFile(rpgproject, RPGPROJECT_CONTENT, { encoding: 'utf-8', flag: 'wx' });
+      createdProjectFile = true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    }
   }
   const child = spawn(editorExe, [rpgproject], {
     cwd: projectPath, detached: true, stdio: 'ignore', windowsHide: false,
