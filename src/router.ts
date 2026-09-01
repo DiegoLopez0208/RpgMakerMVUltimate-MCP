@@ -414,7 +414,8 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
       return executeTool('bridge_command', {
         action: requireArg(args, 'command', 'manage_system action "bridge_command"'),
         file: args.file, mapId: args.mapId, x: args.x, y: args.y,
-        direction: args.direction, wait: args.wait, timeoutMs: args.timeoutMs
+        direction: args.direction, button: args.button, durationMs: args.durationMs,
+        wait: args.wait, timeoutMs: args.timeoutMs
       });
     case 'take_screenshot':
     case 'bridge_screenshot':
@@ -466,6 +467,7 @@ export const TOOL_NAMES = [
   'query_database', 'create_database_entry', 'update_database_entry', 'delete_database_entry',
   'query_map', 'generate_map', 'edit_map', 'manage_map_event',
   'manage_system', 'take_screenshot', 'get_project_context', 'set_project_path', 'analyze_image',
+  'record_video',
   'list_plugins', 'get_plugin_status', 'toggle_plugin', 'analyze_project'
 ];
 
@@ -484,6 +486,10 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
     case 'manage_map_event': return manageMapEvent(executeTool, args);
     case 'manage_system': return manageSystem(executeTool, args);
     case 'take_screenshot': return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.name });
+    case 'record_video': return executeTool('bridge_record_video', {
+      action: requireArg(args, 'action', 'record_video'), name: args.name,
+      fps: args.fps, bitrateKbps: args.bitrateKbps, timeoutMs: args.timeoutMs
+    });
     case 'list_plugins': return executeTool('list_plugins', {});
     case 'get_plugin_status': return executeTool('get_plugin_status', {});
     case 'toggle_plugin': return executeTool('toggle_plugin', { pluginName: requireArg(args, 'pluginName', 'toggle_plugin'), enabled: requireArg(args, 'enabled', 'toggle_plugin') });

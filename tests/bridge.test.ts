@@ -10,7 +10,7 @@ import { startBridge, stopBridge, statusBridge, drainTelemetry, requestCommand, 
 import type { Handshake } from '../src/bridge/protocol.js';
 import { HOT_RELOADABLE, isCommandAction } from '../src/bridge/protocol.js';
 import { buildBridgePlugin, BRIDGE_PLUGIN_NAME } from '../src/bridge/pluginSource.js';
-import { bridgeScreenshot } from '../src/tools/bridgeTools.js';
+import { bridgeCommand, bridgeRecordVideo, bridgeScreenshot } from '../src/tools/bridgeTools.js';
 
 /** Mask a payload the way a conforming client must, so decodeFrame accepts it. */
 function clientFrame(text: string, opcode = 0x1): Buffer {
@@ -432,6 +432,19 @@ describe('bridge lifecycle', () => {
   it('refuses to send commands while stopped', () => {
     expect(() => sendCommand({ action: 'ping' })).toThrow(/not running/);
   });
+
+  it('restarts the singleton when the active project changes', async () => {
+    const first = await tempProject();
+    const second = await tempProject();
+    const initial = await startBridge(first, 0);
+    const switched = await startBridge(second, 0);
+
+    expect(switched.projectPath).toBe(second);
+    expect(switched.token).not.toBe(initial.token);
+    await expect(access(join(first, '.mcp-bridge.json'))).rejects.toThrow();
+    const handshake = JSON.parse(await readFile(join(second, '.mcp-bridge.json'), 'utf-8')) as Handshake;
+    expect(handshake.token).toBe(switched.token);
+  });
 });
 
 describe('bridge session', () => {
@@ -496,6 +509,44 @@ describe('bridge session', () => {
     ws.close();
   });
 
+  it('surfaces a game-side command refusal as a failed MCP call', async () => {
+    const dir = await tempProject();
+    const status = await startBridge(dir, 0);
+    const ws = await connectAuthed(status.port!, status.token!);
+    ws.onMessage((msg) => {
+      if (msg.action === 'teleport_player') {
+        ws.send({ type: 'error', requestId: msg.requestId, message: 'No active map yet.' });
+      }
+    });
+
+    await expect(bridgeCommand({ action: 'teleport_player', mapId: 4, x: 15, y: 26 }))
+      .rejects.toThrow(/Game refused.*No active map yet/);
+    ws.close();
+  });
+
+  it('waits for a playtest that authenticates just after the command starts', async () => {
+    const dir = await tempProject();
+    const status = await startBridge(dir, 0);
+    const request = requestCommand({ action: 'ping' }, 2000);
+
+    const client = new TestClient();
+    await client.connect(status.port!);
+    client.onMessage((msg) => {
+      if (msg.action === 'ping' && msg.requestId !== 'auth-ok') {
+        client.send({ type: 'log', level: 'info', requestId: msg.requestId, message: 'pong' });
+      }
+    });
+    // This used to fail immediately before the newly launched game had time to
+    // authenticate, even though the playtest connected a moment later.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    client.send({ type: 'auth', token: status.token });
+
+    const reply = await request;
+    expect(reply.type).toBe('log');
+    if (reply.type === 'log') expect(reply.message).toBe('pong');
+    client.close();
+  });
+
   it('times out instead of hanging when the game never answers', async () => {
     const dir = await tempProject();
     const status = await startBridge(dir, 0);
@@ -536,8 +587,44 @@ describe('bridge session', () => {
     ws.close();
   });
 
+  it('starts and saves a named playtest recording through the bridge', async () => {
+    const dir = await tempProject();
+    const status = await startBridge(dir, 0);
+    const ws = await connectAuthed(status.port!, status.token!);
+    const webm = Buffer.from('fake-webm-for-bridge-test');
+
+    ws.onMessage((msg) => {
+      if (msg.action === 'start_recording') {
+        ws.send({ type: 'recording_started', requestId: msg.requestId, mimeType: 'video/webm;codecs=vp8', fps: 30 });
+      }
+      if (msg.action === 'stop_recording') {
+        ws.send({
+          type: 'recording_result', requestId: msg.requestId, mimeType: 'video/webm;codecs=vp8',
+          base64: webm.toString('base64'), durationMs: 1234,
+        });
+      }
+    });
+
+    const started = await bridgeRecordVideo(dir, { action: 'start', name: 'ramiro', timeoutMs: 4000 });
+    expect(started.recording).toBe(true);
+    const stopped = await bridgeRecordVideo(dir, { action: 'stop', name: 'ramiro', timeoutMs: 4000 });
+    expect(stopped.recording).toBe(false);
+    expect(basename(stopped.path!)).toMatch(/^ramiro-\d{8}-\d{6}-\d{3}\.webm$/);
+    expect(await readFile(stopped.path!)).toEqual(webm);
+    expect(stopped.durationMs).toBe(1234);
+    ws.close();
+  });
+
   it('rejects an unsafe screenshot name before contacting the game', async () => {
     await expect(bridgeScreenshot('C:/unused', { name: '../outside' }))
       .rejects.toThrow(/Screenshot name/);
+  });
+
+  it('builds a plugin with safe input and canvas recording commands', () => {
+    const body = buildBridgePlugin().body;
+    expect(body).toContain("case 'interact':");
+    expect(body).toContain("case 'press_button':");
+    expect(body).toContain('canvas.captureStream');
+    expect(body).toContain("type: 'recording_result'");
   });
 });

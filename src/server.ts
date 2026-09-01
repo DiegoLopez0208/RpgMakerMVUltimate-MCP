@@ -508,6 +508,10 @@ case 'bridge_command':
   return await bridgeTools.bridgeCommand(args as unknown as Record<string, unknown>);
 case 'bridge_screenshot':
   return await bridgeTools.bridgeScreenshot(p, args as { timeoutMs?: number; name?: string });
+case 'bridge_record_video':
+  return await bridgeTools.bridgeRecordVideo(p, args as {
+    action: 'start' | 'stop'; name?: string; fps?: number; bitrateKbps?: number; timeoutMs?: number;
+  });
 
 // ── Learn from the project's own maps, and build from what was learned ──
 case 'mine_templates':
@@ -1067,5 +1071,5 @@ export async function main() {
     };
   }
   await server.connect(transport);
-  logger.info('RPG Maker MV MCP server v5.14.2 running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
+  logger.info('RPG Maker MV MCP server v' + SERVER_VERSION + ' running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
 }

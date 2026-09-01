@@ -228,7 +228,7 @@ export const TOOL_DEFINITIONS = [
         minDistinctTiles: { ...ID_TYPE, description: 'mine_templates: a map needs at least this many distinct tiles to count as content rather than scratch (default 10)' },
         port: { ...ID_TYPE, description: 'bridge_start/install_bridge_plugin: loopback port for the live bridge (default 32123, or RPGMV_BRIDGE_PORT)' },
         telemetryInterval: { ...ID_TYPE, description: 'install_bridge_plugin: frames between player-position frames (default 30; 60 = once per second)' },
-        command: { type: 'string', enum: ['ping', 'get_state', 'reload_map', 'reload_database', 'capture_screenshot', 'teleport_player'], description: 'bridge_command: which instruction to send to the running game' },
+        command: { type: 'string', enum: ['ping', 'get_state', 'reload_map', 'reload_database', 'capture_screenshot', 'teleport_player', 'interact', 'press_button'], description: 'bridge_command: which safe instruction to send to the running game' },
         file: { type: 'string', description: 'bridge_command "reload_database": the data file to re-read, e.g. "Skills.json"' },
         types: { type: 'array', description: 'bridge_telemetry: only return these frame types, e.g. ["exception","log"]', items: { type: 'string' } },
         limit: { ...ID_TYPE, description: 'bridge_telemetry: return at most this many of the most recent frames. mine_templates: keep at most this many layouts, largest maps first' },
@@ -236,7 +236,9 @@ export const TOOL_DEFINITIONS = [
         wait: { type: 'boolean', description: 'bridge_command: wait for the game to answer (default true; false is fire-and-forget)' },
         timeoutMs: { ...ID_TYPE, description: 'bridge_command/take_screenshot: how long to wait for the answer (default 8000, screenshots 15000)' },
         screenshotName: { type: 'string', description: 'take_screenshot: optional safe filename prefix (letters, numbers, _ and -, up to 64 characters)' },
-        direction: { ...ID_TYPE, description: 'bridge_command "teleport_player": facing after the transfer (2 down, 4 left, 6 right, 8 up)' }
+        direction: { ...ID_TYPE, description: 'bridge_command "teleport_player": facing after the transfer (2 down, 4 left, 6 right, 8 up)' },
+        button: { type: 'string', enum: ['ok', 'cancel', 'menu', 'up', 'down', 'left', 'right'], description: 'bridge_command "press_button": safe RPG Maker input to press' },
+        durationMs: { ...ID_TYPE, description: 'bridge_command "press_button": hold duration in milliseconds (default 80, range 30-1000)' }
       },
       required: ['action']
     }
@@ -252,6 +254,22 @@ export const TOOL_DEFINITIONS = [
         timeoutMs: { ...ID_TYPE, description: 'How long to wait for the game response in milliseconds (default 15000)' }
       },
       required: []
+    }
+  },
+  {
+    name: 'record_video',
+    description: 'Start or stop recording the live RPG Maker MV playtest canvas through the authenticated MCP bridge. `action:"start"` begins a silent WebM capture inside the game runtime; `action:"stop"` saves it under `.mcp-cache/recordings/` and returns `{path, bytes, mimeType, durationMs, name}`. This captures only the game canvas, not the desktop or credentials. Requires the bridge plugin, a running bridge, and a connected playtest. Optional `name`, `fps` (default 30), and `bitrateKbps` (default 2500) control the artifact.',
+    annotations: { title: 'Record playtest video', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'stop'], description: 'Start a new capture or stop and save the active capture' },
+        name: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$', description: 'Safe filename prefix used when stopping' },
+        fps: { ...ID_TYPE, description: 'Capture frame rate, 1-60 (default 30)' },
+        bitrateKbps: { ...ID_TYPE, description: 'Video bitrate in kbps, 250-10000 (default 2500)' },
+        timeoutMs: { ...ID_TYPE, description: 'How long to wait for start/stop result (defaults 15000/60000)' }
+      },
+      required: ['action']
     }
   },
   {

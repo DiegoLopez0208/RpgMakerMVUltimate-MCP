@@ -247,6 +247,12 @@ describe("validation schemas", () => {
       expect(() => validateConsolidated("take_screenshot", { name: "../outside" })).toThrow(/Validation error/);
     });
 
+    it("record_video validates actions and safe names", () => {
+      expect(() => validateConsolidated("record_video", { action: "start", name: "ramiro-scene", fps: 30 })).not.toThrow();
+      expect(() => validateConsolidated("record_video", { action: "stop", name: "../outside" })).toThrow(/Validation error/);
+      expect(() => validateConsolidated("record_video", { action: "pause" })).toThrow(/Validation error/);
+    });
+
     it("accepts numeric-string ids without coercing them away", () => {
       expect(() => validateConsolidated("delete_database_entry", { entity: "actors", id: "3" })).not.toThrow();
       expect(() => validateConsolidated("edit_map", { action: "fill_layer", mapId: "1", layer: "0", tileId: "0" })).not.toThrow();

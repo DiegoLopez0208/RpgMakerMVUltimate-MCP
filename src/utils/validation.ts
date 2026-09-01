@@ -260,7 +260,7 @@ const ManageSystemSchema = z.object({
   // the live bridge
   port: idLike.optional(),
   telemetryInterval: idLike.optional(),
-  command: z.enum(["ping", "get_state", "reload_map", "reload_database", "capture_screenshot", "teleport_player"]).optional(),
+  command: z.enum(["ping", "get_state", "reload_map", "reload_database", "capture_screenshot", "teleport_player", "interact", "press_button"]).optional(),
   file: z.string().optional(),
   types: z.array(z.string()).optional(),
   limit: idLike.optional(),
@@ -269,6 +269,8 @@ const ManageSystemSchema = z.object({
   timeoutMs: idLike.optional(),
   screenshotName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
   direction: idLike.optional(),
+  button: z.enum(["ok", "cancel", "menu", "up", "down", "left", "right"]).optional(),
+  durationMs: idLike.optional(),
   // scaffold_project
   destPath: z.string().optional(),
   sourcePath: z.string().optional(),
@@ -291,6 +293,14 @@ const TakeScreenshotSchema = z.object({
   timeoutMs: idLike.optional(),
 });
 
+const RecordVideoSchema = z.object({
+  action: z.enum(["start", "stop"]),
+  name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
+  fps: idLike.optional(),
+  bitrateKbps: idLike.optional(),
+  timeoutMs: idLike.optional(),
+});
+
 /**
  * Schemas keyed by consolidated tool name. A tool absent here is not validated
  * at this layer (read-only tools, plugin toggles). Values expose Zod's safeParse.
@@ -304,6 +314,7 @@ export const CONSOLIDATED_SCHEMAS: Record<string, { safeParse: (a: unknown) => {
   manage_map_event: ManageMapEventSchema,
   manage_system: ManageSystemSchema,
   take_screenshot: TakeScreenshotSchema,
+  record_video: RecordVideoSchema,
 };
 
 /**

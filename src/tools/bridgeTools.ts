@@ -85,12 +85,23 @@ export async function bridgeCommand(args: Record<string, unknown>) {
     cmd.y = Number(args.y);
     if (args.direction !== undefined) cmd.direction = Number(args.direction);
   }
+  if (action === 'press_button') {
+    const button = String(args.button || '');
+    if (!['ok', 'cancel', 'menu', 'up', 'down', 'left', 'right'].includes(button)) {
+      throw new Error('press_button needs button: ok, cancel, menu, up, down, left or right.');
+    }
+    cmd.button = button as Command['button'];
+    cmd.durationMs = args.durationMs === undefined ? 80 : Number(args.durationMs);
+  }
   if (args.wait === false) {
     const delivered = sendCommand({ ...cmd } as Command);
     return { sent: true, awaited: false, clients: delivered };
   }
   const timeout = args.timeoutMs === undefined ? 8000 : Number(args.timeoutMs);
   const reply = await requestCommand(cmd, timeout);
+  if (reply.type === 'error') {
+    throw new Error('Game refused "' + action + '": ' + reply.message);
+  }
   return { sent: true, awaited: true, reply };
 }
 
@@ -123,4 +134,36 @@ export async function bridgeScreenshot(projectPath: string, args: { timeoutMs?: 
   const bytes = Buffer.from(reply.base64, 'base64');
   await writeFile(file, bytes);
   return { path: file, bytes: bytes.length, mimeType: reply.mimeType, name };
+}
+
+export async function bridgeRecordVideo(projectPath: string, args: {
+  action: 'start' | 'stop'; name?: string; fps?: number; bitrateKbps?: number; timeoutMs?: number;
+}) {
+  const name = args.name === undefined ? 'recording' : String(args.name).trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) {
+    throw new Error('Recording name must be 1-64 characters using only letters, numbers, "_" or "-".');
+  }
+  if (args.action === 'start') {
+    const reply = await requestCommand({
+      action: 'start_recording',
+      fps: args.fps === undefined ? 30 : Number(args.fps),
+      bitrateKbps: args.bitrateKbps === undefined ? 2500 : Number(args.bitrateKbps),
+    }, args.timeoutMs ?? 15000);
+    if (reply.type !== 'recording_started') {
+      const message = reply.type === 'error' ? reply.message : 'unexpected frame "' + reply.type + '"';
+      throw new Error('Recording start failed: ' + message);
+    }
+    return { recording: true, name, mimeType: reply.mimeType, fps: reply.fps };
+  }
+  const reply = await requestCommand({ action: 'stop_recording' }, args.timeoutMs ?? 60000);
+  if (reply.type !== 'recording_result') {
+    const message = reply.type === 'error' ? reply.message : 'unexpected frame "' + reply.type + '"';
+    throw new Error('Recording stop failed: ' + message);
+  }
+  const dir = resolveSafePath(projectPath, '.mcp-cache', 'recordings');
+  await mkdir(dir, { recursive: true });
+  const file = resolveSafePath(projectPath, '.mcp-cache', 'recordings', name + '-' + stamp() + '.webm');
+  const bytes = Buffer.from(reply.base64, 'base64');
+  await writeFile(file, bytes);
+  return { recording: false, path: file, bytes: bytes.length, mimeType: reply.mimeType, durationMs: reply.durationMs, name };
 }

@@ -20,6 +20,7 @@
  */
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { writeFile, unlink } from 'fs/promises';
+import path from 'path';
 import { resolveSafePath } from '../utils/security.js';
 import * as logger from '../utils/logger.js';
 import { startWsServer, type WsConnection, type WsServer } from './wsServer.js';
@@ -60,6 +61,40 @@ let requestSeq = 0;
 const buffer: StampedTelemetry[] = [];
 const pending = new Map<string, Pending>();
 
+interface AuthWaiter {
+  resolve: () => void;
+  reject: (e: Error) => void;
+  timer: NodeJS.Timeout;
+}
+
+const authWaiters = new Set<AuthWaiter>();
+
+function settleAuthWaiters(error?: Error): void {
+  for (const waiter of authWaiters) {
+    clearTimeout(waiter.timer);
+    if (error) waiter.reject(error); else waiter.resolve();
+  }
+  authWaiters.clear();
+}
+
+function waitForAuthenticatedClient(timeoutMs: number): Promise<void> {
+  if (authedConnections().length > 0) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const waiter: AuthWaiter = {
+      resolve,
+      reject,
+      timer: setTimeout(() => {
+        authWaiters.delete(waiter);
+        reject(new Error(
+          'No authenticated game client connected within ' + timeoutMs +
+          'ms. Is the playtest running with the McpBridge plugin enabled?'
+        ));
+      }, timeoutMs),
+    };
+    authWaiters.add(waiter);
+  });
+}
+
 /** Constant-time token comparison so a local process cannot time its way in. */
 function tokenMatches(candidate: unknown): boolean {
   if (typeof candidate !== 'string' || !token) return false;
@@ -75,8 +110,12 @@ function isAuthed(conn: WsConnection): boolean {
 
 function push(frame: Telemetry): void {
   const stamped = { ...frame, t: Date.now() - startedAtMs } as StampedTelemetry;
-  buffer.push(stamped);
-  while (buffer.length > TELEMETRY_BUFFER_MAX) { buffer.shift(); dropped++; }
+  // Binary capture replies are delivered directly to their waiter. Keeping a
+  // second base64 copy in telemetry wastes tens of MB for a short video.
+  if (frame.type !== 'screenshot_result' && frame.type !== 'recording_result') {
+    buffer.push(stamped);
+    while (buffer.length > TELEMETRY_BUFFER_MAX) { buffer.shift(); dropped++; }
+  }
   const id = (frame as { requestId?: string }).requestId;
   if (id) {
     const waiter = pending.get(id);
@@ -108,6 +147,7 @@ function handleMessage(conn: WsConnection, text: string): void {
     const timer = conn.meta.authTimer as NodeJS.Timeout | undefined;
     if (timer) clearTimeout(timer);
     conn.send(JSON.stringify({ action: 'ping', requestId: 'auth-ok' }));
+    settleAuthWaiters();
     logger.info('Bridge client authenticated', { conn: conn.id });
     return;
   }
@@ -126,8 +166,14 @@ function handleMessage(conn: WsConnection, text: string): void {
  * port, which is what the tests use.
  */
 export async function startBridge(projectPath: string, port?: number): Promise<BridgeStatus> {
-  if (server) return statusBridge();
   if (!projectPath) throw new Error('No project path set — call set_project_path first.');
+  if (server) {
+    if (path.resolve(projectRoot) === path.resolve(projectPath)) return statusBridge();
+    // The active MCP project changed. Keeping the old singleton would leave
+    // the new project's plugin reading a stale/missing handshake while tools
+    // reported that a bridge was already running.
+    await stopBridge();
+  }
 
   const wanted = port ?? Number(process.env.RPGMV_BRIDGE_PORT || DEFAULT_PORT);
   token = randomBytes(16).toString('hex');
@@ -167,6 +213,7 @@ export async function startBridge(projectPath: string, port?: number): Promise<B
 
 /** Stop the bridge, drop every client and remove the handshake file. */
 export async function stopBridge(): Promise<BridgeStatus> {
+  settleAuthWaiters(new Error('bridge stopped'));
   for (const [, p] of pending) { clearTimeout(p.timer); p.reject(new Error('bridge stopped')); }
   pending.clear();
   if (server) {
@@ -233,24 +280,38 @@ export function sendCommand(cmd: Command): number {
  * Send a command and wait for the frame carrying the same requestId. Rejects on
  * timeout rather than hanging a tool call forever.
  */
-export function requestCommand(cmd: Omit<Command, 'requestId'>, timeoutMs = 8000): Promise<StampedTelemetry> {
+export async function requestCommand(cmd: Omit<Command, 'requestId'>, timeoutMs = 8000): Promise<StampedTelemetry> {
+  if (!server) {
+    throw new Error('Bridge is not running — start it with manage_system action "bridge_start".');
+  }
+  const deadline = Date.now() + timeoutMs;
+  if (authedConnections().length === 0) await waitForAuthenticatedClient(timeoutMs);
+
   const requestId = 'r' + (++requestSeq) + '-' + randomBytes(4).toString('hex');
   const full = { ...cmd, requestId } as Command;
-  const delivered = sendCommand(full);
-  if (delivered === 0) {
-    return Promise.reject(new Error('No authenticated game client is connected. Is the playtest running with the McpBridge plugin enabled?'));
-  }
   return new Promise<StampedTelemetry>((resolve, reject) => {
+    const remaining = Math.max(1, deadline - Date.now());
     const timer = setTimeout(() => {
       pending.delete(requestId);
       reject(new Error('Timed out after ' + timeoutMs + 'ms waiting for "' + cmd.action + '".'));
-    }, timeoutMs);
+    }, remaining);
     pending.set(requestId, { resolve, reject, timer });
+
+    // Register the waiter before writing to the socket. Besides making the
+    // ordering explicit, this prevents a very fast loopback reply from being
+    // buffered without resolving the command that caused it.
+    const delivered = sendCommand(full);
+    if (delivered === 0) {
+      pending.delete(requestId);
+      clearTimeout(timer);
+      reject(new Error('The authenticated game client disconnected before "' + cmd.action + '" could be sent.'));
+    }
   });
 }
 
 /** Test seam: forget buffered state without going through the socket lifecycle. */
 export function _resetForTests(): void {
+  settleAuthWaiters(new Error('test reset'));
   buffer.length = 0;
   pending.clear();
   dropped = 0;

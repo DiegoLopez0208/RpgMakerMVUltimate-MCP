@@ -38,8 +38,8 @@ const HELP_TEXT = [
   'This plugin connects the running game to the MCP server so an AI agent can',
   'see what the game is doing: exceptions, scene changes, player position, and',
   'the values of switches and variables. It also accepts a fixed set of',
-  'commands (reload the map, reload a database file, take a screenshot, move',
-  'the player).',
+  'commands (reload the map, reload a database file, take screenshots, record',
+  'the game canvas, move the player, interact, and press fixed game buttons).',
   '',
   'It does nothing outside playtest. The guard at the top returns immediately',
   'when the game was not launched in test mode, so a deployed build never opens',
@@ -100,6 +100,10 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     var pendingReload = null;
     var diagnosticPath = null;
     var diagnosticSeen = {};
+    var videoRecorder = null;
+    var videoStream = null;
+    var videoChunks = [];
+    var videoStartedAt = 0;
 
     // Keep a small credential-free lifecycle log next to the handshake file.
     // The live socket cannot report why it failed before it has connected, so
@@ -204,11 +208,24 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
                 send({ type: 'log', level: 'info', requestId: msg.requestId, message: 'pong' });
                 break;
             case 'get_state':
+                var messageWindow = SceneManager._scene && SceneManager._scene._messageWindow;
+                var textState = messageWindow && messageWindow._textState;
                 send({
                     type: 'state_dump',
                     requestId: msg.requestId,
                     switches: dumpSwitches(),
-                    variables: dumpVariables()
+                    variables: dumpVariables(),
+                    message: {
+                        allText: window.$gameMessage ? $gameMessage.allText() : '',
+                        index: textState ? textState.index : null,
+                        length: textState ? textState.text.length : null,
+                        paused: !!(messageWindow && messageWindow.pause),
+                        visible: !!(messageWindow && messageWindow.visible),
+                        charWidth: messageWindow && messageWindow.contents ? messageWindow.contents.measureTextWidth('E') : null,
+                        contentWidth: messageWindow && messageWindow.contents ? messageWindow.contents.width : null,
+                        fontFace: messageWindow && messageWindow.contents ? messageWindow.contents.fontFace : null,
+                        fontSize: messageWindow && messageWindow.contents ? messageWindow.contents.fontSize : null
+                    }
                 });
                 break;
             case 'reload_map':
@@ -222,6 +239,18 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
                 break;
             case 'teleport_player':
                 teleport(msg);
+                break;
+            case 'interact':
+                interact(msg);
+                break;
+            case 'press_button':
+                pressButton(msg);
+                break;
+            case 'start_recording':
+                startRecording(msg);
+                break;
+            case 'stop_recording':
+                stopRecording(msg);
                 break;
             default:
                 // Unknown actions are ignored on purpose: the command surface is
@@ -299,14 +328,118 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
         });
     }
 
+    function pressButton(msg) {
+        var button = String(msg.button || '');
+        var allowed = ['ok', 'cancel', 'menu', 'up', 'down', 'left', 'right'];
+        if (allowed.indexOf(button) < 0) {
+            send({ type: 'error', requestId: msg.requestId, message: 'Unsupported game button: ' + button });
+            return;
+        }
+        var duration = Math.max(30, Math.min(1000, Number(msg.durationMs || 80)));
+        Input._currentState[button] = true;
+        setTimeout(function () {
+            Input._currentState[button] = false;
+            send({ type: 'log', level: 'info', requestId: msg.requestId, message: 'Button pressed: ' + button });
+        }, duration);
+    }
+
+    function startRecording(msg) {
+        if (videoRecorder && videoRecorder.state !== 'inactive') {
+            send({ type: 'error', requestId: msg.requestId, message: 'A recording is already running.' });
+            return;
+        }
+        var canvas = Graphics._canvas || document.querySelector('canvas');
+        if (!canvas || !canvas.captureStream || typeof MediaRecorder === 'undefined') {
+            send({ type: 'error', requestId: msg.requestId, message: 'This NW.js runtime does not support canvas recording.' });
+            return;
+        }
+        var fpsValue = Math.max(1, Math.min(60, Number(msg.fps || 30)));
+        var bitrate = Math.max(250, Math.min(10000, Number(msg.bitrateKbps || 2500))) * 1000;
+        var mime = '';
+        if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+            mime = 'video/webm;codecs=vp8';
+        } else if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm')) {
+            mime = 'video/webm';
+        }
+        try {
+            videoStream = canvas.captureStream(fpsValue);
+            var options = { videoBitsPerSecond: bitrate };
+            if (mime) options.mimeType = mime;
+            videoRecorder = new MediaRecorder(videoStream, options);
+            videoChunks = [];
+            videoRecorder.ondataavailable = function (event) {
+                if (event.data && event.data.size > 0) videoChunks.push(event.data);
+            };
+            videoRecorder.onerror = function (event) {
+                diagnose('recording error: ' + String((event && event.error && event.error.message) || 'unknown'));
+            };
+            videoStartedAt = Date.now();
+            videoRecorder.start(500);
+            send({ type: 'recording_started', requestId: msg.requestId, mimeType: mime || 'video/webm', fps: fpsValue });
+        } catch (e) {
+            videoRecorder = null;
+            videoStream = null;
+            send({ type: 'error', requestId: msg.requestId, message: 'Could not start recording: ' + String((e && e.message) || e) });
+        }
+    }
+
+    function stopRecording(msg) {
+        if (!videoRecorder || videoRecorder.state === 'inactive') {
+            send({ type: 'error', requestId: msg.requestId, message: 'No recording is running.' });
+            return;
+        }
+        var requestId = msg.requestId;
+        var recorder = videoRecorder;
+        var mime = recorder.mimeType || 'video/webm';
+        recorder.onstop = function () {
+            var blob = new Blob(videoChunks, { type: mime });
+            var reader = new FileReader();
+            reader.onloadend = function () {
+                var url = String(reader.result || '');
+                send({
+                    type: 'recording_result', requestId: requestId, mimeType: mime,
+                    base64: url.slice(url.indexOf(',') + 1), durationMs: Date.now() - videoStartedAt
+                });
+                if (videoStream && videoStream.getTracks) {
+                    var tracks = videoStream.getTracks();
+                    for (var i = 0; i < tracks.length; i++) tracks[i].stop();
+                }
+                videoRecorder = null;
+                videoStream = null;
+                videoChunks = [];
+            };
+            reader.readAsDataURL(blob);
+        };
+        recorder.stop();
+    }
+
     function teleport(msg) {
-        if (!window.$gamePlayer || !window.$gameMap) {
-            send({ type: 'error', requestId: msg.requestId, message: 'No player yet.' });
+        if (!window.$gamePlayer || !window.$gameMap ||
+                !window.SceneManager || !(SceneManager._scene instanceof Scene_Map)) {
+            send({ type: 'error', requestId: msg.requestId, message: 'No active map yet; start or load a game before teleporting.' });
             return;
         }
         var mapId = msg.mapId || $gameMap.mapId();
         $gamePlayer.reserveTransfer(mapId, msg.x | 0, msg.y | 0, msg.direction || $gamePlayer.direction(), 0);
         send({ type: 'log', level: 'info', requestId: msg.requestId, message: 'Transfer reserved to map ' + mapId });
+    }
+
+    function interact(msg) {
+        if (!window.$gamePlayer || !window.$gameMap ||
+                !window.SceneManager || !(SceneManager._scene instanceof Scene_Map)) {
+            send({ type: 'error', requestId: msg.requestId, message: 'No active map yet; start or load a game before interacting.' });
+            return;
+        }
+        if ($gameMap.isEventRunning()) {
+            send({ type: 'error', requestId: msg.requestId, message: 'An event is already running.' });
+            return;
+        }
+        $gamePlayer.checkEventTriggerHere([0]);
+        if (!$gameMap.setupStartingEvent()) {
+            $gamePlayer.checkEventTriggerThere([0, 1, 2]);
+            $gameMap.setupStartingEvent();
+        }
+        send({ type: 'log', level: 'info', requestId: msg.requestId, message: 'Interaction checked in front of the player.' });
     }
 
     window.addEventListener('error', function (e) {

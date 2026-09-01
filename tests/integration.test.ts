@@ -61,8 +61,8 @@ describe("consolidated tool surface", () => {
     expect(SERVER_VERSION).not.toBe("0.0.0-unknown");
   });
 
-  it("exposes exactly 14 tools, all annotated and described", () => {
-    expect(TOOL_DEFINITIONS.length).toBe(14);
+  it("exposes exactly 15 tools, all annotated and described", () => {
+    expect(TOOL_DEFINITIONS.length).toBe(15);
     for (const t of TOOL_DEFINITIONS) {
       expect(t.annotations, t.name).toBeDefined();
       expect(t.description.length, t.name).toBeGreaterThan(120);
@@ -1118,6 +1118,10 @@ describe("semantic pipeline through the consolidated tools", () => {
     expect(TOOL_DEFINITIONS.some((tool) => tool.name === "take_screenshot")).toBe(true);
     await expect(dispatchTool("take_screenshot", { name: "qa-proof" }))
       .rejects.toThrow(/not running/);
+  });
+
+  it("exposes record_video as a first-class MCP tool", () => {
+    expect(TOOL_DEFINITIONS.some((tool) => tool.name === "record_video")).toBe(true);
   });
 
   it("refuses to hot-reload a file the engine cannot hot-reload", async () => {
