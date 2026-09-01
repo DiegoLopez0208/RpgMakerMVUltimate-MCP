@@ -192,6 +192,22 @@ describe("manage_map_event", () => {
     expect(selfSwitch.parameters).toEqual(["A", 0]);
   });
 
+  it("preset chest plays the standard opening animation before switching to its open page", async () => {
+    mkdirSync(path.join(projectDir, "img", "characters"), { recursive: true });
+    writeFileSync(path.join(projectDir, "img", "characters", "!Chest.png"), "x");
+    const ev = await dispatchTool("manage_map_event", {
+      action: "create", preset: "chest", mapId: 1, x: 3, y: 3,
+      items: [{ type: "item", id: 1, amount: 2 }]
+    }) as any;
+    expect(ev.pages[0].list.some((c: any) => c.code === 250)).toBe(true);
+    const route = ev.pages[0].list.find((c: any) => c.code === 205);
+    expect(route.parameters[1].list.map((c: any) => c.code)).toEqual([36, 17, 15, 18, 15, 19, 15, 35, 0]);
+    const messageIndex = ev.pages[0].list.findIndex((c: any) => c.code === 401);
+    const switchIndex = ev.pages[0].list.findIndex((c: any) => c.code === 123);
+    expect(switchIndex).toBeGreaterThan(messageIndex);
+    expect(ev.pages[1].image.direction).toBe(8);
+  });
+
   it("preset shop carries the first good in the 302 command with custom price (4.1.0 regression: hardcoded item 1)", async () => {
     const ev = await dispatchTool("manage_map_event", {
       action: "create", preset: "shop",
@@ -276,10 +292,14 @@ describe("manage_map_event", () => {
 });
 
 describe("generator event regressions (5.2.0: 4.1.1 self-switch fix missed the internal makers)", () => {
-  it("makeChestEvent turns Self Switch A ON so generated chests stay open", () => {
+  it("makeChestEvent animates and turns Self Switch A ON so generated chests stay open", () => {
     const ev = makeChestEvent(0, 5, 5);
+    expect(ev.pages[0].list.some((c: any) => c.code === 250)).toBe(true);
+    const route = ev.pages[0].list.find((c: any) => c.code === 205);
+    expect(route!.parameters[1].list.map((c: any) => c.code)).toEqual([36, 17, 15, 18, 15, 19, 15, 35, 0]);
     const ss = ev.pages[0].list.find((c: any) => c.code === 123);
     expect(ss!.parameters).toEqual(["A", 0]); // was ["A", 1] = OFF -> reopened forever
+    expect(ev.pages[1].image.direction).toBe(8);
   });
 
   it("makeBossEvent turns Self Switch A ON on victory so generated bosses stay defeated", () => {

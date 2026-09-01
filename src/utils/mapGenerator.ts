@@ -1795,6 +1795,20 @@ function makeChestEvent(id: number, x: number, y: number): MapEvent {
       conditions: defaultConditions(), directionFix: true,
       image: { characterIndex: 0, characterName: '!Chest', direction: 2, pattern: 0, tileId: 0 },
       list: [
+        { code: 250, indent: 0, parameters: [{ name: 'Chest1', pan: 0, pitch: 100, volume: 90 }] },
+        { code: 205, indent: 0, parameters: [0, {
+          list: [
+            { code: 36, indent: 0, parameters: [] },
+            { code: 17, indent: 0, parameters: [] },
+            { code: 15, indent: 0, parameters: [3] },
+            { code: 18, indent: 0, parameters: [] },
+            { code: 15, indent: 0, parameters: [3] },
+            { code: 19, indent: 0, parameters: [] },
+            { code: 15, indent: 0, parameters: [3] },
+            { code: 35, indent: 0, parameters: [] },
+            { code: 0, indent: 0, parameters: [] }
+          ], repeat: false, skippable: true, wait: true
+        }] },
         { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
         { code: 401, indent: 0, parameters: ['Found treasure!'] },
         // Self Switch A = ON (MV: command123 sets value = params[1] === 0) so
@@ -1808,7 +1822,7 @@ function makeChestEvent(id: number, x: number, y: number): MapEvent {
     }, {
       conditions: Object.assign({}, defaultConditions(), { selfSwitchCh: 'A', selfSwitchValid: true }),
       directionFix: true,
-      image: { characterIndex: 0, characterName: '!Chest', direction: 2, pattern: 1, tileId: 0 },
+      image: { characterIndex: 0, characterName: '!Chest', direction: 8, pattern: 0, tileId: 0 },
       list: [{ code: 0, indent: 0, parameters: [] as unknown[] }],
       moveFrequency: 3, moveRoute: { list: [{ code: 0, indent: 0, parameters: [] as unknown[] }], repeat: true, skippable: false, wait: false },
       moveSpeed: 2, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: false
