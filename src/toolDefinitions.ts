@@ -1,8 +1,9 @@
 /**
  * toolDefinitions.ts — the consolidated MCP tools.
  *
- * These 12 verb-oriented tools replace the 101 fine-grained legacy tools; the
- * first argument selects the operation (entity / action / mode / view). The
+ * These verb-oriented tools replace the 101 fine-grained legacy tools; the
+ * first argument selects the operation (entity / action / mode / view), except
+ * for the few that do one job and need no selector. The
  * legacy names still work as call aliases and can be re-advertised with
  * RPGMV_LEGACY_TOOLS=1. Routing lives in router.ts; implementations are the
  * same audited code paths the legacy tools used.

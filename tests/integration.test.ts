@@ -52,7 +52,7 @@ afterAll(() => {
 });
 
 describe("consolidated tool surface", () => {
-  it("exposes exactly 13 tools, all annotated and described", () => {
+  it("exposes exactly 14 tools, all annotated and described", () => {
     expect(TOOL_DEFINITIONS.length).toBe(14);
     for (const t of TOOL_DEFINITIONS) {
       expect(t.annotations, t.name).toBeDefined();
