@@ -1019,7 +1019,7 @@ async function createNpc(projectPath: string, mapId: number, x: number, y: numbe
 /**
  * HIGH LEVEL HELPER: Create a chest event.
  * Produces a 2-page event:
- *   Page 1: Action button trigger, gives items + activates Self Switch A
+ *   Page 1: Action button trigger, animates open, gives items, then activates Self Switch A
  *   Page 2: Self Switch A = ON, shows "already opened" message
  *
  * @param {string} projectPath - The project root path
@@ -1040,6 +1040,22 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
 
   const page1List: EventCommand[] = [];
 
+  // Standard MV chest opening: the four direction rows in !Chest are the
+  // closed -> opening -> open frames. Direction Fix must be disabled while the
+  // route turns through those rows, then restored before the page changes.
+  page1List.push(...cmd.playSE('Chest1', 90, 100, 0));
+  page1List.push(...cmd.setMoveRoute(0, [
+    cmd.moveRouteCommand(36, []),      // Direction Fix OFF
+    cmd.moveRouteCommand(17, []),      // Opening frame 1 (left row)
+    cmd.moveRouteCommand(15, [3]),
+    cmd.moveRouteCommand(18, []),      // Opening frame 2 (right row)
+    cmd.moveRouteCommand(15, [3]),
+    cmd.moveRouteCommand(19, []),      // Fully open (up row)
+    cmd.moveRouteCommand(15, [3]),
+    cmd.moveRouteCommand(35, []),      // Direction Fix ON
+    cmd.moveRouteCommand(0, [])
+  ]));
+
   // Give each item/weapon/armor
   const itemEntries = items || [];
   for (let idx = 0; idx < itemEntries.length; idx++) {
@@ -1054,9 +1070,6 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
     }
   }
 
-  // Activate Self Switch A = ON (so the chest stays open)
-  page1List.push(...cmd.selfSwitchControl('A', true));
-
   // Show "found items" message
   const msgCmds = cmd.message('Found items inside the chest!', '', 0);
   for (let i = 0; i < msgCmds.length; i++) {
@@ -1064,6 +1077,9 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
     if (msgCmds[i].code === 0 && i === msgCmds.length - 1) continue;
     page1List.push(msgCmds[i]);
   }
+
+  // Change pages only after the animation, reward, and message have completed.
+  page1List.push(...cmd.selfSwitchControl('A', true));
 
   // Add page terminator
   page1List.push({ code: 0, indent: 0, parameters: [] });
@@ -1101,8 +1117,8 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
     image: {
       characterIndex: characterIndex,
       characterName: characterName,
-      direction: 2,    // Open chest direction
-      pattern: 1,      // Second pattern = open
+      direction: 8,    // The up-facing row in !Chest is fully open
+      pattern: 0,
       tileId: 0
     },
     list: [
