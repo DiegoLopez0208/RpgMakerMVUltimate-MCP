@@ -1398,7 +1398,8 @@ async function writeMapJson(projectPath: string, filePath: string, map: RpgMaker
 }
 
 async function writeJsonDirect(filePath: string, data: unknown) {
-  await safeWrite(filePath, JSON.stringify(data, null, 2));
+  // Compact, matching the editor -- see writeJson in fileHandler.
+  await safeWrite(filePath, JSON.stringify(data));
 }
 
 async function deleteMapEvent(projectPath: string, mapId: number, eventId: number) {
