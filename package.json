@@ -31,6 +31,9 @@
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "rpgmaker-mv-mcp": "dist/index.js"
   },

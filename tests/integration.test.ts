@@ -61,6 +61,26 @@ describe("consolidated tool surface", () => {
     expect(SERVER_VERSION).not.toBe("0.0.0-unknown");
   });
 
+  it("hardcodes no version number anywhere in src/", () => {
+    // Pinning the handshake was only half the fix: the startup banner kept its own
+    // literal and went on announcing v5.14.2 after the handshake was correct, so a
+    // client and its log disagreed about what was running. Any "v1.2.3" in source
+    // is a number someone has to remember to bump, which is the bug itself.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) { walk(full); continue; }
+        if (!entry.name.endsWith(".ts")) continue;
+        readFileSync(full, "utf-8").split(/\r?\n/).forEach((line, i) => {
+          if (/v\d+\.\d+\.\d+/.test(line)) offenders.push(`${full}:${i + 1}: ${line.trim()}`);
+        });
+      }
+    };
+    walk(path.join(__dirname, "..", "src"));
+    expect(offenders).toEqual([]);
+  });
+
   it("exposes exactly 14 tools, all annotated and described", () => {
     expect(TOOL_DEFINITIONS.length).toBe(14);
     for (const t of TOOL_DEFINITIONS) {
