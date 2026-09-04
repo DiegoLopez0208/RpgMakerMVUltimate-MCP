@@ -1,6 +1,6 @@
 import path from "path";
 import { readFile, access } from 'fs/promises';
-import type { MapEvent, GeneratorOptions, MapTemplate } from '../types/rpgmaker.js';
+import type { MapEvent, GeneratorOptions, MapTemplate, EventCommand } from '../types/rpgmaker.js';
 import { applyAutotileShapes } from './autotile.js';
 import { pickStamp, stampObject, hasStamps, getStamps, type StampCategory, type Stamp } from './stamps.js';
 import { isTileA1, isRoofTile, isWallSideTile } from './engine.js';
@@ -1789,6 +1789,21 @@ function makeNpcEvent(id: number, x: number, y: number, name: string, dialogue?:
 }
 
 function makeChestEvent(id: number, x: number, y: number): MapEvent {
+  // Direction Fix off, turn through the three "opening" rows of !Chest.png, then
+  // lock it again. Hoisted so the 505 rows below are derived from this array
+  // rather than restated -- see setMoveRoute in commandBuilder for why the
+  // editor needs them.
+  const openRoute: EventCommand[] = [
+    { code: 36, indent: 0, parameters: [] },
+    { code: 17, indent: 0, parameters: [] },
+    { code: 15, indent: 0, parameters: [3] },
+    { code: 18, indent: 0, parameters: [] },
+    { code: 15, indent: 0, parameters: [3] },
+    { code: 19, indent: 0, parameters: [] },
+    { code: 15, indent: 0, parameters: [3] },
+    { code: 35, indent: 0, parameters: [] },
+    { code: 0, indent: 0, parameters: [] }
+  ];
   return {
     id: id, name: 'Chest', note: '', x: x, y: y,
     pages: [{
@@ -1796,19 +1811,10 @@ function makeChestEvent(id: number, x: number, y: number): MapEvent {
       image: { characterIndex: 0, characterName: '!Chest', direction: 2, pattern: 0, tileId: 0 },
       list: [
         { code: 250, indent: 0, parameters: [{ name: 'Chest1', pan: 0, pitch: 100, volume: 90 }] },
-        { code: 205, indent: 0, parameters: [0, {
-          list: [
-            { code: 36, indent: 0, parameters: [] },
-            { code: 17, indent: 0, parameters: [] },
-            { code: 15, indent: 0, parameters: [3] },
-            { code: 18, indent: 0, parameters: [] },
-            { code: 15, indent: 0, parameters: [3] },
-            { code: 19, indent: 0, parameters: [] },
-            { code: 15, indent: 0, parameters: [3] },
-            { code: 35, indent: 0, parameters: [] },
-            { code: 0, indent: 0, parameters: [] }
-          ], repeat: false, skippable: true, wait: true
-        }] },
+        { code: 205, indent: 0, parameters: [0, { list: openRoute, repeat: false, skippable: true, wait: true }] },
+        ...openRoute
+          .filter((step) => step.code !== 0)
+          .map((step): EventCommand => ({ code: 505, indent: 0, parameters: [step] })),
         { code: 101, indent: 0, parameters: ['', 0, 0, 2] },
         { code: 401, indent: 0, parameters: ['Found treasure!'] },
         // Self Switch A = ON (MV: command123 sets value = params[1] === 0) so

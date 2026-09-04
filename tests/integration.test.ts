@@ -331,6 +331,44 @@ describe("generator event regressions (5.2.0: 4.1.1 self-switch fix missed the i
     expect(ev.pages[1].image.direction).toBe(8);
   });
 
+  it("emits the 505 rows the editor needs for every Set Move Route", async () => {
+    // A 205 carries its route in parameters[1], which is all the engine reads --
+    // there is no command505, and executeCommand skips codes with no handler. The
+    // EDITOR builds its visible command list from the 505 rows instead, so a route
+    // without them plays correctly and shows up blank when the project is opened,
+    // which reads as "the route was lost".
+    //
+    // The rule comes from the official DLC sample projects, which are authored in
+    // the editor: all 42 Set Move Route commands there carry exactly one 505 per
+    // step with the code-0 terminator excluded, and all 181 of their parameters[0]
+    // equal the matching step object.
+    const check = (list: any[], where: string) => {
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].code !== 205) continue;
+        const steps = list[i].parameters[1].list.filter((s: any) => s.code !== 0);
+        const rows: any[] = [];
+        for (let j = i + 1; j < list.length && list[j].code === 505; j++) rows.push(list[j]);
+        expect(rows.length, where + ": one 505 per step").toBe(steps.length);
+        steps.forEach((step: any, k: number) => {
+          expect(rows[k].parameters[0], where + ": 505 row " + k).toEqual(step);
+          expect(rows[k].indent, where + ": 505 indent").toBe(list[i].indent);
+        });
+      }
+    };
+
+    check(cmd.setMoveRoute(0, [cmd.moveRouteCommand(36, []), cmd.moveRouteCommand(15, [3]), cmd.moveRouteCommand(0, [])]), "cmd.setMoveRoute");
+    makeChestEvent(1, 5, 5).pages.forEach((pg: any, i: number) => check(pg.list, "makeChestEvent page " + i));
+
+    // And across everything a real generated map contains, so a new event maker
+    // cannot reintroduce a bare 205.
+    const res = await dispatchTool("generate_map", { mode: "procedural", theme: "dungeon", width: 24, height: 18, seed: 4242, name: "RutaTest" }) as any;
+    const map = dataFile("Map" + String(res.mapId).padStart(3, "0") + ".json");
+    map.events.forEach((ev: any) => {
+      if (!ev) return;
+      ev.pages.forEach((pg: any, i: number) => check(pg.list, "generated event " + ev.id + " page " + i));
+    });
+  });
+
   it("makeBossEvent turns Self Switch A ON on victory so generated bosses stay defeated", () => {
     const ev = makeBossEvent(0, 5, 5, 1);
     const ss = ev.pages[0].list.find((c: any) => c.code === 123);
