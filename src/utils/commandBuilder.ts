@@ -620,7 +620,22 @@ function changeMapDisplayName(displayName: string): EventCommand[] {
  */
 function setMoveRoute(eventId: number, routeCommands: EventCommand[]): EventCommand[] {
   return [
-    { code: 205, indent: 0, parameters: [eventId, { list: routeCommands, repeat: false, skippable: true, wait: true }] }
+    { code: 205, indent: 0, parameters: [eventId, { list: routeCommands, repeat: false, skippable: true, wait: true }] },
+    // The editor builds its command list from these 505 rows, not from
+    // parameters[1]: one row per step, the code-0 terminator excluded, each
+    // carrying the step object itself. Verified against every Set Move Route in
+    // the official DLC sample projects -- 42 of 42 follow the rule exactly, and
+    // all 181 of their parameters[0] equal the matching step.
+    //
+    // The engine never reads them: there is no command505, and executeCommand
+    // skips any code without a handler. So a route without them plays correctly
+    // and shows up blank in the editor, which is the worse failure -- it looks
+    // like the route was lost.
+    ...routeCommands
+      .filter(function(step) { return step.code !== 0; })
+      .map(function(step): EventCommand {
+        return { code: 505, indent: 0, parameters: [step] };
+      })
   ];
 }
 
