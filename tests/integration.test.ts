@@ -224,6 +224,7 @@ describe("manage_map_event", () => {
   it("preset chest plays the standard opening animation before switching to its open page", async () => {
     mkdirSync(path.join(projectDir, "img", "characters"), { recursive: true });
     writeFileSync(path.join(projectDir, "img", "characters", "!Chest.png"), "x");
+    writeFileSync(path.join(projectDir, "img", "characters", "!$Gate1.png"), "x"); // two prefixes, as the RTP ships it
     const ev = await dispatchTool("manage_map_event", {
       action: "create", preset: "chest", mapId: 1, x: 3, y: 3,
       items: [{ type: "item", id: 1, amount: 2 }]
@@ -309,6 +310,64 @@ describe("manage_map_event", () => {
       pages: [{ image: { characterIndex: 0, characterName: "DoesNotExist", direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
     }) as any;
     expect(ev2.pages[0].image.characterName).toBe("");
+  });
+
+  it("resolves a sprite whose file carries BOTH object prefixes", async () => {
+    // '!' (no shift/bush) and '$' (single-character sheet) are independent and
+    // combine: the RTP ships '!$Gate1.png' and '!$Gate2.png'. Adding one prefix
+    // at a time never reaches a two-prefix file, so "Gate1" and "!Gate1" both
+    // resolved to '' and the gate was written as an invisible event.
+    for (const asked of ["Gate1", "!Gate1", "$Gate1"]) {
+      const ev = await dispatchTool("manage_map_event", {
+        action: "create", mapId: 1, x: 8, y: 8, name: "Gate",
+        pages: [{ image: { characterIndex: 0, characterName: asked, direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+      }) as any;
+      expect(ev.pages[0].image.characterName, "asked for " + asked).toBe("!$Gate1");
+    }
+  });
+
+  it("does not cache an empty img/characters, so assets added later still validate", async () => {
+    // resolveAsset reads "no assets on disk" as "can't validate" and passes the
+    // name straight through. Caching that miss disabled sprite validation for
+    // the rest of the process -- a project scaffolded before its img/ is filled
+    // would silently stop being checked, letting the fatal MV Loading Error this
+    // guard exists to prevent back in.
+    const bare = mkdtempSync(path.join(tmpdir(), "rpgmv-noassets-"));
+    try {
+      mkdirSync(path.join(bare, "data"));
+      writeFileSync(path.join(bare, "data", "System.json"), JSON.stringify({ gameTitle: "Bare", switches: ["", ""], variables: ["", ""] }));
+      writeFileSync(path.join(bare, "data", "MapInfos.json"), JSON.stringify([null, { id: 1, name: "Bare", order: 1, parentId: 0, expanded: false, scrollX: 0, scrollY: 0 }]));
+      writeFileSync(path.join(bare, "data", "Map001.json"), JSON.stringify({
+        width: 10, height: 10, tilesetId: 1, displayName: "", data: new Array(600).fill(0), events: [null],
+        encounterList: [], encounterStep: 30,
+        bgm: { name: "", pan: 0, pitch: 100, volume: 90 }, bgs: { name: "", pan: 0, pitch: 100, volume: 90 },
+        autoplayBgm: false, autoplayBgs: false, disableDashing: false, note: "",
+        parallaxLoopX: false, parallaxLoopY: false, parallaxName: "", parallaxShow: true,
+        parallaxSx: 0, parallaxSy: 0, scrollType: 0, specifyBattleback: false,
+        battleback1Name: "", battleback2Name: ""
+      }));
+      projectTools.initProjectPath(bare);
+
+      // No img/ yet: the name is passed through untouched, and that must not be
+      // remembered.
+      const before = await dispatchTool("manage_map_event", {
+        action: "create", mapId: 1, x: 2, y: 2, name: "Early",
+        pages: [{ image: { characterIndex: 0, characterName: "Chest", direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+      }) as any;
+      expect(before.pages[0].image.characterName).toBe("Chest");
+
+      mkdirSync(path.join(bare, "img", "characters"), { recursive: true });
+      writeFileSync(path.join(bare, "img", "characters", "!Chest.png"), "x");
+
+      const after = await dispatchTool("manage_map_event", {
+        action: "create", mapId: 1, x: 4, y: 4, name: "Late",
+        pages: [{ image: { characterIndex: 0, characterName: "Chest", direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+      }) as any;
+      expect(after.pages[0].image.characterName).toBe("!Chest");
+    } finally {
+      projectTools.initProjectPath(projectDir);
+      rmSync(bare, { recursive: true, force: true });
+    }
   });
 
   it("update and delete work and report missing events", async () => {

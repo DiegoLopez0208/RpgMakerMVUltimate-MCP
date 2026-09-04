@@ -725,13 +725,38 @@ async function replaceMapTile(projectPath: string, mapId: number, layer: number,
 // RPG Maker object prefixes agents commonly miss ('!'/'$'), and blanking
 // (invisible, harmless) anything it still can't resolve.
 const _assetCache = new Map<string, Set<string>>();
+const _bareCharacterCache = new Map<string, Map<string, string>>();
+
+function stripSpritePrefixes(name: string): string {
+  return name.replace(/^[!$]+/, '');
+}
+
+// Bare name -> the actual filename carrying it. No two sprites in the RTP share
+// a bare name, and a first-wins collision still beats blanking the sprite.
+function bareCharacterIndex(dir: string): Map<string, string> {
+  const hit = _bareCharacterCache.get(dir);
+  if (hit) return hit;
+  const index = new Map<string, string>();
+  for (const asset of listAssets(dir)) {
+    const bare = stripSpritePrefixes(asset);
+    if (!index.has(bare)) index.set(bare, asset);
+  }
+  if (index.size > 0) _bareCharacterCache.set(dir, index);
+  return index;
+}
 function listAssets(dir: string): Set<string> {
-  if (_assetCache.has(dir)) return _assetCache.get(dir)!;
+  const hit = _assetCache.get(dir);
+  if (hit) return hit;
   let set: Set<string>;
   try {
     set = new Set(readdirSync(dir).map(function (f) { return f.replace(/\.(png|ogg|m4a|rpgmvo|rpgmvm)$/i, ''); }));
   } catch { set = new Set(); }
-  _assetCache.set(dir, set);
+  // Never cache an empty result. resolveAsset reads "no assets" as "can't
+  // validate" and passes the name through untouched, so caching one miss --
+  // a project scaffolded before its img/ is populated, an asset folder created
+  // later in the same session -- would disable sprite validation for the rest
+  // of the process and let the fatal Loading Error this guards against back in.
+  if (set.size > 0) _assetCache.set(dir, set);
   return set;
 }
 
@@ -744,11 +769,15 @@ function resolveAsset(projectPath: string, subdir: string, name: string): string
   const set = listAssets(dir);
   if (set.size === 0) return null; // can't validate
   if (set.has(name)) return name;
-  // RPG Maker object-character prefixes agents commonly miss.
+  // RPG Maker object-character prefixes agents commonly miss. '!' (no shift, no
+  // bush) and '$' (single-character sheet) are independent flags, order-free,
+  // and they combine -- the RTP ships '!$Gate1' and '!$Gate2'. Trying them one
+  // at a time never reaches a two-prefix file, so 'Gate1' and '!Gate1' both
+  // resolved to '' and the gate rendered invisible. Match on the bare name and
+  // let the file on disk say which prefixes it carries.
   if (subdir === 'img/characters') {
-    if (!name.startsWith('!') && set.has('!' + name)) return '!' + name;
-    if (name.startsWith('!') && set.has(name.slice(1))) return name.slice(1);
-    if (!name.startsWith('$') && set.has('$' + name)) return '$' + name;
+    const match = bareCharacterIndex(dir).get(stripSpritePrefixes(name));
+    if (match) return match;
   }
   return '';
 }
