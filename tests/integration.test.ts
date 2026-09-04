@@ -326,6 +326,19 @@ describe("manage_map_event", () => {
     }
   });
 
+  it("writes data files compact, the way the editor does", async () => {
+    // RPGMV.exe writes these minified. Pretty-printing put every integer of a
+    // map's tile array on its own line, so the file was 2.6x its size and the
+    // user's first Ctrl+S in the editor rewrote every line of it.
+    // Re-minifying a file that is already minified is a no-op, so this compares
+    // the bytes on disk against exactly that.
+    await dispatchTool("generate_map", { mode: "procedural", theme: "dungeon", width: 24, height: 18, seed: 77, name: "Compacto" });
+    for (const name of ["MapInfos.json", "Map001.json", "System.json"]) {
+      const raw = readFileSync(path.join(projectDir, "data", name), "utf-8");
+      expect(raw, name + " is not minified").toBe(JSON.stringify(JSON.parse(raw)));
+    }
+  });
+
   it("does not cache an empty img/characters, so assets added later still validate", async () => {
     // resolveAsset reads "no assets on disk" as "can't validate" and passes the
     // name straight through. Caching that miss disabled sprite validation for
