@@ -1,10 +1,10 @@
-import path from "path";
 import { readFile, access } from 'fs/promises';
 import type { MapEvent, GeneratorOptions, MapTemplate, EventCommand } from '../types/rpgmaker.js';
 import { applyAutotileShapes } from './autotile.js';
 import { pickStamp, stampObject, hasStamps, getStamps, type StampCategory, type Stamp } from './stamps.js';
 import { isTileA1, isRoofTile, isWallSideTile } from './engine.js';
 import { isStandable } from './placement.js';
+import { knowledgePath } from './knowledgePath.js';
 
 // Real scanned tiles for the active project's tileset (optional, set by
 // generateTileLayoutV3 when the caller passes availableTiles). Used to adapt the
@@ -1084,7 +1084,7 @@ function normalizeTemplateShadows(data: number[], width: number, height: number)
 }
 
 async function cloneTemplateForTheme(data: number[], w: number, h: number, theme: string, templateId?: number, rng?: PRNG, preferredTileset?: number): Promise<{ x: number; y: number }[] | null> {
-  const idxPath = path.join(import.meta.dirname, "..", "knowledge", "map-templates.json");
+  const idxPath = knowledgePath("map-templates.json");
   let idx: TemplateMeta[];
   try {
     await access(idxPath);
@@ -1133,7 +1133,7 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
   }
   if (!picked) return null;
   const fn = "Map" + String(picked.id).padStart(3, "0") + ".json";
-  const fp = path.join(import.meta.dirname, "..", "knowledge", "maps", fn);
+  const fp = knowledgePath("maps", fn);
   try {
     await access(fp);
   } catch {
@@ -2060,7 +2060,7 @@ let TEMPLATE_INDEX: MapTemplate[] | null = null;
 
 async function loadTemplateIndex(): Promise<MapTemplate[]> {
   if (TEMPLATE_INDEX) return TEMPLATE_INDEX;
-  const idxPath = path.join(import.meta.dirname, "..", "knowledge", "map-templates.json");
+  const idxPath = knowledgePath("map-templates.json");
   try {
     await access(idxPath);
     TEMPLATE_INDEX = JSON.parse(await readFile(idxPath, "utf8")) as MapTemplate[];
@@ -2079,7 +2079,7 @@ async function searchTemplates(category: string, theme: string): Promise<MapTemp
 
 async function generateFromTemplate(templateId: number, opts: GeneratorOptions = {}): Promise<{ data: number[]; width: number; height: number; events: (MapEvent | null)[] } | null> {
   const fn = "Map" + String(templateId).padStart(3, "0") + ".json";
-  const fp = path.join(import.meta.dirname, "..", "knowledge", "maps", fn);
+  const fp = knowledgePath("maps", fn);
   let map: { width: number; height: number; data: number[]; events?: (MapEvent | null)[] };
   try {
     await access(fp);

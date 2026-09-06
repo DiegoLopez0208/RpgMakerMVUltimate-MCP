@@ -1,9 +1,7 @@
 import path from "path";
 import { readFile, access } from 'fs/promises';
-import { fileURLToPath } from 'url';
+import { knowledgePath } from "../utils/knowledgePath.js";
 import type { MapData } from "../types/rpgmaker.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface MapTemplate {
   id: number;
@@ -20,13 +18,13 @@ let _index: MapTemplate[] | null = null;
 let _mapsDir: string = "";
 export function getTemplatesDir(): string {
   if (!_mapsDir) {
-    _mapsDir = path.join(__dirname, "..", "..", "knowledge", "maps");
+    _mapsDir = knowledgePath("maps");
   }
   return _mapsDir;
 }
 export async function loadIndex(): Promise<MapTemplate[]> {
   if (_index) return _index;
-  const idxPath = path.join(__dirname, "..", "..", "knowledge", "map-templates.json");
+  const idxPath = knowledgePath("map-templates.json");
   try {
     await access(idxPath);
     _index = JSON.parse(await readFile(idxPath, "utf8")) as MapTemplate[];
