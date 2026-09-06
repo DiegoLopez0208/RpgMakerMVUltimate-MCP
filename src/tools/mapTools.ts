@@ -8,6 +8,7 @@ import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Par
 import { generateTileLayoutV3, generateFromTemplate, templateTilesetId, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 import { nearestStandable, chooseSpawn } from '../utils/placement.js';
+import { normalizeMapEvents } from '../utils/eventNormalize.js';
 
 // Load the passage flags for a map's tileset (Tilesets[id].flags, one entry per
 // tileId). Returns null if Tilesets.json is missing or the tileset has no flags
@@ -471,6 +472,9 @@ async function createMapFromTemplate(projectPath: string, params: Record<string,
     };
 
     const mapId = await getNextMapId(projectPath);
+    // This path writes directly rather than through writeMapJson (which would
+    // also blank asset references the project lacks), so normalise here.
+    normalizeMapEvents(map);
     await writeJsonDirect(getMapPath(projectPath, mapId), map);
 
     const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
@@ -1379,11 +1383,29 @@ async function searchMapEvents(projectPath: string, mapId: number, query: string
   });
 }
 
+/**
+ * A whole number, or a string holding exactly one.
+ *
+ * The old parseInt-based version accepted anything that merely started with
+ * digits and silently truncated the rest, so "2.5" became 2, "2x" became 2,
+ * "0x10" became 16 and "1e3" became 1 (issue #15). Those all reach the project
+ * JSON as map sizes, coordinates and ids, where a quietly wrong number is worse
+ * than a rejected call.
+ */
 function toNum(val: unknown, name: string): number {
   if (val === undefined || val === null) throw new Error('Missing required parameter: ' + name);
-  const n = typeof val === 'number' ? val : parseInt(String(val), 10);
-  if (isNaN(n)) throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected number or numeric string');
-  return n;
+  if (typeof val === 'number') {
+    if (!Number.isSafeInteger(val)) throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected a whole number');
+    return val;
+  }
+  if (typeof val === 'string') {
+    const t = val.trim();
+    if (/^[+-]?\d+$/.test(t)) {
+      const n = Number(t);
+      if (Number.isSafeInteger(n)) return n;
+    }
+  }
+  throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected a whole number or a numeric string');
 }
 
 // ─── Internal Helper Functions ───
@@ -1453,6 +1475,10 @@ async function readJsonDirect(filePath: string) {
 // sanitizing is idempotent.
 async function writeMapJson(projectPath: string, filePath: string, map: RpgMakerMap) {
   sanitizeMapAssets(projectPath, map);
+  // Last line of defence for issue #15: whatever route the event data took to
+  // get here, the engine-defined numeric slots hit disk as numbers, the way the
+  // editor writes them.
+  normalizeMapEvents(map);
   await writeJsonDirect(filePath, map);
 }
 

@@ -471,8 +471,10 @@ export const TOOL_NAMES = [
 
 export async function routeTool(executeTool: ExecuteTool, projectPath: string, name: string, args: Record<string, unknown>): Promise<unknown> {
   // Structural validation of the consolidated inputs before they expand into
-  // legacy calls (no-op for tools without a schema; never rewrites args).
-  validateConsolidated(name, args);
+  // legacy calls (no-op for tools without a schema). The parsed args replace the
+  // raw ones so every declared numeric field is a real number from here on —
+  // dropping them is what let "x": "1" reach the map file (issue #15).
+  args = validateConsolidated(name, args);
   switch (name) {
     case 'query_database': return queryDatabase(executeTool, projectPath, args);
     case 'create_database_entry': return createDatabaseEntry(executeTool, args);
