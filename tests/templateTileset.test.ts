@@ -93,6 +93,26 @@ describe("mode template preserves the source tileset", () => {
     expect(r.events.filter(Boolean).length).toBe(1);
   });
 
+  it("a resized clone keeps every surviving event at its own index", async () => {
+    // The engine reads an event's id from its index in this array
+    // (Game_Map.setupEvents), so an out-of-bounds event has to become null
+    // rather than be spliced out - compacting renumbers everything after it.
+    // Template 11 is 30x30 with three events, one of them beyond 20x20.
+    type Ev = { id: number; x: number; y: number } | null;
+    const full = await generateFromTemplate(11, { keepEvents: true } as never) as { events: Ev[] };
+    const cropped = await generateFromTemplate(11, { keepEvents: true, width: 20, height: 20 } as never) as { events: Ev[] };
+    expect(full.events.filter(Boolean).length).toBe(3);
+    expect(cropped.events.filter(Boolean).length).toBe(2);
+    expect(cropped.events.length).toBe(full.events.length);
+    cropped.events.forEach((e, i) => {
+      if (!e) return;
+      expect(e.id, "index " + i).toBe(full.events[i]!.id);
+      expect(e.id, "id must equal its index").toBe(i);
+      expect(e.x).toBeLessThan(20);
+      expect(e.y).toBeLessThan(20);
+    });
+  });
+
   it("keepEvents false still yields no events", async () => {
     const r = await generateFromTemplate(33, { keepEvents: false } as never) as { events: unknown[] };
     expect(r.events.filter(Boolean).length).toBe(0);

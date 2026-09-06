@@ -2141,12 +2141,18 @@ async function generateFromTemplate(templateId: number, opts: GeneratorOptions =
       }
     }
   }
-  // Resized: keep the template's events, dropping any that fall outside the new
+  // Resized: keep the template's events, blanking any that fall outside the new
   // bounds. Before, a resize silently returned no events at all even with
   // keepEvents set, so `generate_map mode:"template"` with a custom size lost
   // every event the template carried.
+  //
+  // Out-of-bounds events become null rather than being removed: the engine
+  // takes an event's id from its INDEX in this array (Game_Map.setupEvents),
+  // so compacting the array would renumber every event after the hole.
   const events = keepEvents
-    ? (map.events || []).filter(function (e) { return !e || (Number(e.x) < w && Number(e.y) < h); })
+    ? (map.events || []).map(function (e) {
+        return e && Number(e.x) < w && Number(e.y) < h ? e : null;
+      })
     : [];
   return { data: data, width: w, height: h, tilesetId: tilesetId, events: events };
 }

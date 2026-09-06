@@ -33,7 +33,9 @@ function numericPreprocess(allowFraction: boolean) {
 
 /** A whole number, or a string holding exactly one. Bounds are inclusive. */
 function intField(min?: number, max?: number) {
-  let n = z.number().int();
+  // The message matters: an agent that sent "2.5" needs to read why a
+  // number-looking string was refused, not just "expected number".
+  let n = z.number({ invalid_type_error: "expected a whole number, or a string holding exactly one" }).int();
   if (min !== undefined) n = n.min(min);
   if (max !== undefined) n = n.max(max);
   return z.preprocess(numericPreprocess(false), n);
@@ -41,7 +43,7 @@ function intField(min?: number, max?: number) {
 
 /** Same, allowing fractions. */
 function numField(min?: number, max?: number) {
-  let n = z.number();
+  let n = z.number({ invalid_type_error: "expected a number, or a string holding one" });
   if (min !== undefined) n = n.min(min);
   if (max !== undefined) n = n.max(max);
   return z.preprocess(numericPreprocess(true), n);
