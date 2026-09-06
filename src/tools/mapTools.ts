@@ -61,6 +61,28 @@ async function validateTilesetOverride(projectPath: string, override: unknown): 
   return n;
 }
 
+// RPG Maker MV's editor caps a map at 256 tiles per side. Data beyond that is
+// not something the editor can open, so refuse to write it.
+const MAX_MAP_DIMENSION = 256;
+
+/**
+ * A map width or height: a whole number within the range the editor supports,
+ * or the fallback when the caller passed nothing.
+ *
+ * These used to go straight into Number(): `width: "2.5"` produced a map with
+ * `"width": 2.5` and a fractional-length data array, `"1e3"` silently produced
+ * a 1000-tile-wide map, and `"2x"` became NaN and fell back without a word
+ * (issue #15).
+ */
+function mapDimension(value: unknown, name: string, fallback: number): number {
+  if (value === undefined || value === null) return fallback;
+  const n = toNum(value, name);
+  if (n < 1 || n > MAX_MAP_DIMENSION) {
+    throw new Error('Invalid ' + name + ': ' + n + ' - a map side must be between 1 and ' + MAX_MAP_DIMENSION + ' tiles.');
+  }
+  return n;
+}
+
 /**
  * Get map info for all maps in the project.
  * Reads MapInfos.json which contains the map tree structure
@@ -121,8 +143,8 @@ async function getNextMapId(projectPath: string) {
  * @param {object} params - Map creation parameters
  */
 async function createMap(projectPath: string, params: CreateMapParams | CreateMapV3Params) {
-    const width = params.width || 17;
-    const height = params.height || 13;
+    const width = mapDimension(params.width, 'width', 17);
+    const height = mapDimension(params.height, 'height', 13);
     const displayName = params.displayName || '';
     const bgmName = params.bgmName || '';
     const note = params.note || '';
@@ -196,8 +218,8 @@ async function createMap(projectPath: string, params: CreateMapParams | CreateMa
 }
 
 async function createMapV3(projectPath: string, params: CreateMapV3Params) {
-    const width = params.width || 30;
-    const height = params.height || 25;
+    const width = mapDimension(params.width, 'width', 30);
+    const height = mapDimension(params.height, 'height', 25);
     const displayName = params.displayName || '';
     const bgmName = params.bgmName || '';
     const note = params.note || '';
@@ -439,8 +461,8 @@ async function createMapFromTemplate(projectPath: string, params: Record<string,
     // Validated before the clone runs, so a bad override never reaches a write.
     const overrideTileset = await validateTilesetOverride(projectPath, params.tilesetId);
     const tileResult = await generateFromTemplate(templateId, {
-        width: params.width !== undefined ? Number(params.width) : undefined,
-        height: params.height !== undefined ? Number(params.height) : undefined,
+        width: params.width !== undefined ? mapDimension(params.width, 'width', 0) : undefined,
+        height: params.height !== undefined ? mapDimension(params.height, 'height', 0) : undefined,
         keepEvents: params.keepEvents !== false
     });
     if (!tileResult) {
@@ -496,11 +518,20 @@ async function createMapFromTemplate(projectPath: string, params: Record<string,
 async function createMapBatch(projectPath: string, batchSpec: unknown[]) {
     const results: unknown[] = [];
     const mapIds: Record<string, number> = {};
+    // Validate every spec before writing anything: a batch that failed on its
+    // third entry used to leave the first two on disk with no way to tell the
+    // caller which ones landed.
+    for (let i = 0; i < batchSpec.length; i++) {
+        const spec = batchSpec[i] as Record<string, unknown>;
+        mapDimension(spec.width, 'batch[' + i + '].width', 30);
+        mapDimension(spec.height, 'batch[' + i + '].height', 25);
+        await validateTilesetOverride(projectPath, spec.tilesetId);
+    }
     for (let i = 0; i < batchSpec.length; i++) {
         const spec = batchSpec[i] as Record<string, unknown>;
         const params: CreateMapV3Params = {
-            width: (spec.width as number) || 30,
-            height: (spec.height as number) || 25,
+            width: mapDimension(spec.width, 'batch[' + i + '].width', 30),
+            height: mapDimension(spec.height, 'batch[' + i + '].height', 25),
             tilesetId: (spec.tilesetId as number) || THEME_TILESET[(spec.theme as string) || 'forest'] || 2,
             displayName: (spec.displayName as string) || (spec.name as string) || '',
             name: (spec.name as string) || '',

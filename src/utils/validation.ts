@@ -208,14 +208,21 @@ const GenerateMapSchema = z.object({
   locked: z.boolean().optional(),
   loop: z.boolean().optional(),
   keepProps: z.boolean().optional(),
-  width: idLike.optional(),
-  height: idLike.optional(),
-  tilesetId: idLike.optional(),
+  // Whole numbers, so "2.5" / "1e3" / "" fail here rather than becoming a
+  // fractional or 1000-tile-wide map (issue #15). 256 is the editor's cap.
+  width: intField(1, 256).optional(),
+  height: intField(1, 256).optional(),
+  // Range only: whether the id exists in this project is checked in mapTools,
+  // which can name the tilesets that do.
+  tilesetId: intField(1).optional(),
   theme: z.string().optional(),
-  seed: idLike.optional(),
+  seed: intField(0).optional(),
   batch: z.array(z.record(z.unknown())).optional(),
-  sourceMapId: idLike.optional(),
-  templateId: idLike.optional(),
+  sourceMapId: intField(1).optional(),
+  // Polymorphic on purpose: a bundled template is a number, while mode
+  // "semantic" re-materialises one of the project's own mined layouts by a
+  // "mined-<mapId>" id (templateMiner.ts).
+  templateId: z.union([intField(1), z.string().regex(/^mined-\d+$/)]).optional(),
 }).passthrough();
 
 const encounterSchema = z.object({

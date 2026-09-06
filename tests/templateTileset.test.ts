@@ -132,6 +132,58 @@ describe("tilesetId override is validated before anything is written", () => {
   });
 });
 
+describe("map dimensions are whole numbers inside the editor's range", () => {
+  // width/height went straight into Number(), so "2.5" wrote a map with
+  // "width": 2.5 and a fractional-length data array, "1e3" wrote a 1000-tile
+  // side, and "2x" became NaN and fell back silently (issue #15).
+  it.each([
+    ["fraction", "2.5"],
+    ["trailing junk", "2x"],
+    ["hex", "0x10"],
+    ["exponent", "1e3"],
+    ["empty string", ""],
+    ["zero", 0],
+    ["over the editor cap", 300],
+  ])("rejects a %s width without creating a map", async (_label, width) => {
+    const before = mapFileCount();
+    await expect(dispatchTool("generate_map", { mode: "template", templateId: 33, width })).rejects.toThrow();
+    expect(mapFileCount()).toBe(before);
+  });
+
+  it("accepts a numeric-string size and writes a coherent data array", async () => {
+    const res = await dispatchTool("generate_map", { mode: "template", templateId: 33, width: "25", height: "20" }) as { mapId: number };
+    const m = mapOf(res.mapId);
+    expect([m.width, m.height]).toEqual([25, 20]);
+    expect(m.data.length).toBe(25 * 20 * 6);
+    expect(Number.isInteger(m.width)).toBe(true);
+  });
+
+  it("accepts the editor's maximum side", async () => {
+    const res = await dispatchTool("generate_map", { mode: "procedural", theme: "forest", width: 256, height: 20, seed: 2 }) as { mapId: number };
+    expect(mapOf(res.mapId).width).toBe(256);
+  });
+
+  it("guards batch specs too", async () => {
+    const before = mapFileCount();
+    await expect(dispatchTool("generate_map", {
+      mode: "batch",
+      batch: [{ key: "ok", name: "OK", theme: "forest", width: 20, height: 20 }, { key: "bad", name: "Bad", theme: "forest", width: "2.5", height: 20 }],
+    })).rejects.toThrow(/batch\[1\]\.width/);
+    // Every spec is validated before any is written, so a bad entry anywhere in
+    // the batch leaves no half-written run behind.
+    expect(mapFileCount()).toBe(before);
+  });
+
+  it("guards a bad tileset in a batch spec the same way", async () => {
+    const before = mapFileCount();
+    await expect(dispatchTool("generate_map", {
+      mode: "batch",
+      batch: [{ key: "ok", name: "OK", theme: "forest", width: 20, height: 20 }, { key: "bad", name: "Bad", theme: "forest", width: 20, height: 20, tilesetId: 99 }],
+    })).rejects.toThrow(/does not exist in this project/);
+    expect(mapFileCount()).toBe(before);
+  });
+});
+
 describe("procedural mode with a forced template", () => {
   it("uses the forced template's tileset, not the theme default", async () => {
     // theme "town" defaults to tileset 2 (Outside); template 33 is Inside (3).
