@@ -5,7 +5,7 @@ import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
 
-import { generateTileLayoutV3, generateFromTemplate, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
+import { generateTileLayoutV3, generateFromTemplate, templateTilesetId, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 import { nearestStandable, chooseSpawn } from '../utils/placement.js';
 
@@ -19,6 +19,45 @@ async function loadTilesetFlags(projectPath: string, tilesetId: number): Promise
     if (ts && Array.isArray(ts.flags) && ts.flags.length > 0) return ts.flags;
   } catch { /* no tileset data → skip snapping */ }
   return null;
+}
+
+/**
+ * The tileset IDs this project actually defines, or null when Tilesets.json is
+ * missing, unreadable or still the bare [null] placeholder — i.e. when there is
+ * nothing to check an id against. Same posture as loadTilesetFlags: absent data
+ * disables the check rather than failing the call.
+ */
+async function loadTilesetIds(projectPath: string): Promise<Set<number> | null> {
+  try {
+    const tilesets = await readJson(projectPath, 'Tilesets.json') as Array<unknown>;
+    if (!Array.isArray(tilesets)) return null;
+    const ids = new Set<number>();
+    for (let i = 1; i < tilesets.length; i++) if (tilesets[i]) ids.add(i);
+    return ids.size > 0 ? ids : null;
+  } catch { /* no tileset data → nothing to validate against */ }
+  return null;
+}
+
+/**
+ * Check a caller-supplied tilesetId. Returns undefined when none was given,
+ * the number when it is usable, and throws otherwise.
+ *
+ * Callers run this BEFORE generating or writing anything, so a bad id fails the
+ * call instead of silently becoming 1 the way the old `params.tilesetId || 1`
+ * did. The membership check is skipped when the project has no usable
+ * Tilesets.json — there is nothing to check against then.
+ */
+async function validateTilesetOverride(projectPath: string, override: unknown): Promise<number | undefined> {
+  if (override === undefined || override === null) return undefined;
+  const n = typeof override === 'number' ? override : Number(override);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error('Invalid tilesetId: ' + JSON.stringify(override) + ' - expected a positive integer. List the tilesets of this project with query_database entity "tilesets".');
+  }
+  const ids = await loadTilesetIds(projectPath);
+  if (ids && !ids.has(n)) {
+    throw new Error('Tileset ' + n + ' does not exist in this project. Available: ' + Array.from(ids).sort(function (a, b) { return a - b; }).join(', ') + '. List them with query_database entity "tilesets".');
+  }
+  return n;
 }
 
 /**
@@ -167,7 +206,17 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     // Pick the tileset whose tiles this theme emits (Outside/Inside/Dungeon/
     // Overworld) unless the caller forces one — otherwise e.g. a town's Outside
     // tiles land on the Overworld tileset and render as garbage.
-    const tilesetId = params.tilesetId || THEME_TILESET[theme] || 1;
+    // Validated first, so a bad override fails before anything is generated.
+    const overrideTileset = await validateTilesetOverride(projectPath, params.tilesetId);
+    const themeTileset = THEME_TILESET[theme] || 1;
+    // A forced templateId clones tile data authored for THAT template's tileset,
+    // which need not be the theme default. Resolve it up front so the tile scan
+    // and passability flags below come from the tileset the map will render
+    // with, not from one the cloned tiles were never drawn for (issue #15).
+    const forcedTemplateTileset = params.templateId !== undefined && params.useTemplate !== false
+        ? await templateTilesetId(params.templateId)
+        : undefined;
+    const tilesetId = overrideTileset ?? forcedTemplateTileset ?? themeTileset;
 
     const v3opts: Record<string, unknown> = {
         seed: seed,
@@ -196,6 +245,11 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
 
     const tileResult = await generateTileLayoutV3(width, height, theme, v3opts);
 
+    // The layout may have been cloned from a template whose tileset differs from
+    // the theme default (only reachable when the auto-pick finds no same-tileset
+    // candidate). Write the tileset the tile data actually belongs to.
+    const mapTilesetId = overrideTileset ?? tileResult.tilesetId ?? tilesetId;
+
     const map: RpgMakerMap = {
         autoplayBgm: bgmName ? true : false,
         autoplayBgs: false,
@@ -211,7 +265,7 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
         parallaxName: '', parallaxShow: true,
         parallaxSx: 0, parallaxSy: 0,
         scrollType: 0, specifyBattleback: false,
-        tilesetId: tilesetId,
+        tilesetId: mapTilesetId,
         data: tileResult.data,
         events: tileResult.events
     };
@@ -381,6 +435,8 @@ function makeInteriorOccupant(id: number, x: number, y: number, roomType: string
  */
 async function createMapFromTemplate(projectPath: string, params: Record<string, unknown>) {
     const templateId = toNum(params.templateId, 'templateId');
+    // Validated before the clone runs, so a bad override never reaches a write.
+    const overrideTileset = await validateTilesetOverride(projectPath, params.tilesetId);
     const tileResult = await generateFromTemplate(templateId, {
         width: params.width !== undefined ? Number(params.width) : undefined,
         height: params.height !== undefined ? Number(params.height) : undefined,
@@ -406,7 +462,10 @@ async function createMapFromTemplate(projectPath: string, params: Record<string,
         parallaxName: '', parallaxShow: true,
         parallaxSx: 0, parallaxSy: 0,
         scrollType: 0, specifyBattleback: false,
-        tilesetId: (params.tilesetId as number) || 1,
+        // The cloned tile data is authored for the template's tileset. Writing 1
+        // here (the old `|| 1`) mismatched 105 of the 111 bundled templates and
+        // rendered them as garbage in the engine (issue #15).
+        tilesetId: overrideTileset ?? tileResult.tilesetId ?? 1,
         data: tileResult.data,
         events: tileResult.events && tileResult.events.length > 0 ? tileResult.events : [null]
     };

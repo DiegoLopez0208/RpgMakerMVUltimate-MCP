@@ -1083,7 +1083,14 @@ function normalizeTemplateShadows(data: number[], width: number, height: number)
   return normalized;
 }
 
-async function cloneTemplateForTheme(data: number[], w: number, h: number, theme: string, templateId?: number, rng?: PRNG, preferredTileset?: number): Promise<{ x: number; y: number }[] | null> {
+/**
+ * Clone a bundled template's tile data into `data` in place.
+ *
+ * Returns the detected door positions AND the template's own tilesetId: the
+ * cloned tiles are authored for that tileset, so the caller must write it onto
+ * the map or the clone renders as garbage (issue #15).
+ */
+async function cloneTemplateForTheme(data: number[], w: number, h: number, theme: string, templateId?: number, rng?: PRNG, preferredTileset?: number): Promise<{ doors: { x: number; y: number }[]; tilesetId?: number } | null> {
   const idxPath = knowledgePath("map-templates.json");
   let idx: TemplateMeta[];
   try {
@@ -1139,7 +1146,8 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
   } catch {
     return null;
   }
-  const map = JSON.parse(await readFile(fp, "utf8")) as { width: number; height: number; data: number[] };
+  const map = JSON.parse(await readFile(fp, "utf8")) as { width: number; height: number; data: number[]; tilesetId?: unknown };
+  const clonedTileset = templateTileset(map.tilesetId);
   const tw = map.width, th = map.height;
   // When the template is bigger than the request, crop the content-richest
   // window instead of the top-left corner (which often cuts buildings in half).
@@ -1193,7 +1201,7 @@ async function cloneTemplateForTheme(data: number[], w: number, h: number, theme
       if (getTile(data, w, h, x, y, LAYER_UPPER1) !== 0 || getTile(data, w, h, x, y, LAYER_UPPER2) !== 0) continue;
       setRegion(data, w, h, x, y, 1);
     }
-  return doors;
+  return { doors: doors, tilesetId: clonedTileset };
 }
 
 function generateTownTheme(data: number[], w: number, h: number, rng: PRNG, ctx: GeneratorContext): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
@@ -1941,6 +1949,8 @@ async function generateTileLayoutV3(width: number, height: number, theme: string
   width: number;
   height: number;
   houses?: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[];
+  /** Set only when the layout was cloned from a bundled template: that template's tileset. */
+  tilesetId?: number;
 }> {
   const seed = opts.seed || Math.floor(Math.random() * 2147483647);
   const rng = new PRNG(seed);
@@ -1968,8 +1978,9 @@ async function generateTileLayoutV3(width: number, height: number, theme: string
   const tplId = (opts as Record<string, unknown>).templateId as number | undefined;
   if (useTpl && THEME_CATEGORIES[theme]) {
     const preferredTileset = ((opts as Record<string, unknown>).tilesetId as number) || THEME_TILESET[theme];
-    const doors = await cloneTemplateForTheme(data, width, height, theme, tplId, rng, preferredTileset);
-    if (doors) {
+    const clone = await cloneTemplateForTheme(data, width, height, theme, tplId, rng, preferredTileset);
+    if (clone) {
+      const doors = clone.doors;
       // For town/village (exterior themes), convert detected door positions
       // into house footprints so createMapV3 can wire enterable interiors.
       const isTownLike = theme === 'town' || theme === 'village';
@@ -1980,7 +1991,9 @@ async function generateTileLayoutV3(width: number, height: number, theme: string
         applyAutotileShapes(data, width, height);
       }
       const events = generateEvents(width, height, rng, theme, opts, data);
-      return { data: data, events: events, seed: seed, theme: theme, width: width, height: height, houses: houses };
+      // tilesetId travels with the data: the caller writes it onto the map so
+      // the cloned tiles render against the tileset they were authored for.
+      return { data: data, events: events, seed: seed, theme: theme, width: width, height: height, houses: houses, tilesetId: clone.tilesetId };
     }
     // Template clone failed (no knowledge dir / unknown id) → fall through to procedural.
   }
@@ -2077,20 +2090,44 @@ async function searchTemplates(category: string, theme: string): Promise<MapTemp
   });
 }
 
-async function generateFromTemplate(templateId: number, opts: GeneratorOptions = {}): Promise<{ data: number[]; width: number; height: number; events: (MapEvent | null)[] } | null> {
+/** A cloned bundled template: its tile data plus the tileset that data belongs to. */
+interface TemplateClone {
+  data: number[];
+  width: number;
+  height: number;
+  /** The template's own tilesetId, or undefined when the file carries none. */
+  tilesetId?: number;
+  events: (MapEvent | null)[];
+}
+
+/**
+ * Read a tilesetId off a bundled template file. Returns undefined rather than a
+ * default, so callers can tell "template says nothing" from "template says 1"
+ * and fall back to the theme default only in the first case.
+ */
+function templateTileset(raw: unknown): number | undefined {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+async function generateFromTemplate(templateId: number, opts: GeneratorOptions = {}): Promise<TemplateClone | null> {
   const fn = "Map" + String(templateId).padStart(3, "0") + ".json";
   const fp = knowledgePath("maps", fn);
-  let map: { width: number; height: number; data: number[]; events?: (MapEvent | null)[] };
+  let map: { width: number; height: number; data: number[]; tilesetId?: unknown; events?: (MapEvent | null)[] };
   try {
     await access(fp);
-    map = JSON.parse(await readFile(fp, "utf8")) as { width: number; height: number; data: number[]; events?: (MapEvent | null)[] };
+    map = JSON.parse(await readFile(fp, "utf8")) as typeof map;
   } catch {
     return null;
   }
+  // The tile data is authored for this specific tileset. Callers must write it
+  // onto the new map or the clone renders as garbage (issue #15).
+  const tilesetId = templateTileset(map.tilesetId);
   const w = (opts as Record<string, number>).width || map.width;
   const h = (opts as Record<string, number>).height || map.height;
+  const keepEvents = (opts as Record<string, boolean>).keepEvents === true;
   if (w === map.width && h === map.height) {
-    return { data: normalizeTemplateShadows(map.data, w, h), width: w, height: h, events: (opts as Record<string, boolean>).keepEvents ? (map.events || []) : [] };
+    return { data: normalizeTemplateShadows(map.data, w, h), width: w, height: h, tilesetId: tilesetId, events: keepEvents ? (map.events || []) : [] };
   }
   const data = new Array(w * h * 6).fill(0) as number[];
   for (let layer = 0; layer < 6; layer++) {
@@ -2104,7 +2141,27 @@ async function generateFromTemplate(templateId: number, opts: GeneratorOptions =
       }
     }
   }
-  return { data: data, width: w, height: h, events: [] };
+  // Resized: keep the template's events, dropping any that fall outside the new
+  // bounds. Before, a resize silently returned no events at all even with
+  // keepEvents set, so `generate_map mode:"template"` with a custom size lost
+  // every event the template carried.
+  const events = keepEvents
+    ? (map.events || []).filter(function (e) { return !e || (Number(e.x) < w && Number(e.y) < h); })
+    : [];
+  return { data: data, width: w, height: h, tilesetId: tilesetId, events: events };
+}
+
+/**
+ * The tileset a bundled template's tile data is authored for, from the template
+ * index. Callers that force a templateId need this BEFORE generating, so the
+ * tile/passability scan runs against the tileset the map will actually use.
+ */
+async function templateTilesetId(templateId: unknown): Promise<number | undefined> {
+  const id = typeof templateId === "number" ? templateId : Number(templateId);
+  if (!Number.isInteger(id)) return undefined;
+  const idx = await loadTemplateIndex();
+  const found = idx.find(function (t) { return t.id === id; });
+  return found ? templateTileset(found.tilesetId) : undefined;
 }
 
 async function generateMap(opts: GeneratorOptions = {}): Promise<{
@@ -2114,6 +2171,8 @@ async function generateMap(opts: GeneratorOptions = {}): Promise<{
   events?: (MapEvent | null)[];
   seed?: number;
   theme?: string;
+  /** Set when the layout came from a bundled template: that template's tileset. */
+  tilesetId?: number;
 } | null> {
   const optsExtra = opts as Record<string, unknown>;
   const method = optsExtra.method || "procedural";
@@ -2136,6 +2195,7 @@ export { THEME_CATEGORIES, THEME_TEMPLATE_THEMES };
 export { normalizeAvailableTiles, resolveTilesConfig, pickTiles };
 export { generateMap };
 export { generateFromTemplate };
+export { templateTilesetId };
 export { searchTemplates };
 export { loadTemplateIndex };
 export { THEMES };
