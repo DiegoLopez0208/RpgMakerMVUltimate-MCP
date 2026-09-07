@@ -49,7 +49,3 @@ export function knowledgePath(...segments: string[]): string {
   return path.join(knowledgeDir(), ...segments);
 }
 
-/** Test seam: forget the memoised directory. */
-export function resetKnowledgeDirCache(): void {
-  cached = null;
-}

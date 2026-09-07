@@ -364,44 +364,6 @@ export interface MapTemplate {
   tilesetId: number;
 }
 
-export interface MapData {
-  width: number;
-  height: number;
-  tilesetId: number;
-  displayName: string;
-  data: number[];
-  events: (MapEvent | null)[];
-  scrollType: number;
-  autoplayBgm: boolean;
-  autoplayBgs: boolean;
-  battleback1Name: string;
-  battleback2Name: string;
-  bgm: { name: string; pan: number; pitch: number; volume: number };
-  bgs: { name: string; pan: number; pitch: number; volume: number };
-  disableDashing: boolean;
-  encounterList: unknown[];
-  encounterStep: number;
-  note: string;
-  parallaxLoopX: boolean;
-  parallaxLoopY: boolean;
-  parallaxName: string;
-  parallaxShow: boolean;
-  parallaxSx: number;
-  parallaxSy: number;
-  specifyBattleback: boolean;
-}
-
-export type VisionApiResponse = {
-  image_path: string;
-  analysis: string;
-  model: string;
-  tokens_used: {
-    prompt: number;
-    completion: number;
-    total: number;
-  };
-};
-
 export type AsciiMapResult = {
   mapId: number;
   mapName: string;

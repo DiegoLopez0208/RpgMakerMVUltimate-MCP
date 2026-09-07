@@ -684,47 +684,6 @@ function applyPerlinTerrain(data: number[], w: number, h: number, perlin: Perlin
     }
 }
 
-// Place real multi-tile building stamps, non-overlapping (with a 1-tile margin)
-// and avoiding `blocked` cells (e.g. roads). Returns each footprint + door.
-// Prefers SMALLER stamps (they fit more easily on a dense town grid) but still
-// picks a larger one occasionally for variety. More attempts than before so a
-// town fills with real buildings instead of falling back to flat autotile boxes.
-function _placeHouseStamps(
-  data: number[], w: number, h: number, rng: PRNG, count: number, blocked: ((x: number, y: number) => boolean) | undefined, ctx: GeneratorContext
-): { x: number; y: number; w: number; h: number; doorX: number; doorY: number }[] {
-  const houses: { x: number; y: number; w: number; h: number; doorX: number; doorY: number }[] = [];
-  const occ = new Uint8Array(w * h);
-  // Sort stamps by area (smallest first) so they fit on a tight town grid, but
-  // keep some larger ones in the mix for visual variety.
-  const allStamps = getStamps(ctx.stampTileset, 'house').slice().sort(function (a, b) { return (a.w * a.h) - (b.w * b.h); });
-  if (allStamps.length === 0) return houses;
-  for (let attempt = 0; houses.length < count && attempt < count * 60; attempt++) {
-    // 70% chance of a small stamp (first half), 30% a larger one — variety.
-    const idx = rng.nextBool(0.7)
-      ? rng.nextInt(0, Math.max(0, Math.floor(allStamps.length / 2) - 1))
-      : rng.nextInt(0, allStamps.length - 1);
-    const stamp = allStamps[idx];
-    if (!stamp) continue;
-    if (stamp.w + 2 >= w || stamp.h + 2 >= h) continue;
-    const hx = rng.nextInt(1, w - stamp.w - 1);
-    const hy = rng.nextInt(1, h - stamp.h - 1);
-    let ok = true;
-    for (let yy = hy - 1; yy <= hy + stamp.h && ok; yy++)
-      for (let xx = hx - 1; xx <= hx + stamp.w && ok; xx++) {
-        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-        if (occ[yy * w + xx] || (blocked && blocked(xx, yy))) ok = false;
-      }
-    if (!ok) continue;
-    const res = stampObject(data, w, h, hx, hy, stamp);
-    for (let yy = hy; yy < hy + stamp.h; yy++)
-      for (let xx = hx; xx < hx + stamp.w; xx++) { if (xx < w && yy < h) { occ[yy * w + xx] = 1; setShadow(data, w, h, xx, yy, 15); } }
-    const doorX = res.door ? res.door.x : hx + Math.floor(stamp.w / 2);
-    const doorY = res.door ? res.door.y : hy + stamp.h - 1;
-    houses.push({ x: hx, y: hy, w: stamp.w, h: stamp.h, doorX: doorX, doorY: doorY });
-  }
-  return houses;
-}
-
 // Scatter real multi-tile decoration stamps (trees/props), only where the upper
 // layers are empty and the cell isn't `blocked`. Replaces single-tile scatter.
 function placeDecoStamps(
@@ -1445,7 +1404,9 @@ function generateRuinsTheme(data: number[], w: number, h: number, rng: PRNG, per
   }
 }
 
-function generateVillageTheme(data: number[], w: number, h: number, rng: PRNG, perlin: PerlinNoise, ctx: GeneratorContext): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
+// _perlin is unused but must stay: the theme dispatch below picks its call
+// shape from genFn.length, so dropping it would send ctx to the wrong slot.
+function generateVillageTheme(data: number[], w: number, h: number, rng: PRNG, _perlin: PerlinNoise, ctx: GeneratorContext): { houses: { x: number; y: number; w: number; h: number; doorX?: number; doorY?: number }[] } {
   return generateTownTheme(data, w, h, rng, ctx);
 }
 
@@ -1921,13 +1882,6 @@ function defaultConditions() {
 // MAIN ENTRY: generateTileLayoutV3
 // ════════════════════════════════════════════════════════════════
 
-const THEMES = [
-  'forest', 'town', 'village', 'castle', 'dungeon', 'cave',
-  'beach', 'desert', 'swamp', 'ruins', 'interior',
-  'snow', 'harbor', 'volcano', 'sewer', 'fortress',
-  'magic_forest', 'magic_interior', 'space_interior', 'space_exterior',
-  'world'
-];
 
 // Default tileset id per theme, matching the tile semantics each generator
 // emits (Outside=2, Inside=3, Dungeon=4, Overworld=1 in the ProjectR/RTP
@@ -2204,7 +2158,6 @@ export { generateFromTemplate };
 export { templateTilesetId };
 export { searchTemplates };
 export { loadTemplateIndex };
-export { THEMES };
 export { THEME_TILESET };
 export { TILESETS };
 export { PerlinNoise };

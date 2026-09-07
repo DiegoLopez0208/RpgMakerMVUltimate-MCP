@@ -4,7 +4,6 @@ import path from "path";
 import { knowledgeDir, knowledgePath } from "../src/utils/knowledgePath.js";
 import { generateFromTemplate, loadTemplateIndex } from "../src/utils/mapGenerator.js";
 import { getStamps, hasStamps } from "../src/utils/stamps.js";
-import { loadIndex, loadMapData, getTemplatesDir } from "../src/knowledge/mapTemplates.js";
 
 // Issue #15 root cause: knowledge/ was resolved with a single hardcoded relative
 // path that only matched the built layout (dist/utils -> ../knowledge). Loaded
@@ -47,13 +46,5 @@ describe("knowledge/ resolution (issue #15)", () => {
   it("stamps load through the same resolver", () => {
     expect(hasStamps(2, "house")).toBe(true);
     expect(getStamps(2, "tree").length).toBeGreaterThan(0);
-  });
-
-  it("knowledge/mapTemplates.ts resolves the same directory", async () => {
-    expect(getTemplatesDir()).toBe(knowledgePath("maps"));
-    expect((await loadIndex()).length).toBe(111);
-    const m = await loadMapData(33) as { tilesetId: number } | null;
-    expect(m).not.toBeNull();
-    expect(m!.tilesetId).toBe(3);
   });
 });
