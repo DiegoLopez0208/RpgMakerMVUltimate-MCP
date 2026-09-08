@@ -31,6 +31,95 @@ jobs:
         run: |
           timeout 5 node dist/index.js < /dev/null 2>&1 | head -1 || true
 
+  # Publishing is driven by package.json, not by a tag someone remembers to push.
+  # A merge to main that changes the version publishes that version; every other
+  # merge falls through untouched. The tag is written afterwards as a record of
+  # what shipped, not as the trigger — a tag pushed with GITHUB_TOKEN does not
+  # start another workflow run, which is exactly what keeps this from looping.
+  version-gate:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the tag list is how a real bump is told from a re-run
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Decide whether this version is new
+        id: check
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          NAME="$(node -p "require('./package.json').name")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already tagged - nothing to release."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            # npm has it but this repo has no tag for it: a previous run published
+            # and then failed before tagging. Republishing is impossible anyway, so
+            # say so loudly rather than failing the build.
+            echo "::warning::$VERSION is already on npm but is not tagged here. Tag it by hand: git tag v$VERSION && git push origin v$VERSION"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$VERSION is new - releasing."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release-main:
+    needs: version-gate
+    if: needs.version-gate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to push the tag and create the GitHub Release
+    env:
+      VERSION: ${{ needs.version-gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      # npm first, then the tag. If publishing fails the tag is never written, so
+      # the next push retries. Tagging first would mark a version as shipped that
+      # never reached npm, and the gate above would skip it forever.
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Tag the published commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+      - name: Create GitHub Release from CHANGELOG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Extract this version's CHANGELOG section (regex-free: match the heading prefix).
+          awk -v hdr="## [$VERSION]" '
+            substr($0,1,length(hdr))==hdr {grab=1; next}
+            grab && substr($0,1,4)=="## [" {exit}
+            grab {print}
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ -s RELEASE_NOTES.md ]; then
+            gh release create "v$VERSION" --title "v$VERSION" --notes-file RELEASE_NOTES.md --latest
+          else
+            echo "No CHANGELOG entry for $VERSION - generating notes instead."
+            gh release create "v$VERSION" --title "v$VERSION" --generate-notes --latest
+          fi
+
+  # Kept as a manual escape hatch: pushing a tag by hand still releases. The
+  # version check below is what stops a hand-pushed tag from disagreeing with
+  # package.json, which is the failure this whole file now avoids by default.
   release:
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
@@ -54,7 +143,18 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
-      - run: npm publish --access public
+      # release-main may already have published this version and pushed the tag.
+      # Skip instead of failing, so a hand-pushed tag on an existing release still
+      # reconciles the GitHub Release rather than aborting the run.
+      - name: Publish to npm unless it is already there
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="${GITHUB_REF_NAME#v}"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION is already on npm - skipping publish."
+          else
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Create GitHub Release from CHANGELOG
