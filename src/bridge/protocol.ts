@@ -43,9 +43,11 @@ export type Telemetry =
   | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string }
   | { type: 'exception'; message: string; filename?: string; line?: number; col?: number; stack?: string }
   | { type: 'interpreter_step'; mapId: number; eventId: number; commandIndex: number; code: number; indent: number }
-  | { type: 'state_dump'; requestId?: string; switches: Record<string, boolean>; variables: Record<string, number | string> }
+  | { type: 'state_dump'; requestId?: string; switches: Record<string, boolean>; variables: Record<string, number | string>; message?: { allText: string; index: number | null; length: number | null; paused: boolean; visible: boolean; charWidth: number | null; contentWidth: number | null; fontFace: string | null; fontSize: number | null } }
   | { type: 'performance'; fps: number; memoryMB: number }
   | { type: 'screenshot_result'; requestId: string; mimeType: string; base64: string }
+  | { type: 'recording_started'; requestId: string; mimeType: string; fps: number }
+  | { type: 'recording_result'; requestId: string; mimeType: string; base64: string; durationMs: number }
   | { type: 'reload_complete'; requestId?: string; target: string; mapId?: number; file?: string }
   | { type: 'error'; requestId?: string; message: string };
 
@@ -66,6 +68,10 @@ export const COMMAND_ACTIONS = [
   'reload_database',
   'capture_screenshot',
   'teleport_player',
+  'interact',
+  'press_button',
+  'start_recording',
+  'stop_recording',
 ] as const;
 
 export type CommandAction = typeof COMMAND_ACTIONS[number];
@@ -81,6 +87,12 @@ export interface Command {
   x?: number;
   y?: number;
   direction?: number;
+  /** press_button: one safe RPG Maker input and how long to hold it. */
+  button?: 'ok' | 'cancel' | 'menu' | 'up' | 'down' | 'left' | 'right';
+  durationMs?: number;
+  /** start_recording: capture settings for the game canvas. */
+  fps?: number;
+  bitrateKbps?: number;
 }
 
 export function isCommandAction(v: unknown): v is CommandAction {

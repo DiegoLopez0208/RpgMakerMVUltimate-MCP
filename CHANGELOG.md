@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.18.0] - 2026-09-08
+
+### Added
+- **`record_video`, a new tool.** Records the live playtest canvas through the authenticated bridge: `action:"start"` begins a silent WebM capture inside the game runtime, `action:"stop"` saves it under `.mcp-cache/recordings/` and returns `{path, bytes, mimeType, durationMs, name}`. Only the game canvas is captured, never the desktop. `fps` (1-60) and `bitrateKbps` (250-10000) control the artifact.
+- **`bridge_command` can drive the game, not just watch it.** Two new instructions: `interact`, and `press_button` with `button` (`ok`, `cancel`, `menu`, and the four directions) and a `durationMs` hold of 30-1000 ms. Until now the bridge could teleport the player and reload data but had no way to press anything, so a playtest could be set up and never actually played.
+
+### Fixed
+- **A refused bridge command no longer returns as if it had worked.** `bridgeCommand` returned the game's `error` frame inside a `{sent: true}` envelope, so a rejection read as success at the call site. It now throws with the game's own message.
+
+### Changed
+- `record_video` and `press_button` numeric arguments are validated with the same strict integer fields introduced in 5.17.0, against the ranges the tool definitions advertise. They were declared as the permissive `idLike`, which would have carried `fps: "abc"` through to `Number()` and handed `MediaRecorder` a NaN frame rate.
+
 ## [5.17.0] - 2026-09-06
 
 Reported as [#15](https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/issues/15). Both defects in that report reproduce, and chasing them turned up the reason they shipped at all.
