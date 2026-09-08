@@ -5,9 +5,10 @@ import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
 
-import { generateTileLayoutV3, generateFromTemplate, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
+import { generateTileLayoutV3, generateFromTemplate, templateTilesetId, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 import { nearestStandable, chooseSpawn } from '../utils/placement.js';
+import { normalizeMapEvents } from '../utils/eventNormalize.js';
 
 // Load the passage flags for a map's tileset (Tilesets[id].flags, one entry per
 // tileId). Returns null if Tilesets.json is missing or the tileset has no flags
@@ -19,6 +20,67 @@ async function loadTilesetFlags(projectPath: string, tilesetId: number): Promise
     if (ts && Array.isArray(ts.flags) && ts.flags.length > 0) return ts.flags;
   } catch { /* no tileset data → skip snapping */ }
   return null;
+}
+
+/**
+ * The tileset IDs this project actually defines, or null when Tilesets.json is
+ * missing, unreadable or still the bare [null] placeholder — i.e. when there is
+ * nothing to check an id against. Same posture as loadTilesetFlags: absent data
+ * disables the check rather than failing the call.
+ */
+async function loadTilesetIds(projectPath: string): Promise<Set<number> | null> {
+  try {
+    const tilesets = await readJson(projectPath, 'Tilesets.json') as Array<unknown>;
+    if (!Array.isArray(tilesets)) return null;
+    const ids = new Set<number>();
+    for (let i = 1; i < tilesets.length; i++) if (tilesets[i]) ids.add(i);
+    return ids.size > 0 ? ids : null;
+  } catch { /* no tileset data → nothing to validate against */ }
+  return null;
+}
+
+/**
+ * Check a caller-supplied tilesetId. Returns undefined when none was given,
+ * the number when it is usable, and throws otherwise.
+ *
+ * Callers run this BEFORE generating or writing anything, so a bad id fails the
+ * call instead of silently becoming 1 the way the old `params.tilesetId || 1`
+ * did. The membership check is skipped when the project has no usable
+ * Tilesets.json — there is nothing to check against then.
+ */
+async function validateTilesetOverride(projectPath: string, override: unknown): Promise<number | undefined> {
+  if (override === undefined || override === null) return undefined;
+  const n = typeof override === 'number' ? override : Number(override);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error('Invalid tilesetId: ' + JSON.stringify(override) + ' - expected a positive integer. List the tilesets of this project with query_database entity "tilesets".');
+  }
+  const ids = await loadTilesetIds(projectPath);
+  if (ids && !ids.has(n)) {
+    throw new Error('Tileset ' + n + ' does not exist in this project. Available: ' + Array.from(ids).sort(function (a, b) { return a - b; }).join(', ') + '. List them with query_database entity "tilesets".');
+  }
+  return n;
+}
+
+// RPG Maker MV's editor caps a map at 256 tiles per side. Data beyond that is
+// not something the editor can open, so refuse to write it.
+const MAX_MAP_DIMENSION = 256;
+
+/**
+ * A map width or height: a whole number within the range the editor supports,
+ * or the fallback when the caller passed nothing.
+ *
+ * These used to go straight into Number(): `width: "2.5"` produced a map with
+ * `"width": 2.5` and a fractional-length data array, `"1e3"` silently produced
+ * a 1000-tile-wide map, and `"2x"` became NaN and fell back without a word
+ * (issue #15).
+ */
+function mapDimension(value: unknown, name: string, fallback: number): number {
+  if (value === undefined || value === null) return fallback;
+  const n = toNum(value, name);
+  if (n < 1 || n > MAX_MAP_DIMENSION) {
+    throw new Error('Invalid ' + name + ': ' + n + ' - a map side must be between 1 and ' + MAX_MAP_DIMENSION + ' tiles.');
+  }
+  return n;
 }
 
 /**
@@ -81,8 +143,8 @@ async function getNextMapId(projectPath: string) {
  * @param {object} params - Map creation parameters
  */
 async function createMap(projectPath: string, params: CreateMapParams | CreateMapV3Params) {
-    const width = params.width || 17;
-    const height = params.height || 13;
+    const width = mapDimension(params.width, 'width', 17);
+    const height = mapDimension(params.height, 'height', 13);
     const displayName = params.displayName || '';
     const bgmName = params.bgmName || '';
     const note = params.note || '';
@@ -156,8 +218,8 @@ async function createMap(projectPath: string, params: CreateMapParams | CreateMa
 }
 
 async function createMapV3(projectPath: string, params: CreateMapV3Params) {
-    const width = params.width || 30;
-    const height = params.height || 25;
+    const width = mapDimension(params.width, 'width', 30);
+    const height = mapDimension(params.height, 'height', 25);
     const displayName = params.displayName || '';
     const bgmName = params.bgmName || '';
     const note = params.note || '';
@@ -167,7 +229,17 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     // Pick the tileset whose tiles this theme emits (Outside/Inside/Dungeon/
     // Overworld) unless the caller forces one — otherwise e.g. a town's Outside
     // tiles land on the Overworld tileset and render as garbage.
-    const tilesetId = params.tilesetId || THEME_TILESET[theme] || 1;
+    // Validated first, so a bad override fails before anything is generated.
+    const overrideTileset = await validateTilesetOverride(projectPath, params.tilesetId);
+    const themeTileset = THEME_TILESET[theme] || 1;
+    // A forced templateId clones tile data authored for THAT template's tileset,
+    // which need not be the theme default. Resolve it up front so the tile scan
+    // and passability flags below come from the tileset the map will render
+    // with, not from one the cloned tiles were never drawn for (issue #15).
+    const forcedTemplateTileset = params.templateId !== undefined && params.useTemplate !== false
+        ? await templateTilesetId(params.templateId)
+        : undefined;
+    const tilesetId = overrideTileset ?? forcedTemplateTileset ?? themeTileset;
 
     const v3opts: Record<string, unknown> = {
         seed: seed,
@@ -196,6 +268,11 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
 
     const tileResult = await generateTileLayoutV3(width, height, theme, v3opts);
 
+    // The layout may have been cloned from a template whose tileset differs from
+    // the theme default (only reachable when the auto-pick finds no same-tileset
+    // candidate). Write the tileset the tile data actually belongs to.
+    const mapTilesetId = overrideTileset ?? tileResult.tilesetId ?? tilesetId;
+
     const map: RpgMakerMap = {
         autoplayBgm: bgmName ? true : false,
         autoplayBgs: false,
@@ -211,7 +288,7 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
         parallaxName: '', parallaxShow: true,
         parallaxSx: 0, parallaxSy: 0,
         scrollType: 0, specifyBattleback: false,
-        tilesetId: tilesetId,
+        tilesetId: mapTilesetId,
         data: tileResult.data,
         events: tileResult.events
     };
@@ -381,9 +458,11 @@ function makeInteriorOccupant(id: number, x: number, y: number, roomType: string
  */
 async function createMapFromTemplate(projectPath: string, params: Record<string, unknown>) {
     const templateId = toNum(params.templateId, 'templateId');
+    // Validated before the clone runs, so a bad override never reaches a write.
+    const overrideTileset = await validateTilesetOverride(projectPath, params.tilesetId);
     const tileResult = await generateFromTemplate(templateId, {
-        width: params.width !== undefined ? Number(params.width) : undefined,
-        height: params.height !== undefined ? Number(params.height) : undefined,
+        width: params.width !== undefined ? mapDimension(params.width, 'width', 0) : undefined,
+        height: params.height !== undefined ? mapDimension(params.height, 'height', 0) : undefined,
         keepEvents: params.keepEvents !== false
     });
     if (!tileResult) {
@@ -406,12 +485,18 @@ async function createMapFromTemplate(projectPath: string, params: Record<string,
         parallaxName: '', parallaxShow: true,
         parallaxSx: 0, parallaxSy: 0,
         scrollType: 0, specifyBattleback: false,
-        tilesetId: (params.tilesetId as number) || 1,
+        // The cloned tile data is authored for the template's tileset. Writing 1
+        // here (the old `|| 1`) mismatched 105 of the 111 bundled templates and
+        // rendered them as garbage in the engine (issue #15).
+        tilesetId: overrideTileset ?? tileResult.tilesetId ?? 1,
         data: tileResult.data,
         events: tileResult.events && tileResult.events.length > 0 ? tileResult.events : [null]
     };
 
     const mapId = await getNextMapId(projectPath);
+    // This path writes directly rather than through writeMapJson (which would
+    // also blank asset references the project lacks), so normalise here.
+    normalizeMapEvents(map);
     await writeJsonDirect(getMapPath(projectPath, mapId), map);
 
     const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
@@ -433,11 +518,20 @@ async function createMapFromTemplate(projectPath: string, params: Record<string,
 async function createMapBatch(projectPath: string, batchSpec: unknown[]) {
     const results: unknown[] = [];
     const mapIds: Record<string, number> = {};
+    // Validate every spec before writing anything: a batch that failed on its
+    // third entry used to leave the first two on disk with no way to tell the
+    // caller which ones landed.
+    for (let i = 0; i < batchSpec.length; i++) {
+        const spec = batchSpec[i] as Record<string, unknown>;
+        mapDimension(spec.width, 'batch[' + i + '].width', 30);
+        mapDimension(spec.height, 'batch[' + i + '].height', 25);
+        await validateTilesetOverride(projectPath, spec.tilesetId);
+    }
     for (let i = 0; i < batchSpec.length; i++) {
         const spec = batchSpec[i] as Record<string, unknown>;
         const params: CreateMapV3Params = {
-            width: (spec.width as number) || 30,
-            height: (spec.height as number) || 25,
+            width: mapDimension(spec.width, 'batch[' + i + '].width', 30),
+            height: mapDimension(spec.height, 'batch[' + i + '].height', 25),
             tilesetId: (spec.tilesetId as number) || THEME_TILESET[(spec.theme as string) || 'forest'] || 2,
             displayName: (spec.displayName as string) || (spec.name as string) || '',
             name: (spec.name as string) || '',
@@ -1320,11 +1414,29 @@ async function searchMapEvents(projectPath: string, mapId: number, query: string
   });
 }
 
+/**
+ * A whole number, or a string holding exactly one.
+ *
+ * The old parseInt-based version accepted anything that merely started with
+ * digits and silently truncated the rest, so "2.5" became 2, "2x" became 2,
+ * "0x10" became 16 and "1e3" became 1 (issue #15). Those all reach the project
+ * JSON as map sizes, coordinates and ids, where a quietly wrong number is worse
+ * than a rejected call.
+ */
 function toNum(val: unknown, name: string): number {
   if (val === undefined || val === null) throw new Error('Missing required parameter: ' + name);
-  const n = typeof val === 'number' ? val : parseInt(String(val), 10);
-  if (isNaN(n)) throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected number or numeric string');
-  return n;
+  if (typeof val === 'number') {
+    if (!Number.isSafeInteger(val)) throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected a whole number');
+    return val;
+  }
+  if (typeof val === 'string') {
+    const t = val.trim();
+    if (/^[+-]?\d+$/.test(t)) {
+      const n = Number(t);
+      if (Number.isSafeInteger(n)) return n;
+    }
+  }
+  throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected a whole number or a numeric string');
 }
 
 // ─── Internal Helper Functions ───
@@ -1394,6 +1506,10 @@ async function readJsonDirect(filePath: string) {
 // sanitizing is idempotent.
 async function writeMapJson(projectPath: string, filePath: string, map: RpgMakerMap) {
   sanitizeMapAssets(projectPath, map);
+  // Last line of defence for issue #15: whatever route the event data took to
+  // get here, the engine-defined numeric slots hit disk as numbers, the way the
+  // editor writes them.
+  normalizeMapEvents(map);
   await writeJsonDirect(filePath, map);
 }
 

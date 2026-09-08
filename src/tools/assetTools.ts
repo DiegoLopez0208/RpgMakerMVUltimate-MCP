@@ -96,7 +96,7 @@ function computeSheetInfo(sheetKey: string, filename: string, width: number, hei
   return info;
 }
 
-function categorizeTiles(tilesetId: number, tilesetNames: string[], sheets: Record<string, SheetInfo | null>): AvailableTiles {
+function categorizeTiles(sheets: Record<string, SheetInfo | null>): AvailableTiles {
   const available: AvailableTiles = { ground: [], water: [], wallSide: [], wallTop: [], roof: [], decoration: [] };
 
   if (!sheets) return available;
@@ -232,7 +232,7 @@ async function scanProjectAssets(projectPath: string): Promise<{ tilesets: Recor
       }
     }
 
-    tsResult.availableTiles = categorizeTiles(ts.id, ts.tilesetNames, tsResult.sheets);
+    tsResult.availableTiles = categorizeTiles(tsResult.sheets);
     result.tilesets[String(i)] = tsResult;
   }
 
@@ -271,7 +271,7 @@ async function getTileIdsForTileset(projectPath: string, tilesetId: number | str
     }
   }
 
-    return { availableTiles: categorizeTiles(id, ts.tilesetNames, sheets) };
+    return { availableTiles: categorizeTiles(sheets) };
 }
 
 export { scanProjectAssets };

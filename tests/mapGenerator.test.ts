@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
-// NOTE: imported from dist (not src) on purpose. Template loading resolves the
-// knowledge/ dir relative to the compiled module, so these tests require a fresh
-// `npm run build` (the town-clone test in integration.test.ts does the same).
+// Imported from src/: knowledgePath resolves the bundled knowledge/ dir for the
+// source layout as well as the built one, so these tests exercise the code being
+// edited rather than whatever dist/ was last compiled from (issue #15).
 import {
   scoreTemplate,
   loadTemplateIndex,
@@ -15,7 +15,7 @@ import {
   generateTileLayoutV3,
   normalizeAvailableTiles,
   resolveTilesConfig,
-} from "../dist/utils/mapGenerator.js";
+} from "../src/utils/mapGenerator.js";
 
 type Meta = { id: number; category: string; theme: string; tilesetId: number; width: number; height: number };
 
@@ -78,7 +78,7 @@ describe("mapGenerator template routing (Phase 2a)", () => {
   describe("selection against the real 106-template index", () => {
     it("makes snow templates reachable and top-ranked (regression: they were unreachable via ['exterior'])", async () => {
       const idx = (await loadTemplateIndex()) as unknown as Meta[];
-      expect(idx.length).toBeGreaterThan(0); // requires a built dist/knowledge
+      expect(idx.length).toBeGreaterThan(0);
       // Before the fix: snow → categories ['exterior'], and NO snow template is
       // filed under 'exterior', so the pool never contained one.
       const byCategoryOnly = idx.filter((t) => (THEME_CATEGORIES.snow || []).includes(t.category) && t.tilesetId === THEME_TILESET.snow);

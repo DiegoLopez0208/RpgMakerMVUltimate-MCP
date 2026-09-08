@@ -2,7 +2,8 @@ import type { LogLevel } from '../types/rpgmaker.js';
 
 const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
-let currentLevel = (process.env.LOG_LEVEL || 'info') as LogLevel;
+// Set once from the environment: nothing changes it at runtime.
+const currentLevel = (process.env.LOG_LEVEL || 'info') as LogLevel;
 
 function timestamp() {
   return new Date().toISOString();
@@ -22,4 +23,3 @@ export function debug(msg: string, data?: unknown) { log('debug', msg, data); }
 export function info(msg: string, data?: unknown) { log('info', msg, data); }
 export function warn(msg: string, data?: unknown) { log('warn', msg, data); }
 export function error(msg: string, data?: unknown) { log('error', msg, data); }
-export function setLevel(level: LogLevel) { currentLevel = level; }

@@ -13,14 +13,47 @@ import { z } from "zod";
  * in the project JSON files.
  */
 
-const intCoerce = z.coerce.number().int();
-const numCoerce = z.coerce.number();
+/**
+ * Turn a numeric string into a number, and leave everything else exactly as it
+ * arrived so the schema below reports a type error on it.
+ *
+ * This replaces z.coerce.number(), which ran Number() on anything: null, "" and
+ * "   " all became 0, so a blank coordinate was silently accepted and written
+ * to the project as 0 instead of being rejected (issue #15).
+ */
+function numericPreprocess(allowFraction: boolean) {
+  return function (v: unknown): unknown {
+    if (typeof v !== "string") return v;
+    const t = v.trim();
+    if (t === "") return v;
+    if (!allowFraction) return /^[+-]?\d+$/.test(t) ? Number(t) : v;
+    return Number.isFinite(Number(t)) ? Number(t) : v;
+  };
+}
+
+/** A whole number, or a string holding exactly one. Bounds are inclusive. */
+function intField(min?: number, max?: number) {
+  // The message matters: an agent that sent "2.5" needs to read why a
+  // number-looking string was refused, not just "expected number".
+  let n = z.number({ invalid_type_error: "expected a whole number, or a string holding exactly one" }).int();
+  if (min !== undefined) n = n.min(min);
+  if (max !== undefined) n = n.max(max);
+  return z.preprocess(numericPreprocess(false), n);
+}
+
+/** Same, allowing fractions. */
+function numField(min?: number, max?: number) {
+  let n = z.number({ invalid_type_error: "expected a number, or a string holding one" });
+  if (min !== undefined) n = n.min(min);
+  if (max !== undefined) n = n.max(max);
+  return z.preprocess(numericPreprocess(true), n);
+}
 
 export const CreateMapSchema = z.object({
   name: z.string().max(100).optional(),
-  width: intCoerce.min(5).max(200).default(17),
-  height: intCoerce.min(5).max(200).default(13),
-  tilesetId: intCoerce.min(1).default(1),
+  width: intField(5, 200).default(17),
+  height: intField(5, 200).default(13),
+  tilesetId: intField(1).default(1),
   bgmName: z.string().optional(),
   displayName: z.string().max(100).optional(),
   note: z.string().optional(),
@@ -28,46 +61,46 @@ export const CreateMapSchema = z.object({
 });
 
 export const CreateNpcSchema = z.object({
-  mapId: intCoerce.min(1),
-  x: intCoerce.min(0),
-  y: intCoerce.min(0),
+  mapId: intField(1),
+  x: intField(0),
+  y: intField(0),
   name: z.string().min(1).max(100),
   dialogues: z.array(z.string()),
   characterName: z.string().optional(),
-  characterIndex: intCoerce.min(0).max(7).optional(),
+  characterIndex: intField(0, 7).optional(),
 });
 
 export const CreateDamageSkillSchema = z.object({
   name: z.string().min(1).max(100),
-  mpCost: intCoerce.min(0),
-  scope: intCoerce.min(0).max(11),
+  mpCost: intField(0),
+  scope: intField(0, 11),
   formula: z.string().min(1),
-  element: intCoerce.min(-1).optional(),
-  animationId: intCoerce.min(0).optional(),
+  element: intField(-1).optional(),
+  animationId: intField(0).optional(),
 });
 
 export const CreateHealingSkillSchema = z.object({
   name: z.string().min(1).max(100),
-  mpCost: intCoerce.min(0),
-  scope: intCoerce.min(0).max(11),
+  mpCost: intField(0),
+  scope: intField(0, 11),
   formula: z.string().min(1),
-  animationId: intCoerce.min(0).optional(),
+  animationId: intField(0).optional(),
 });
 
 export const CreateBuffSkillSchema = z.object({
   name: z.string().min(1).max(100),
-  mpCost: intCoerce.min(0),
-  scope: intCoerce.min(0).max(11),
-  paramId: intCoerce.min(0).max(7),
-  turns: intCoerce.min(1),
+  mpCost: intField(0),
+  scope: intField(0, 11),
+  paramId: intField(0, 7),
+  turns: intField(1),
 });
 
 export const CreateStateSkillSchema = z.object({
   name: z.string().min(1).max(100),
-  mpCost: intCoerce.min(0),
-  scope: intCoerce.min(0).max(11),
-  stateId: intCoerce.min(1),
-  chance: numCoerce.min(0).max(1),
+  mpCost: intField(0),
+  scope: intField(0, 11),
+  stateId: intField(1),
+  chance: numField(0, 1),
 });
 
 export const AnalyzeScreenshotSchema = z.object({
@@ -76,7 +109,7 @@ export const AnalyzeScreenshotSchema = z.object({
     { message: "Path traversal not allowed" }
   ),
   prompt: z.string().optional(),
-  resize_max: intCoerce.min(64).max(2048).default(1024),
+  resize_max: intField(64, 2048).default(1024),
 });
 
 /**
@@ -177,14 +210,21 @@ const GenerateMapSchema = z.object({
   locked: z.boolean().optional(),
   loop: z.boolean().optional(),
   keepProps: z.boolean().optional(),
-  width: idLike.optional(),
-  height: idLike.optional(),
-  tilesetId: idLike.optional(),
+  // Whole numbers, so "2.5" / "1e3" / "" fail here rather than becoming a
+  // fractional or 1000-tile-wide map (issue #15). 256 is the editor's cap.
+  width: intField(1, 256).optional(),
+  height: intField(1, 256).optional(),
+  // Range only: whether the id exists in this project is checked in mapTools,
+  // which can name the tilesets that do.
+  tilesetId: intField(1).optional(),
   theme: z.string().optional(),
-  seed: idLike.optional(),
+  seed: intField(0).optional(),
   batch: z.array(z.record(z.unknown())).optional(),
-  sourceMapId: idLike.optional(),
-  templateId: idLike.optional(),
+  sourceMapId: intField(1).optional(),
+  // Polymorphic on purpose: a bundled template is a number, while mode
+  // "semantic" re-materialises one of the project's own mined layouts by a
+  // "mined-<mapId>" id (templateMiner.ts).
+  templateId: z.union([intField(1), z.string().regex(/^mined-\d+$/)]).optional(),
 }).passthrough();
 
 const encounterSchema = z.object({
@@ -223,6 +263,27 @@ const ManageMapEventSchema = z.object({
   command: eventCommandSchema.optional(),
   dialogues: z.array(z.string()).optional(),
   eventType: z.enum(["npc", "chest", "boss"]).optional(),
+  // Declared so the router hands the preset handlers real numbers. Left to
+  // passthrough (as they were), an agent's "x": "1" reached the map file
+  // verbatim and the editor rewrote it on the next save (issue #15). The
+  // presets these cover: npc, chest, teleport, door, shop, inn, boss,
+  // puzzle_switch.
+  x: intField(0).optional(),
+  y: intField(0).optional(),
+  destMapId: intField(1).optional(),
+  destX: intField(0).optional(),
+  destY: intField(0).optional(),
+  characterIndex: intField(0, 7).optional(),
+  cost: intField(0).optional(),
+  troopId: intField(1).optional(),
+  lockedSwitchId: intField(1).optional(),
+  switchX: intField(0).optional(),
+  switchY: intField(0).optional(),
+  doorX: intField(0).optional(),
+  doorY: intField(0).optional(),
+  gameSwitchId: intField(1).optional(),
+  pageIndex: intField(0).optional(),
+  count: intField(1).optional(),
 }).passthrough().superRefine((a, ctx) => {
   if (a.trigger !== undefined) {
     const n = Number(a.trigger);
@@ -293,9 +354,10 @@ const TakeScreenshotSchema = z.object({
 
 /**
  * Schemas keyed by consolidated tool name. A tool absent here is not validated
- * at this layer (read-only tools, plugin toggles). Values expose Zod's safeParse.
+ * at this layer (read-only tools, plugin toggles). Values expose Zod's safeParse,
+ * whose `data` carries the coerced args the router forwards on success.
  */
-export const CONSOLIDATED_SCHEMAS: Record<string, { safeParse: (a: unknown) => { success: boolean; error?: unknown } }> = {
+export const CONSOLIDATED_SCHEMAS: Record<string, { safeParse: (a: unknown) => { success: boolean; data?: unknown; error?: unknown } }> = {
   create_database_entry: CreateDatabaseEntrySchema,
   update_database_entry: UpdateDatabaseEntrySchema,
   delete_database_entry: DeleteDatabaseEntrySchema,
@@ -307,23 +369,30 @@ export const CONSOLIDATED_SCHEMAS: Record<string, { safeParse: (a: unknown) => {
 };
 
 /**
- * Validate consolidated-tool args at the router boundary. Throws a readable
- * "Validation error: ..." on failure; returns nothing on success. The caller
- * keeps its original args (this only checks, it never rewrites them).
+ * Validate consolidated-tool args at the router boundary and return the parsed
+ * args, with every declared numeric field coerced to a real number. Throws a
+ * readable "Validation error: ..." on failure. Tools without a schema get their
+ * args back untouched.
+ *
+ * Returning the parsed args is the point: this used to discard them ("only
+ * checks, never rewrites"), so the raw strings an agent passed travelled all
+ * the way to disk and the project JSON ended up with "x": "1" where the editor
+ * writes 1 (issue #15).
  */
-export function validateConsolidated(name: string, args: unknown): void {
+export function validateConsolidated(name: string, args: Record<string, unknown>): Record<string, unknown> {
   const schema = CONSOLIDATED_SCHEMAS[name];
-  if (!schema) return;
+  if (!schema) return args;
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
     const err = parsed.error as { issues: { path: (string | number)[]; message: string }[] };
     throw new Error("Validation error: " + err.issues.map((i) => (i.path.length ? i.path.join(".") + ": " : "") + i.message).join("; "));
   }
+  return parsed.data as Record<string, unknown>;
 }
 
 export const RenderMapAsciiSchema = z.object({
-  map_id: intCoerce.min(1),
-  layer: intCoerce.min(0).max(5).default(0),
+  map_id: intField(1),
+  layer: intField(0, 5).default(0),
   show_events: z.boolean().default(true),
   show_regions: z.boolean().default(false),
 });

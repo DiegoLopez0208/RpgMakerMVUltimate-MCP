@@ -529,8 +529,18 @@ describe("generate_map and edit_map", () => {
     }
   });
 
-  it("mode template fails gracefully when the template index is unavailable (dev runs from src/)", async () => {
-    await expect(dispatchTool("generate_map", { mode: "template", templateId: 1, name: "T" })).rejects.toThrow(/Template/);
+  it("mode template clones the bundled template and writes a real map (issue #15: this path was untested because templates never loaded from src/)", async () => {
+    const res = await dispatchTool("generate_map", { mode: "template", templateId: 1, name: "T" }) as any;
+    const m = dataFile("Map" + String(res.mapId).padStart(3, "0") + ".json");
+    // Template 1 is the 17x13 Overworld reference map.
+    expect(m.width).toBe(17);
+    expect(m.height).toBe(13);
+    expect(m.data.length).toBe(17 * 13 * 6);
+    expect(m.data.some((t: number) => t > 0)).toBe(true); // real cloned tiles, not a blank grid
+  });
+
+  it("mode template still rejects an unknown template id", async () => {
+    await expect(dispatchTool("generate_map", { mode: "template", templateId: 9999, name: "T" })).rejects.toThrow(/Template/);
   });
 
   it("edit_map set_display_names writes the map file displayName (4.1.0 regression: edited MapInfos)", async () => {
@@ -620,13 +630,17 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
   it("town/village roads are A2 ground, not A1 water (5.2.2: outside.dirt resolved to the water sheet)", async () => {
     const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
     for (const theme of ["town", "village"]) {
-      const m: any = await generateTileLayoutV3(30, 25, theme, { seed: 5, addEvents: false });
+      // useTemplate:false pins this to the procedural generator, which is what
+      // the 5.2.2 regression was about. The hand-authored RTP town templates all
+      // carry real water features (ponds, rivers, fountains: 20-397 A1 tiles
+      // each), so asserting zero water against the clone path is meaningless.
+      const m: any = await generateTileLayoutV3(30, 25, theme, { seed: 5, addEvents: false, useTemplate: false });
       let a1Water = 0;
       for (let i = 0; i < m.width * m.height; i++) {
         const id = m.data[i]; // ground layer
         if (id >= 2048 && id < 2816) a1Water++; // A1 animated-water sheet
       }
-      expect(a1Water, theme).toBe(0); // these themes have no water features
+      expect(a1Water, theme).toBe(0); // the procedural generator paints no water for these themes
     }
   });
 
@@ -718,9 +732,7 @@ describe("object stamps (5.4.0: real buildings/trees, not single scattered tiles
   });
 
   it("generated towns clone a real RTP town template (hand-authored B/C buildings), with detectable doors for interiors", async () => {
-    // Load from dist/ (where knowledge/ is bundled), not src/ — the template
-    // clone reads knowledge/maps/ relative to import.meta.dirname.
-    const { generateTileLayoutV3 } = await import("../dist/utils/mapGenerator.js");
+    const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
     const m: any = await generateTileLayoutV3(40, 30, "town", { seed: 11, addEvents: false, tilesetId: 2 });
     expect(m.houses.length).toBeGreaterThan(0); // doors detected from the template
     expect(m.houses[0].doorX).toBeGreaterThanOrEqual(0); // door position for the warp

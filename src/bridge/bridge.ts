@@ -249,9 +249,3 @@ export function requestCommand(cmd: Omit<Command, 'requestId'>, timeoutMs = 8000
   });
 }
 
-/** Test seam: forget buffered state without going through the socket lifecycle. */
-export function _resetForTests(): void {
-  buffer.length = 0;
-  pending.clear();
-  dropped = 0;
-}
