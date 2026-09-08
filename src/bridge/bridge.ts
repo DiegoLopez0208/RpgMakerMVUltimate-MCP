@@ -309,10 +309,3 @@ export async function requestCommand(cmd: Omit<Command, 'requestId'>, timeoutMs 
   });
 }
 
-/** Test seam: forget buffered state without going through the socket lifecycle. */
-export function _resetForTests(): void {
-  settleAuthWaiters(new Error('test reset'));
-  buffer.length = 0;
-  pending.clear();
-  dropped = 0;
-}

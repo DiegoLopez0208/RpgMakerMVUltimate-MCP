@@ -5,9 +5,10 @@ import { cmd } from '../utils/commandBuilder.js';
 import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Params, RpgMakerMap } from '../types/rpgmaker.js';
 
 
-import { generateTileLayoutV3, generateFromTemplate, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
+import { generateTileLayoutV3, generateFromTemplate, templateTilesetId, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
 import { nearestStandable, chooseSpawn } from '../utils/placement.js';
+import { normalizeMapEvents } from '../utils/eventNormalize.js';
 
 // Load the passage flags for a map's tileset (Tilesets[id].flags, one entry per
 // tileId). Returns null if Tilesets.json is missing or the tileset has no flags
@@ -19,6 +20,67 @@ async function loadTilesetFlags(projectPath: string, tilesetId: number): Promise
     if (ts && Array.isArray(ts.flags) && ts.flags.length > 0) return ts.flags;
   } catch { /* no tileset data → skip snapping */ }
   return null;
+}
+
+/**
+ * The tileset IDs this project actually defines, or null when Tilesets.json is
+ * missing, unreadable or still the bare [null] placeholder — i.e. when there is
+ * nothing to check an id against. Same posture as loadTilesetFlags: absent data
+ * disables the check rather than failing the call.
+ */
+async function loadTilesetIds(projectPath: string): Promise<Set<number> | null> {
+  try {
+    const tilesets = await readJson(projectPath, 'Tilesets.json') as Array<unknown>;
+    if (!Array.isArray(tilesets)) return null;
+    const ids = new Set<number>();
+    for (let i = 1; i < tilesets.length; i++) if (tilesets[i]) ids.add(i);
+    return ids.size > 0 ? ids : null;
+  } catch { /* no tileset data → nothing to validate against */ }
+  return null;
+}
+
+/**
+ * Check a caller-supplied tilesetId. Returns undefined when none was given,
+ * the number when it is usable, and throws otherwise.
+ *
+ * Callers run this BEFORE generating or writing anything, so a bad id fails the
+ * call instead of silently becoming 1 the way the old `params.tilesetId || 1`
+ * did. The membership check is skipped when the project has no usable
+ * Tilesets.json — there is nothing to check against then.
+ */
+async function validateTilesetOverride(projectPath: string, override: unknown): Promise<number | undefined> {
+  if (override === undefined || override === null) return undefined;
+  const n = typeof override === 'number' ? override : Number(override);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error('Invalid tilesetId: ' + JSON.stringify(override) + ' - expected a positive integer. List the tilesets of this project with query_database entity "tilesets".');
+  }
+  const ids = await loadTilesetIds(projectPath);
+  if (ids && !ids.has(n)) {
+    throw new Error('Tileset ' + n + ' does not exist in this project. Available: ' + Array.from(ids).sort(function (a, b) { return a - b; }).join(', ') + '. List them with query_database entity "tilesets".');
+  }
+  return n;
+}
+
+// RPG Maker MV's editor caps a map at 256 tiles per side. Data beyond that is
+// not something the editor can open, so refuse to write it.
+const MAX_MAP_DIMENSION = 256;
+
+/**
+ * A map width or height: a whole number within the range the editor supports,
+ * or the fallback when the caller passed nothing.
+ *
+ * These used to go straight into Number(): `width: "2.5"` produced a map with
+ * `"width": 2.5` and a fractional-length data array, `"1e3"` silently produced
+ * a 1000-tile-wide map, and `"2x"` became NaN and fell back without a word
+ * (issue #15).
+ */
+function mapDimension(value: unknown, name: string, fallback: number): number {
+  if (value === undefined || value === null) return fallback;
+  const n = toNum(value, name);
+  if (n < 1 || n > MAX_MAP_DIMENSION) {
+    throw new Error('Invalid ' + name + ': ' + n + ' - a map side must be between 1 and ' + MAX_MAP_DIMENSION + ' tiles.');
+  }
+  return n;
 }
 
 /**
@@ -81,8 +143,8 @@ async function getNextMapId(projectPath: string) {
  * @param {object} params - Map creation parameters
  */
 async function createMap(projectPath: string, params: CreateMapParams | CreateMapV3Params) {
-    const width = params.width || 17;
-    const height = params.height || 13;
+    const width = mapDimension(params.width, 'width', 17);
+    const height = mapDimension(params.height, 'height', 13);
     const displayName = params.displayName || '';
     const bgmName = params.bgmName || '';
     const note = params.note || '';
@@ -156,8 +218,8 @@ async function createMap(projectPath: string, params: CreateMapParams | CreateMa
 }
 
 async function createMapV3(projectPath: string, params: CreateMapV3Params) {
-    const width = params.width || 30;
-    const height = params.height || 25;
+    const width = mapDimension(params.width, 'width', 30);
+    const height = mapDimension(params.height, 'height', 25);
     const displayName = params.displayName || '';
     const bgmName = params.bgmName || '';
     const note = params.note || '';
@@ -167,7 +229,17 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
     // Pick the tileset whose tiles this theme emits (Outside/Inside/Dungeon/
     // Overworld) unless the caller forces one — otherwise e.g. a town's Outside
     // tiles land on the Overworld tileset and render as garbage.
-    const tilesetId = params.tilesetId || THEME_TILESET[theme] || 1;
+    // Validated first, so a bad override fails before anything is generated.
+    const overrideTileset = await validateTilesetOverride(projectPath, params.tilesetId);
+    const themeTileset = THEME_TILESET[theme] || 1;
+    // A forced templateId clones tile data authored for THAT template's tileset,
+    // which need not be the theme default. Resolve it up front so the tile scan
+    // and passability flags below come from the tileset the map will render
+    // with, not from one the cloned tiles were never drawn for (issue #15).
+    const forcedTemplateTileset = params.templateId !== undefined && params.useTemplate !== false
+        ? await templateTilesetId(params.templateId)
+        : undefined;
+    const tilesetId = overrideTileset ?? forcedTemplateTileset ?? themeTileset;
 
     const v3opts: Record<string, unknown> = {
         seed: seed,
@@ -196,6 +268,11 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
 
     const tileResult = await generateTileLayoutV3(width, height, theme, v3opts);
 
+    // The layout may have been cloned from a template whose tileset differs from
+    // the theme default (only reachable when the auto-pick finds no same-tileset
+    // candidate). Write the tileset the tile data actually belongs to.
+    const mapTilesetId = overrideTileset ?? tileResult.tilesetId ?? tilesetId;
+
     const map: RpgMakerMap = {
         autoplayBgm: bgmName ? true : false,
         autoplayBgs: false,
@@ -211,7 +288,7 @@ async function createMapV3(projectPath: string, params: CreateMapV3Params) {
         parallaxName: '', parallaxShow: true,
         parallaxSx: 0, parallaxSy: 0,
         scrollType: 0, specifyBattleback: false,
-        tilesetId: tilesetId,
+        tilesetId: mapTilesetId,
         data: tileResult.data,
         events: tileResult.events
     };
@@ -381,9 +458,11 @@ function makeInteriorOccupant(id: number, x: number, y: number, roomType: string
  */
 async function createMapFromTemplate(projectPath: string, params: Record<string, unknown>) {
     const templateId = toNum(params.templateId, 'templateId');
+    // Validated before the clone runs, so a bad override never reaches a write.
+    const overrideTileset = await validateTilesetOverride(projectPath, params.tilesetId);
     const tileResult = await generateFromTemplate(templateId, {
-        width: params.width !== undefined ? Number(params.width) : undefined,
-        height: params.height !== undefined ? Number(params.height) : undefined,
+        width: params.width !== undefined ? mapDimension(params.width, 'width', 0) : undefined,
+        height: params.height !== undefined ? mapDimension(params.height, 'height', 0) : undefined,
         keepEvents: params.keepEvents !== false
     });
     if (!tileResult) {
@@ -406,12 +485,18 @@ async function createMapFromTemplate(projectPath: string, params: Record<string,
         parallaxName: '', parallaxShow: true,
         parallaxSx: 0, parallaxSy: 0,
         scrollType: 0, specifyBattleback: false,
-        tilesetId: (params.tilesetId as number) || 1,
+        // The cloned tile data is authored for the template's tileset. Writing 1
+        // here (the old `|| 1`) mismatched 105 of the 111 bundled templates and
+        // rendered them as garbage in the engine (issue #15).
+        tilesetId: overrideTileset ?? tileResult.tilesetId ?? 1,
         data: tileResult.data,
         events: tileResult.events && tileResult.events.length > 0 ? tileResult.events : [null]
     };
 
     const mapId = await getNextMapId(projectPath);
+    // This path writes directly rather than through writeMapJson (which would
+    // also blank asset references the project lacks), so normalise here.
+    normalizeMapEvents(map);
     await writeJsonDirect(getMapPath(projectPath, mapId), map);
 
     const mapInfos = await readJson(projectPath, 'MapInfos.json') as unknown[];
@@ -433,11 +518,20 @@ async function createMapFromTemplate(projectPath: string, params: Record<string,
 async function createMapBatch(projectPath: string, batchSpec: unknown[]) {
     const results: unknown[] = [];
     const mapIds: Record<string, number> = {};
+    // Validate every spec before writing anything: a batch that failed on its
+    // third entry used to leave the first two on disk with no way to tell the
+    // caller which ones landed.
+    for (let i = 0; i < batchSpec.length; i++) {
+        const spec = batchSpec[i] as Record<string, unknown>;
+        mapDimension(spec.width, 'batch[' + i + '].width', 30);
+        mapDimension(spec.height, 'batch[' + i + '].height', 25);
+        await validateTilesetOverride(projectPath, spec.tilesetId);
+    }
     for (let i = 0; i < batchSpec.length; i++) {
         const spec = batchSpec[i] as Record<string, unknown>;
         const params: CreateMapV3Params = {
-            width: (spec.width as number) || 30,
-            height: (spec.height as number) || 25,
+            width: mapDimension(spec.width, 'batch[' + i + '].width', 30),
+            height: mapDimension(spec.height, 'batch[' + i + '].height', 25),
             tilesetId: (spec.tilesetId as number) || THEME_TILESET[(spec.theme as string) || 'forest'] || 2,
             displayName: (spec.displayName as string) || (spec.name as string) || '',
             name: (spec.name as string) || '',
@@ -725,13 +819,38 @@ async function replaceMapTile(projectPath: string, mapId: number, layer: number,
 // RPG Maker object prefixes agents commonly miss ('!'/'$'), and blanking
 // (invisible, harmless) anything it still can't resolve.
 const _assetCache = new Map<string, Set<string>>();
+const _bareCharacterCache = new Map<string, Map<string, string>>();
+
+function stripSpritePrefixes(name: string): string {
+  return name.replace(/^[!$]+/, '');
+}
+
+// Bare name -> the actual filename carrying it. No two sprites in the RTP share
+// a bare name, and a first-wins collision still beats blanking the sprite.
+function bareCharacterIndex(dir: string): Map<string, string> {
+  const hit = _bareCharacterCache.get(dir);
+  if (hit) return hit;
+  const index = new Map<string, string>();
+  for (const asset of listAssets(dir)) {
+    const bare = stripSpritePrefixes(asset);
+    if (!index.has(bare)) index.set(bare, asset);
+  }
+  if (index.size > 0) _bareCharacterCache.set(dir, index);
+  return index;
+}
 function listAssets(dir: string): Set<string> {
-  if (_assetCache.has(dir)) return _assetCache.get(dir)!;
+  const hit = _assetCache.get(dir);
+  if (hit) return hit;
   let set: Set<string>;
   try {
     set = new Set(readdirSync(dir).map(function (f) { return f.replace(/\.(png|ogg|m4a|rpgmvo|rpgmvm)$/i, ''); }));
   } catch { set = new Set(); }
-  _assetCache.set(dir, set);
+  // Never cache an empty result. resolveAsset reads "no assets" as "can't
+  // validate" and passes the name through untouched, so caching one miss --
+  // a project scaffolded before its img/ is populated, an asset folder created
+  // later in the same session -- would disable sprite validation for the rest
+  // of the process and let the fatal Loading Error this guards against back in.
+  if (set.size > 0) _assetCache.set(dir, set);
   return set;
 }
 
@@ -744,11 +863,15 @@ function resolveAsset(projectPath: string, subdir: string, name: string): string
   const set = listAssets(dir);
   if (set.size === 0) return null; // can't validate
   if (set.has(name)) return name;
-  // RPG Maker object-character prefixes agents commonly miss.
+  // RPG Maker object-character prefixes agents commonly miss. '!' (no shift, no
+  // bush) and '$' (single-character sheet) are independent flags, order-free,
+  // and they combine -- the RTP ships '!$Gate1' and '!$Gate2'. Trying them one
+  // at a time never reaches a two-prefix file, so 'Gate1' and '!Gate1' both
+  // resolved to '' and the gate rendered invisible. Match on the bare name and
+  // let the file on disk say which prefixes it carries.
   if (subdir === 'img/characters') {
-    if (!name.startsWith('!') && set.has('!' + name)) return '!' + name;
-    if (name.startsWith('!') && set.has(name.slice(1))) return name.slice(1);
-    if (!name.startsWith('$') && set.has('$' + name)) return '$' + name;
+    const match = bareCharacterIndex(dir).get(stripSpritePrefixes(name));
+    if (match) return match;
   }
   return '';
 }
@@ -1019,7 +1142,7 @@ async function createNpc(projectPath: string, mapId: number, x: number, y: numbe
 /**
  * HIGH LEVEL HELPER: Create a chest event.
  * Produces a 2-page event:
- *   Page 1: Action button trigger, gives items + activates Self Switch A
+ *   Page 1: Action button trigger, animates open, gives items, then activates Self Switch A
  *   Page 2: Self Switch A = ON, shows "already opened" message
  *
  * @param {string} projectPath - The project root path
@@ -1040,6 +1163,22 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
 
   const page1List: EventCommand[] = [];
 
+  // Standard MV chest opening: the four direction rows in !Chest are the
+  // closed -> opening -> open frames. Direction Fix must be disabled while the
+  // route turns through those rows, then restored before the page changes.
+  page1List.push(...cmd.playSE('Chest1', 90, 100, 0));
+  page1List.push(...cmd.setMoveRoute(0, [
+    cmd.moveRouteCommand(36, []),      // Direction Fix OFF
+    cmd.moveRouteCommand(17, []),      // Opening frame 1 (left row)
+    cmd.moveRouteCommand(15, [3]),
+    cmd.moveRouteCommand(18, []),      // Opening frame 2 (right row)
+    cmd.moveRouteCommand(15, [3]),
+    cmd.moveRouteCommand(19, []),      // Fully open (up row)
+    cmd.moveRouteCommand(15, [3]),
+    cmd.moveRouteCommand(35, []),      // Direction Fix ON
+    cmd.moveRouteCommand(0, [])
+  ]));
+
   // Give each item/weapon/armor
   const itemEntries = items || [];
   for (let idx = 0; idx < itemEntries.length; idx++) {
@@ -1054,9 +1193,6 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
     }
   }
 
-  // Activate Self Switch A = ON (so the chest stays open)
-  page1List.push(...cmd.selfSwitchControl('A', true));
-
   // Show "found items" message
   const msgCmds = cmd.message('Found items inside the chest!', '', 0);
   for (let i = 0; i < msgCmds.length; i++) {
@@ -1064,6 +1200,9 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
     if (msgCmds[i].code === 0 && i === msgCmds.length - 1) continue;
     page1List.push(msgCmds[i]);
   }
+
+  // Change pages only after the animation, reward, and message have completed.
+  page1List.push(...cmd.selfSwitchControl('A', true));
 
   // Add page terminator
   page1List.push({ code: 0, indent: 0, parameters: [] });
@@ -1101,8 +1240,8 @@ async function createChest(projectPath: string, mapId: number, x: number, y: num
     image: {
       characterIndex: characterIndex,
       characterName: characterName,
-      direction: 2,    // Open chest direction
-      pattern: 1,      // Second pattern = open
+      direction: 8,    // The up-facing row in !Chest is fully open
+      pattern: 0,
       tileId: 0
     },
     list: [
@@ -1275,11 +1414,29 @@ async function searchMapEvents(projectPath: string, mapId: number, query: string
   });
 }
 
+/**
+ * A whole number, or a string holding exactly one.
+ *
+ * The old parseInt-based version accepted anything that merely started with
+ * digits and silently truncated the rest, so "2.5" became 2, "2x" became 2,
+ * "0x10" became 16 and "1e3" became 1 (issue #15). Those all reach the project
+ * JSON as map sizes, coordinates and ids, where a quietly wrong number is worse
+ * than a rejected call.
+ */
 function toNum(val: unknown, name: string): number {
   if (val === undefined || val === null) throw new Error('Missing required parameter: ' + name);
-  const n = typeof val === 'number' ? val : parseInt(String(val), 10);
-  if (isNaN(n)) throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected number or numeric string');
-  return n;
+  if (typeof val === 'number') {
+    if (!Number.isSafeInteger(val)) throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected a whole number');
+    return val;
+  }
+  if (typeof val === 'string') {
+    const t = val.trim();
+    if (/^[+-]?\d+$/.test(t)) {
+      const n = Number(t);
+      if (Number.isSafeInteger(n)) return n;
+    }
+  }
+  throw new Error('Invalid ' + name + ': ' + JSON.stringify(val) + ' - expected a whole number or a numeric string');
 }
 
 // ─── Internal Helper Functions ───
@@ -1349,11 +1506,16 @@ async function readJsonDirect(filePath: string) {
 // sanitizing is idempotent.
 async function writeMapJson(projectPath: string, filePath: string, map: RpgMakerMap) {
   sanitizeMapAssets(projectPath, map);
+  // Last line of defence for issue #15: whatever route the event data took to
+  // get here, the engine-defined numeric slots hit disk as numbers, the way the
+  // editor writes them.
+  normalizeMapEvents(map);
   await writeJsonDirect(filePath, map);
 }
 
 async function writeJsonDirect(filePath: string, data: unknown) {
-  await safeWrite(filePath, JSON.stringify(data, null, 2));
+  // Compact, matching the editor -- see writeJson in fileHandler.
+  await safeWrite(filePath, JSON.stringify(data));
 }
 
 async function deleteMapEvent(projectPath: string, mapId: number, eventId: number) {

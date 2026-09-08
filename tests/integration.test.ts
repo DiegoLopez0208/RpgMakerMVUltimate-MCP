@@ -61,6 +61,26 @@ describe("consolidated tool surface", () => {
     expect(SERVER_VERSION).not.toBe("0.0.0-unknown");
   });
 
+  it("hardcodes no version number anywhere in src/", () => {
+    // Pinning the handshake was only half the fix: the startup banner kept its own
+    // literal and went on announcing v5.14.2 after the handshake was correct, so a
+    // client and its log disagreed about what was running. Any "v1.2.3" in source
+    // is a number someone has to remember to bump, which is the bug itself.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) { walk(full); continue; }
+        if (!entry.name.endsWith(".ts")) continue;
+        readFileSync(full, "utf-8").split(/\r?\n/).forEach((line, i) => {
+          if (/v\d+\.\d+\.\d+/.test(line)) offenders.push(`${full}:${i + 1}: ${line.trim()}`);
+        });
+      }
+    };
+    walk(path.join(__dirname, "..", "src"));
+    expect(offenders).toEqual([]);
+  });
+
   it("exposes exactly 15 tools, all annotated and described", () => {
     expect(TOOL_DEFINITIONS.length).toBe(15);
     for (const t of TOOL_DEFINITIONS) {
@@ -201,6 +221,23 @@ describe("manage_map_event", () => {
     expect(selfSwitch.parameters).toEqual(["A", 0]);
   });
 
+  it("preset chest plays the standard opening animation before switching to its open page", async () => {
+    mkdirSync(path.join(projectDir, "img", "characters"), { recursive: true });
+    writeFileSync(path.join(projectDir, "img", "characters", "!Chest.png"), "x");
+    writeFileSync(path.join(projectDir, "img", "characters", "!$Gate1.png"), "x"); // two prefixes, as the RTP ships it
+    const ev = await dispatchTool("manage_map_event", {
+      action: "create", preset: "chest", mapId: 1, x: 3, y: 3,
+      items: [{ type: "item", id: 1, amount: 2 }]
+    }) as any;
+    expect(ev.pages[0].list.some((c: any) => c.code === 250)).toBe(true);
+    const route = ev.pages[0].list.find((c: any) => c.code === 205);
+    expect(route.parameters[1].list.map((c: any) => c.code)).toEqual([36, 17, 15, 18, 15, 19, 15, 35, 0]);
+    const messageIndex = ev.pages[0].list.findIndex((c: any) => c.code === 401);
+    const switchIndex = ev.pages[0].list.findIndex((c: any) => c.code === 123);
+    expect(switchIndex).toBeGreaterThan(messageIndex);
+    expect(ev.pages[1].image.direction).toBe(8);
+  });
+
   it("preset shop carries the first good in the 302 command with custom price (4.1.0 regression: hardcoded item 1)", async () => {
     const ev = await dispatchTool("manage_map_event", {
       action: "create", preset: "shop",
@@ -275,6 +312,77 @@ describe("manage_map_event", () => {
     expect(ev2.pages[0].image.characterName).toBe("");
   });
 
+  it("resolves a sprite whose file carries BOTH object prefixes", async () => {
+    // '!' (no shift/bush) and '$' (single-character sheet) are independent and
+    // combine: the RTP ships '!$Gate1.png' and '!$Gate2.png'. Adding one prefix
+    // at a time never reaches a two-prefix file, so "Gate1" and "!Gate1" both
+    // resolved to '' and the gate was written as an invisible event.
+    for (const asked of ["Gate1", "!Gate1", "$Gate1"]) {
+      const ev = await dispatchTool("manage_map_event", {
+        action: "create", mapId: 1, x: 8, y: 8, name: "Gate",
+        pages: [{ image: { characterIndex: 0, characterName: asked, direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+      }) as any;
+      expect(ev.pages[0].image.characterName, "asked for " + asked).toBe("!$Gate1");
+    }
+  });
+
+  it("writes data files compact, the way the editor does", async () => {
+    // RPGMV.exe writes these minified. Pretty-printing put every integer of a
+    // map's tile array on its own line, so the file was 2.6x its size and the
+    // user's first Ctrl+S in the editor rewrote every line of it.
+    // Re-minifying a file that is already minified is a no-op, so this compares
+    // the bytes on disk against exactly that.
+    await dispatchTool("generate_map", { mode: "procedural", theme: "dungeon", width: 24, height: 18, seed: 77, name: "Compacto" });
+    for (const name of ["MapInfos.json", "Map001.json", "System.json"]) {
+      const raw = readFileSync(path.join(projectDir, "data", name), "utf-8");
+      expect(raw, name + " is not minified").toBe(JSON.stringify(JSON.parse(raw)));
+    }
+  });
+
+  it("does not cache an empty img/characters, so assets added later still validate", async () => {
+    // resolveAsset reads "no assets on disk" as "can't validate" and passes the
+    // name straight through. Caching that miss disabled sprite validation for
+    // the rest of the process -- a project scaffolded before its img/ is filled
+    // would silently stop being checked, letting the fatal MV Loading Error this
+    // guard exists to prevent back in.
+    const bare = mkdtempSync(path.join(tmpdir(), "rpgmv-noassets-"));
+    try {
+      mkdirSync(path.join(bare, "data"));
+      writeFileSync(path.join(bare, "data", "System.json"), JSON.stringify({ gameTitle: "Bare", switches: ["", ""], variables: ["", ""] }));
+      writeFileSync(path.join(bare, "data", "MapInfos.json"), JSON.stringify([null, { id: 1, name: "Bare", order: 1, parentId: 0, expanded: false, scrollX: 0, scrollY: 0 }]));
+      writeFileSync(path.join(bare, "data", "Map001.json"), JSON.stringify({
+        width: 10, height: 10, tilesetId: 1, displayName: "", data: new Array(600).fill(0), events: [null],
+        encounterList: [], encounterStep: 30,
+        bgm: { name: "", pan: 0, pitch: 100, volume: 90 }, bgs: { name: "", pan: 0, pitch: 100, volume: 90 },
+        autoplayBgm: false, autoplayBgs: false, disableDashing: false, note: "",
+        parallaxLoopX: false, parallaxLoopY: false, parallaxName: "", parallaxShow: true,
+        parallaxSx: 0, parallaxSy: 0, scrollType: 0, specifyBattleback: false,
+        battleback1Name: "", battleback2Name: ""
+      }));
+      projectTools.initProjectPath(bare);
+
+      // No img/ yet: the name is passed through untouched, and that must not be
+      // remembered.
+      const before = await dispatchTool("manage_map_event", {
+        action: "create", mapId: 1, x: 2, y: 2, name: "Early",
+        pages: [{ image: { characterIndex: 0, characterName: "Chest", direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+      }) as any;
+      expect(before.pages[0].image.characterName).toBe("Chest");
+
+      mkdirSync(path.join(bare, "img", "characters"), { recursive: true });
+      writeFileSync(path.join(bare, "img", "characters", "!Chest.png"), "x");
+
+      const after = await dispatchTool("manage_map_event", {
+        action: "create", mapId: 1, x: 4, y: 4, name: "Late",
+        pages: [{ image: { characterIndex: 0, characterName: "Chest", direction: 2, pattern: 0, tileId: 0 }, list: [{ code: 0, indent: 0, parameters: [] }], trigger: 0 }]
+      }) as any;
+      expect(after.pages[0].image.characterName).toBe("!Chest");
+    } finally {
+      projectTools.initProjectPath(projectDir);
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
   it("update and delete work and report missing events", async () => {
     const ev = await dispatchTool("manage_map_event", { action: "create", mapId: 1, x: 5, y: 5, name: "Temp" }) as any;
     const moved = await dispatchTool("manage_map_event", { action: "update", mapId: 1, eventId: ev.id, fields: { x: 6 } }) as any;
@@ -285,10 +393,52 @@ describe("manage_map_event", () => {
 });
 
 describe("generator event regressions (5.2.0: 4.1.1 self-switch fix missed the internal makers)", () => {
-  it("makeChestEvent turns Self Switch A ON so generated chests stay open", () => {
+  it("makeChestEvent animates and turns Self Switch A ON so generated chests stay open", () => {
     const ev = makeChestEvent(0, 5, 5);
+    expect(ev.pages[0].list.some((c: any) => c.code === 250)).toBe(true);
+    const route = ev.pages[0].list.find((c: any) => c.code === 205);
+    expect(route!.parameters[1].list.map((c: any) => c.code)).toEqual([36, 17, 15, 18, 15, 19, 15, 35, 0]);
     const ss = ev.pages[0].list.find((c: any) => c.code === 123);
     expect(ss!.parameters).toEqual(["A", 0]); // was ["A", 1] = OFF -> reopened forever
+    expect(ev.pages[1].image.direction).toBe(8);
+  });
+
+  it("emits the 505 rows the editor needs for every Set Move Route", async () => {
+    // A 205 carries its route in parameters[1], which is all the engine reads --
+    // there is no command505, and executeCommand skips codes with no handler. The
+    // EDITOR builds its visible command list from the 505 rows instead, so a route
+    // without them plays correctly and shows up blank when the project is opened,
+    // which reads as "the route was lost".
+    //
+    // The rule comes from the official DLC sample projects, which are authored in
+    // the editor: all 42 Set Move Route commands there carry exactly one 505 per
+    // step with the code-0 terminator excluded, and all 181 of their parameters[0]
+    // equal the matching step object.
+    const check = (list: any[], where: string) => {
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].code !== 205) continue;
+        const steps = list[i].parameters[1].list.filter((s: any) => s.code !== 0);
+        const rows: any[] = [];
+        for (let j = i + 1; j < list.length && list[j].code === 505; j++) rows.push(list[j]);
+        expect(rows.length, where + ": one 505 per step").toBe(steps.length);
+        steps.forEach((step: any, k: number) => {
+          expect(rows[k].parameters[0], where + ": 505 row " + k).toEqual(step);
+          expect(rows[k].indent, where + ": 505 indent").toBe(list[i].indent);
+        });
+      }
+    };
+
+    check(cmd.setMoveRoute(0, [cmd.moveRouteCommand(36, []), cmd.moveRouteCommand(15, [3]), cmd.moveRouteCommand(0, [])]), "cmd.setMoveRoute");
+    makeChestEvent(1, 5, 5).pages.forEach((pg: any, i: number) => check(pg.list, "makeChestEvent page " + i));
+
+    // And across everything a real generated map contains, so a new event maker
+    // cannot reintroduce a bare 205.
+    const res = await dispatchTool("generate_map", { mode: "procedural", theme: "dungeon", width: 24, height: 18, seed: 4242, name: "RutaTest" }) as any;
+    const map = dataFile("Map" + String(res.mapId).padStart(3, "0") + ".json");
+    map.events.forEach((ev: any) => {
+      if (!ev) return;
+      ev.pages.forEach((pg: any, i: number) => check(pg.list, "generated event " + ev.id + " page " + i));
+    });
   });
 
   it("makeBossEvent turns Self Switch A ON on victory so generated bosses stay defeated", () => {
@@ -379,8 +529,18 @@ describe("generate_map and edit_map", () => {
     }
   });
 
-  it("mode template fails gracefully when the template index is unavailable (dev runs from src/)", async () => {
-    await expect(dispatchTool("generate_map", { mode: "template", templateId: 1, name: "T" })).rejects.toThrow(/Template/);
+  it("mode template clones the bundled template and writes a real map (issue #15: this path was untested because templates never loaded from src/)", async () => {
+    const res = await dispatchTool("generate_map", { mode: "template", templateId: 1, name: "T" }) as any;
+    const m = dataFile("Map" + String(res.mapId).padStart(3, "0") + ".json");
+    // Template 1 is the 17x13 Overworld reference map.
+    expect(m.width).toBe(17);
+    expect(m.height).toBe(13);
+    expect(m.data.length).toBe(17 * 13 * 6);
+    expect(m.data.some((t: number) => t > 0)).toBe(true); // real cloned tiles, not a blank grid
+  });
+
+  it("mode template still rejects an unknown template id", async () => {
+    await expect(dispatchTool("generate_map", { mode: "template", templateId: 9999, name: "T" })).rejects.toThrow(/Template/);
   });
 
   it("edit_map set_display_names writes the map file displayName (4.1.0 regression: edited MapInfos)", async () => {
@@ -470,13 +630,17 @@ describe("autotile shapes (5.1.0: generators painted flat shape-0 tiles)", () =>
   it("town/village roads are A2 ground, not A1 water (5.2.2: outside.dirt resolved to the water sheet)", async () => {
     const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
     for (const theme of ["town", "village"]) {
-      const m: any = await generateTileLayoutV3(30, 25, theme, { seed: 5, addEvents: false });
+      // useTemplate:false pins this to the procedural generator, which is what
+      // the 5.2.2 regression was about. The hand-authored RTP town templates all
+      // carry real water features (ponds, rivers, fountains: 20-397 A1 tiles
+      // each), so asserting zero water against the clone path is meaningless.
+      const m: any = await generateTileLayoutV3(30, 25, theme, { seed: 5, addEvents: false, useTemplate: false });
       let a1Water = 0;
       for (let i = 0; i < m.width * m.height; i++) {
         const id = m.data[i]; // ground layer
         if (id >= 2048 && id < 2816) a1Water++; // A1 animated-water sheet
       }
-      expect(a1Water, theme).toBe(0); // these themes have no water features
+      expect(a1Water, theme).toBe(0); // the procedural generator paints no water for these themes
     }
   });
 
@@ -568,9 +732,7 @@ describe("object stamps (5.4.0: real buildings/trees, not single scattered tiles
   });
 
   it("generated towns clone a real RTP town template (hand-authored B/C buildings), with detectable doors for interiors", async () => {
-    // Load from dist/ (where knowledge/ is bundled), not src/ — the template
-    // clone reads knowledge/maps/ relative to import.meta.dirname.
-    const { generateTileLayoutV3 } = await import("../dist/utils/mapGenerator.js");
+    const { generateTileLayoutV3 } = await import("../src/utils/mapGenerator.js");
     const m: any = await generateTileLayoutV3(40, 30, "town", { seed: 11, addEvents: false, tilesetId: 2 });
     expect(m.houses.length).toBeGreaterThan(0); // doors detected from the template
     expect(m.houses[0].doorX).toBeGreaterThanOrEqual(0); // door position for the warp

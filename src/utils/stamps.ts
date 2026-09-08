@@ -7,7 +7,7 @@
  * like random tiles strewn everywhere.
  */
 import { readFileSync } from 'fs';
-import path from 'path';
+import { knowledgePath } from './knowledgePath.js';
 
 export interface StampCell { l: number; dx: number; dy: number; t: number; }
 export interface Stamp { w: number; h: number; cells: StampCell[]; door?: { dx: number; dy: number }; count: number; }
@@ -18,15 +18,13 @@ type Library = Record<string, Partial<Record<StampCategory, Stamp[]>>>;
 let LIB: Library | null = null;
 function lib(): Library {
   if (LIB) return LIB;
-  // Built layout: dist/utils -> ../knowledge = dist/knowledge.
-  // Source/test layout (tsx, vitest): src/utils -> ../../knowledge = repo-root/knowledge.
-  for (const rel of [['..', 'knowledge'], ['..', '..', 'knowledge']]) {
-    try {
-      LIB = JSON.parse(readFileSync(path.join(import.meta.dirname, ...rel, 'stamps.json'), 'utf8')) as Library;
-      return LIB;
-    } catch { /* try next */ }
+  // knowledgePath resolves the built (dist/knowledge) and source
+  // (repo-root/knowledge) layouts alike.
+  try {
+    LIB = JSON.parse(readFileSync(knowledgePath('stamps.json'), 'utf8')) as Library;
+  } catch {
+    LIB = {};
   }
-  LIB = {};
   return LIB;
 }
 

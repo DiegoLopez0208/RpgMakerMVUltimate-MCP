@@ -61,7 +61,5 @@ async function setProjectPath(newPath: string) {
 
 export { getProjectSummary };
 export { setProjectPath };
-export { getCurrentPath };
-export { setCurrentPath };
 export { getCurrentPath as getProjectPath };
 export { setCurrentPath as initProjectPath };

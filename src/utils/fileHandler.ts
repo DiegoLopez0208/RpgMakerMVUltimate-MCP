@@ -142,7 +142,13 @@ async function readJson(projectPath: string, filename: string) {
  */
 async function writeJson(projectPath: string, filename: string, data: unknown) {
   const filePath = getDataPath(projectPath, filename);
-  await safeWrite(filePath, JSON.stringify(data, null, 2));
+  // Compact, like the editor. RPGMV.exe writes these files minified, so
+  // pretty-printing them means the user's first Ctrl+S rewrites every line --
+  // and a map's tile array puts one integer per line, which is where the bulk
+  // of the 2.6x size difference came from. semanticMapTools and scaffoldTools
+  // already wrote compact; this makes the project's own output agree with
+  // itself as much as with the editor.
+  await safeWrite(filePath, JSON.stringify(data));
 }
 
 /**

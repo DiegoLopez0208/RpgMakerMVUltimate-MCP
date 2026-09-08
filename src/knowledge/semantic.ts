@@ -40,9 +40,6 @@ export const SEMANTIC_TOKENS = [
 
 export type SemanticToken = typeof SEMANTIC_TOKENS[number];
 
-export function isSemanticToken(v: unknown): v is SemanticToken {
-  return typeof v === 'string' && (SEMANTIC_TOKENS as readonly string[]).includes(v);
-}
 
 /** One prop instance: a multi-tile object kept whole rather than shredded. */
 export interface SemanticProp {
@@ -133,8 +130,6 @@ export function classifyTile(lower: number, upper: number, flags?: number[] | nu
 }
 
 /** The tokens that must resolve to a tile for a materialised map to be playable. */
-export const REQUIRED_TOKENS: SemanticToken[] = ['ground', 'wall'];
-
 /**
  * Resolve a token to a tile ID, falling back the way a human would: an
  * alternative ground is still ground, a roof is still a wall top, a waterfall is
