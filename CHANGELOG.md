@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `build_event_commands`: project-independent, read-only builders for MV dialogue, choices, conditions, switches/self switches, variables, transfers, common-event calls, flow control, and plugin commands. Nested branches compose without mutating input arrays; schemas reject invalid fields and MZ-only formats.
+- `insert_event_commands`: validated insertion into map-event, common-event, and troop-page lists. Supports explicit before/after dry-run previews, safe nested insertion boundaries, relevant reference checks, and the existing atomic backup-protected writer.
+- Stdio protocol verification for both normal and legacy tool listings, plus an optional headless check against a locally installed MV interpreter. The runtime check does not redistribute engine files or modify game projects.
+
+### Fixed
+- A client with no active project can now call `set_project_path`; the previous transport guard refused the very call needed to select one. Pure command builders also work without a project. Project-dependent calls remain guarded.
+
 ## [5.18.0] - 2026-09-08
 
 ### Added

@@ -17,7 +17,7 @@
 
 ---
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent work on a **real RPG Maker MV project on disk** — database, maps, events, plugins, system — through **13 consolidated tools** validated against the actual engine, so what comes out is coherent and playable.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent work on a **real RPG Maker MV project on disk** — database, maps, events, plugins, system — through **17 consolidated tools** validated against the actual engine, so what comes out is coherent and playable.
 
 It does three things that are usually missing:
 
@@ -252,7 +252,7 @@ Narrow with `category`, loosen or tighten with `thresholdSd` (default 2).
 
 <br>
 
-## 🧰 The 15 tools
+## 🧰 The 17 tools
 
 <details>
 <summary>Click to expand the full surface</summary>
@@ -261,6 +261,8 @@ Narrow with `category`, loosen or tighten with `thresholdSd` (default 2).
 
 | Tool | Purpose |
 |---|---|
+| `build_event_commands` | Read-only MV dialogue, choices, conditions, switches, variables, transfers, common-event, flow, and plugin-command builders |
+| `insert_event_commands` | Validated insertion into map/common/troop event lists, with before/after previews and safe nested boundaries |
 | `query_database` | List / get by ID / search any database (actors, classes, skills, items, weapons, armors, enemies, states, troops, tilesets, common events, animations) |
 | `create_database_entry` | Create entries, with presets: `damage_skill`, `healing_skill`, `buff_skill`, `state_skill`, `boss_enemy`, `encounter_troop` |
 | `update_database_entry` | Partial updates (incl. troops & animations); append commands to common events; add enemies to troops |
@@ -284,6 +286,11 @@ The 101 fine-grained v4 tool names still work as call aliases. Set `RPGMV_LEGACY
 <br>
 
 ## 🛡️ Write safety
+
+For composed event logic, use `build_event_commands` followed by
+`insert_event_commands` with `dryRun:true`. The preview includes the exact old and
+proposed command lists. See [Event command authoring](docs/event-commands.md) for
+the supported kinds, nesting rules, MV-specific differences, and verification.
 
 - **Atomic.** Every write goes to a temp file and is renamed over the target, so an interrupted call can never leave half-written JSON.
 - **Backed up.** Rotated timestamped copies under `.mcp-backups/` (last N, `RPGMV_BACKUP_KEEP`, default 10).
