@@ -464,6 +464,7 @@ async function analyzeImage(executeTool: ExecuteTool, args: Record<string, unkno
 }
 
 export const TOOL_NAMES = [
+  'build_event_commands', 'insert_event_commands',
   'query_database', 'create_database_entry', 'update_database_entry', 'delete_database_entry',
   'query_map', 'generate_map', 'edit_map', 'manage_map_event',
   'manage_system', 'take_screenshot', 'get_project_context', 'set_project_path', 'analyze_image',
@@ -478,6 +479,8 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
   // dropping them is what let "x": "1" reach the map file (issue #15).
   args = validateConsolidated(name, args);
   switch (name) {
+    case 'build_event_commands':
+    case 'insert_event_commands': return executeTool(name, args);
     case 'query_database': return queryDatabase(executeTool, projectPath, args);
     case 'create_database_entry': return createDatabaseEntry(executeTool, args);
     case 'update_database_entry': return updateDatabaseEntry(executeTool, args);

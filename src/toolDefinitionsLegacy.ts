@@ -22,7 +22,10 @@ const CREATE = { readOnlyHint: false, destructiveHint: false, idempotentHint: fa
 const UPDATE = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
 
+import { EVENT_COMMAND_TOOL_DEFINITIONS } from './eventCommandDefinitions.js';
+
 export const TOOL_DEFINITIONS_LEGACY = [
+  ...EVENT_COMMAND_TOOL_DEFINITIONS,
   // ──────── ACTOR TOOLS ────────
   {
     name: 'get_actors',

@@ -41,6 +41,8 @@
     "dist",
     "skill",
     "README.md",
+    "docs/event-commands.md",
+    "THIRD_PARTY_NOTICES.md",
     "LICENSE"
   ],
   "scripts": {
@@ -53,7 +55,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:protocol": "node scripts/verify-event-command-protocol.mjs",
+    "test:mv-runtime": "node scripts/verify-mv-event-runtime.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
