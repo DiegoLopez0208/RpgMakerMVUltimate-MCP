@@ -14,11 +14,14 @@
  * object including its id; numeric arguments accept numbers or numeric strings.
  */
 
+import { EVENT_COMMAND_TOOL_DEFINITIONS } from './eventCommandDefinitions.js';
+
 const ID_TYPE = { type: ['number', 'string'] as string[] };
 
 const DB_ENTITY_ENUM = ['actors', 'classes', 'skills', 'items', 'weapons', 'armors', 'enemies', 'states', 'troops', 'tilesets', 'common_events', 'animations'];
 
 export const TOOL_DEFINITIONS = [
+  ...EVENT_COMMAND_TOOL_DEFINITIONS,
   {
     name: 'query_database',
     description: 'Read-only: query any RPG Maker MV database (data/*.json). Three forms depending on arguments: no id/query lists every non-null entry of the entity; `id` fetches one entry (returns null, not an error, if it does not exist); `query` does a case-insensitive name search (items/weapons/armors/skills also match descriptions). Returns an array (list/search) or a single object/null (id). Use this to discover valid IDs before create/update/delete or before wiring references (class learnings, troop members, chest loot). For maps use query_map; for a digest of everything at once use get_project_context.',

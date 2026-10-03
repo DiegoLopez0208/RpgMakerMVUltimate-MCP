@@ -43,6 +43,8 @@ import * as bridgeTools from './tools/bridgeTools.js';
 import * as semanticMapTools from './tools/semanticMapTools.js';
 import { mineProject } from './intel/templateMiner.js';
 import * as projectTools from './tools/projectTools.js';
+import { buildEventCommands } from './utils/eventCommandBuilders.js';
+import { insertEventCommands } from './tools/eventCommandTools.js';
 import * as assetTools from './tools/assetTools.js';
 import { TOOL_DEFINITIONS } from './toolDefinitions.js';
 import { TOOL_DEFINITIONS_LEGACY } from './toolDefinitionsLegacy.js';
@@ -106,6 +108,11 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
 
 /** Dispatch one tool call, consolidated or legacy. Exported for integration tests. */
 export async function dispatchTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  // This operation owns a before/after preview and skips writes explicitly.
+  // Do not wrap it in the legacy dry-run log, which would misleadingly be empty.
+  if (name === 'insert_event_commands') {
+    return routeTool(executeTool, projectTools.getProjectPath() || PROJECT_PATH, name, args);
+  }
   // Dry-run: when the caller passes dryRun:true, mutating writes are recorded but
   // not performed, so the tool's result previews the change without touching disk.
   // This is the single outer entry per request (nested consolidated→legacy calls go
@@ -357,6 +364,10 @@ async function handleToolCall(name: string, args: ToolArgs) {
   const p = projectTools.getProjectPath() || PROJECT_PATH;
 
   switch (name) {
+    case 'build_event_commands':
+      return buildEventCommands(args as unknown as Record<string, unknown>);
+    case 'insert_event_commands':
+      return insertEventCommands(p, args as unknown as Record<string, unknown>);
     // ── Actor Tools ──
     case 'get_actors':
       return await actorTools.getActors(p);
@@ -1006,7 +1017,7 @@ export async function main() {
 
     try {
       const currentPath = projectTools.getProjectPath();
-      if (!currentPath) {
+      if (!currentPath && toolName !== 'set_project_path' && toolName !== 'build_event_commands') {
         throw new Error('No project path set. Use set_project_path or set RPGMAKER_PROJECT_PATH.');
       }
 
