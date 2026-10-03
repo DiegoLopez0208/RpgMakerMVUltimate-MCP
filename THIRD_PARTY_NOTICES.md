@@ -6,6 +6,14 @@ their tests adapt patterns from [Redseb/rpgmaker-mz-mcp](https://github.com/Reds
 reviewed at commit `7e8dcc09684f0e627ef31dfd69929401f5bff5f2`.
 They have been adapted to RPG Maker MV's command format and interpreter behavior.
 
+The additional authoring, database, tile, validation, deployment and headless
+runtime modules in `src/parity/`, associated parity tests, the
+`skill/mv-tileset-catalog/` helpers, and selected formula/analysis and bridge
+hardening patterns also adapt that project, reviewed at commit
+`c863b4d4e10209391ab7a112cfcd36107d36f020`. MV-specific command layouts, engine
+APIs, tile fingerprinting and raw-text plugin commands replace MZ assumptions.
+The license below applies to these adaptations as well.
+
 ## RPG Maker MZ MCP — MIT License
 
 Copyright (c) 2026 Mikolaj Zyzanski

@@ -139,7 +139,9 @@ export const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['fill_layer', 'set_display_names', 'organize_tree', 'connect', 'set_encounters'], description: 'Which edit to perform; see the tool description' },
+        action: { type: 'string', enum: ['fill_layer', 'fill_rect', 'set_tile', 'replace_tile', 'set_display_names', 'organize_tree', 'connect', 'set_encounters'], description: 'Which edit to perform; use paint_tiles/fill_area for automatic autotiling.' },
+        x: ID_TYPE, y: ID_TYPE, x1: ID_TYPE, y1: ID_TYPE, x2: ID_TYPE, y2: ID_TYPE,
+        oldTileId: ID_TYPE, newTileId: ID_TYPE,
         mapId: { ...ID_TYPE, description: 'action "fill_layer": map to modify' },
         layer: { ...ID_TYPE, description: 'action "fill_layer": layer index 0-5' },
         tileId: { ...ID_TYPE, description: 'action "fill_layer": tile ID to write into every cell (0 = clear)' },
@@ -231,7 +233,8 @@ export const TOOL_DEFINITIONS = [
         minDistinctTiles: { ...ID_TYPE, description: 'mine_templates: a map needs at least this many distinct tiles to count as content rather than scratch (default 10)' },
         port: { ...ID_TYPE, description: 'bridge_start/install_bridge_plugin: loopback port for the live bridge (default 32123, or RPGMV_BRIDGE_PORT)' },
         telemetryInterval: { ...ID_TYPE, description: 'install_bridge_plugin: frames between player-position frames (default 30; 60 = once per second)' },
-        command: { type: 'string', enum: ['ping', 'get_state', 'reload_map', 'reload_database', 'capture_screenshot', 'teleport_player', 'interact', 'press_button'], description: 'bridge_command: which safe instruction to send to the running game' },
+        command: { type: 'string', enum: ['ping', 'get_state', 'start_new_game', 'reload_map', 'reload_database', 'capture_screenshot', 'teleport_player', 'interact', 'press_button'], description: 'bridge_command: which safe instruction to send to the running game; start_new_game only operates from the title screen' },
+        replaceExisting: { type: 'boolean', description: 'install_bridge_plugin: replace an existing different bridge version with backups.' },
         file: { type: 'string', description: 'bridge_command "reload_database": the data file to re-read, e.g. "Skills.json"' },
         types: { type: 'array', description: 'bridge_telemetry: only return these frame types, e.g. ["exception","log"]', items: { type: 'string' } },
         limit: { ...ID_TYPE, description: 'bridge_telemetry: return at most this many of the most recent frames. mine_templates: keep at most this many layouts, largest maps first' },
@@ -277,7 +280,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_project_context',
-    description: 'Read-only: pre-digested project knowledge — CALL THIS FIRST in a session. `detail` selects the depth: "full" (default) returns id+name lists for every database, switch/variable names, starting position, and available sprite filenames per img/ folder — everything needed to create content without inventing broken references; "summary" is a cheap health check (entry counts per data file); "assets" scans img/ and Tilesets.json into a complete index (sheet dimensions, autotile kinds, categorized usable tiles, all PNG names); "tileset" returns the categorized usable tile IDs of ONE tileset (ground/water/walls/roof/decoration) for edit_map "fill_layer" — guessing tile IDs produces glitched maps; "templates" lists the 106 bundled reference maps (id, category, theme) usable with generate_map mode "template", optionally filtered by category/theme. Returns one structured object (or array for templates). GOLDEN RULES for good results: (1) build whole maps with generate_map (it stamps real houses/trees and wires encounters) and add content with the manage_map_event presets — do NOT hand-paint tiles or place decorations one tile at a time; (2) never invent tile IDs or sprite/troop/skill IDs — take them from this tool; (3) for enemies to appear, create troops then set encounters (edit_map "set_encounters"), which generate_map does automatically for combat themes.',
+    description: 'Read-only: pre-digested project knowledge — CALL THIS FIRST in a session. `detail` selects the depth: "full" (default) returns id+name lists for every database, switch/variable names, starting position, and available sprite filenames per img/ folder — everything needed to create content without inventing broken references; "summary" is a cheap health check (entry counts per data file); "assets" scans img/ and Tilesets.json into a complete index (sheet dimensions, autotile kinds, categorized usable tiles, all PNG names); "tileset" returns the categorized usable tile IDs of ONE tileset (ground/water/walls/roof/decoration) for edit_map "fill_layer" — guessing tile IDs produces glitched maps; "templates" lists the 106 bundled reference maps (id, category, theme) usable with generate_map mode "template", optionally filtered by category/theme. Returns one structured object (or array for templates). GOLDEN RULES for good results: (1) prefer generate_map for whole layouts; use get_tile_catalog/find_tile with paint_blueprint/place_object for authored areas and details, and manage_map_event presets for interactions; (2) never invent tile IDs or sprite/troop/skill IDs — take them from this tool; (3) for enemies to appear, create troops then set encounters (edit_map "set_encounters"), which generate_map does automatically for combat themes.',
     annotations: { title: 'Get project context', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     inputSchema: {
       type: 'object',
@@ -339,7 +342,8 @@ export const TOOL_DEFINITIONS = [
         mapId: { ...ID_TYPE, description: 'view "ast": the map holding the event to parse' },
         eventId: { ...ID_TYPE, description: 'view "ast": the event on `mapId` to parse' },
         page: { ...ID_TYPE, description: 'view "ast": which page of the event (0-based, default 0)' },
-        commonEventId: { ...ID_TYPE, description: 'view "ast": parse this common event instead of a map event' }
+        commonEventId: { ...ID_TYPE, description: 'view "ast": parse this common event instead of a map event' },
+        troopId: { ...ID_TYPE, description: 'view "ast": parse this troop battle page instead of a map/common event; page is zero-based' }
       },
       required: []
     }

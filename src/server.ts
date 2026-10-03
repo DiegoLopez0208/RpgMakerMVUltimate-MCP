@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from "path";
 import { createRequire } from 'module';
-import { readFile, access, readdir } from 'fs/promises';
+import { readFile, access, readdir, realpath } from 'fs/promises';
 
 /**
  * server.ts — RPG Maker MV MCP Server
@@ -18,6 +18,14 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import sharp from 'sharp';
+import { PARITY_TOOLS, parityRegistry, callParityTool, parityRequiresProject } from './parity/tools.js';
+import { commitStore, type CommitResult } from './parity/utils/commit.js';
+import { loadProjectTextMetrics } from './parity/tools/projectConfig.js';
+import { setActiveTextMetrics } from './parity/validation/textMetrics.js';
+import { stopBridge, assertBridgeProject } from './bridge/bridge.js';
+import type { ToolContext } from './parity/registry.js';
+import { stopHeadlessSessions } from './parity/playtest/session.js';
+import { collectInlineImages } from './utils/inlineImages.js';
 
 import { validateProjectPath, setDryRun, getDryRunLog } from './utils/fileHandler.js';
 import type { RpgMakerDbEntry, RpgMakerMap, AsciiMapResult, EventPage, EventCommand, ItemType, CreateMapV3Params } from './types/rpgmaker.js';
@@ -107,7 +115,25 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
 }
 
 /** Dispatch one tool call, consolidated or legacy. Exported for integration tests. */
-export async function dispatchTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+export async function dispatchTool(name: string, args: Record<string, unknown>, reportProgress?: ToolContext['reportProgress']): Promise<unknown> {
+  const commits: CommitResult[] = [];
+  return commitStore.run({ dryRun: args.dryRun === true, commits }, async () => {
+  const projectPath = projectTools.getProjectPath() || PROJECT_PATH;
+  setActiveTextMetrics(await loadProjectTextMetrics(projectPath));
+  if (name === 'set_project_path') {
+    if (typeof args.path !== 'string' || !args.path.trim() || !(await validateProjectPath(args.path))) {
+      throw new Error('Invalid project path: ' + String(args.path) + '. Must contain data/System.json');
+    }
+    const target = await realpath(args.path);
+    if (args.dryRun === true) return { dryRun: true, wouldSetProjectPath: target, commits };
+    const current = projectPath ? await realpath(projectPath).catch(() => path.resolve(projectPath)) : '';
+    if (target !== current) await stopBridge();
+    args = { ...args, path: target };
+  }
+  if (parityRegistry.has(name)) {
+    const result = await callParityTool({ projectPath, reportProgress }, name, args);
+    return args.dryRun === true ? { dryRun: true, commits, wouldReturn: result } : result;
+  }
   // This operation owns a before/after preview and skips writes explicitly.
   // Do not wrap it in the legacy dry-run log, which would misleadingly be empty.
   if (name === 'insert_event_commands') {
@@ -124,12 +150,13 @@ export async function dispatchTool(name: string, args: Record<string, unknown>):
       ? await routeTool(executeTool, projectTools.getProjectPath() || PROJECT_PATH, name, args)
       : await executeTool(name, args);
     if (dry) {
-      return { dryRun: true, wouldWrite: getDryRunLog(), result };
+      return { dryRun: true, wouldWrite: getDryRunLog(), commits, result };
     }
     return result;
   } finally {
     setDryRun(false);
   }
+  });
 }
 
 // ─── Project Context & Validation Functions ───
@@ -349,7 +376,7 @@ interface ToolArgs {
   base64PNG: string; eventType: string; file: string; action: string;
   // booleans
   enabled: boolean; show_events: boolean; show_regions: boolean;
-  peek: boolean; wait: boolean;
+  peek: boolean; wait: boolean; dryRun: boolean;
   // structural
   pages: EventPage[]; command: EventCommand; fields: Record<string, unknown>;
   items: Record<string, unknown>[]; goods: unknown[][]; dialogues: string[];
@@ -508,14 +535,17 @@ case 'open_in_editor':
 case 'install_bridge_plugin':
   return await bridgeTools.installBridgePlugin(p, args as { port?: number; telemetryInterval?: number });
 case 'bridge_start':
-  return await bridgeTools.bridgeStart(p, args.port === undefined ? undefined : Number(args.port));
+  return await bridgeTools.bridgeStart(p, args.port === undefined ? undefined : Number(args.port), { dryRun: args.dryRun });
 case 'bridge_stop':
-  return await bridgeTools.bridgeStop();
+  return await bridgeTools.bridgeStop({ dryRun: args.dryRun });
 case 'bridge_status':
+  if (!args.dryRun) await assertBridgeProject(p);
   return bridgeTools.bridgeStatus();
 case 'bridge_telemetry':
+  if (!args.dryRun) await assertBridgeProject(p);
   return bridgeTools.bridgeTelemetry(args as { limit?: number; types?: string[]; peek?: boolean });
 case 'bridge_command':
+  if (!args.dryRun) await assertBridgeProject(p);
   return await bridgeTools.bridgeCommand(args as unknown as Record<string, unknown>);
 case 'bridge_screenshot':
   return await bridgeTools.bridgeScreenshot(p, args as { timeoutMs?: number; name?: string });
@@ -526,7 +556,7 @@ case 'bridge_record_video':
 
 // ── Learn from the project's own maps, and build from what was learned ──
 case 'mine_templates':
-  return await mineProject(p, args as unknown as { minDistinctTiles?: number; limit?: number });
+  return await mineProject(p, { ...args, noWrite: commitStore.getStore()?.dryRun });
 case 'generate_map_semantic':
   return await semanticMapTools.createMapSemantic(p, args as unknown as semanticMapTools.SemanticMapParams);
 
@@ -1002,9 +1032,25 @@ export async function main() {
   // Default: the consolidated tools. RPGMV_LEGACY_TOOLS=1 additionally
   // advertises the legacy names (calls to legacy names always work either way).
   const legacyMode = process.env.RPGMV_LEGACY_TOOLS === '1';
-  const advertisedTools = legacyMode
+  const baseTools = legacyMode
     ? TOOL_DEFINITIONS.concat(TOOL_DEFINITIONS_LEGACY.filter(function(t) { return !TOOL_NAMES.includes(t.name); }) as typeof TOOL_DEFINITIONS)
     : TOOL_DEFINITIONS;
+  const advertisedTools = [...baseTools, ...PARITY_TOOLS].map(tool => {
+    if (tool.annotations?.readOnlyHint !== false || tool.name === 'build_event_commands') return tool;
+    return { ...tool, inputSchema: { ...tool.inputSchema, properties: {
+      ...tool.inputSchema.properties,
+      dryRun: { type: 'boolean', description: 'Preview without changing project files or runtime state.' },
+    } } };
+  });
+  let closing = false;
+  const shutdown = async () => {
+    if (closing) return;
+    closing = true;
+    await Promise.all([stopBridge(), stopHeadlessSessions()]);
+    await toolCallQueue;
+    await Promise.all([stopBridge(), stopHeadlessSessions()]);
+    await server.close();
+  };
 
   server.setRequestHandler(ListToolsRequestSchema, async function() {
     return { tools: advertisedTools };
@@ -1016,16 +1062,22 @@ export async function main() {
     logger.info('Tool call: ' + toolName);
 
     try {
-      const currentPath = projectTools.getProjectPath();
-      if (!currentPath && toolName !== 'set_project_path' && toolName !== 'build_event_commands') {
-        throw new Error('No project path set. Use set_project_path or set RPGMAKER_PROJECT_PATH.');
-      }
-
       // Serialize tool executions: the SDK dispatches requests concurrently, and
       // two tools writing the same data file in parallel interleave their writes
       // and corrupt the project JSON. Reads are cheap, so everything goes
       // through one queue for safety.
-      const queuedCall = toolCallQueue.then(function() { return dispatchTool(toolName, args); });
+      const token = request.params._meta?.progressToken;
+      const reportProgress: ToolContext['reportProgress'] = token === undefined ? undefined : (progress, total, message) => {
+        void server.notification({ method: 'notifications/progress', params: { progressToken: token, progress, ...(total === undefined ? {} : { total }), ...(message ? { message } : {}) } }).catch(() => {});
+      };
+      const queuedCall = toolCallQueue.then(function() {
+        if (closing) throw new Error('Server is shutting down');
+        const currentPath = projectTools.getProjectPath();
+        if (!currentPath && toolName !== 'set_project_path' && toolName !== 'build_event_commands' && parityRequiresProject(toolName)) {
+          throw new Error('No project path set. Use set_project_path or set RPGMAKER_PROJECT_PATH.');
+        }
+        return dispatchTool(toolName, args, reportProgress);
+      });
       toolCallQueue = queuedCall.then(function() { return undefined; }, function() { return undefined; });
       const result = await queuedCall;
 
@@ -1033,14 +1085,16 @@ export async function main() {
       const structured = (typeof result === 'object' && result !== null && !Array.isArray(result))
         ? result as Record<string, unknown>
         : { result: result };
+      const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [
+        { type: 'text', text: JSON.stringify(result, null, 2) },
+      ];
+      const files = parityRegistry.get(toolName)?.images?.(result, args) ?? [];
+      const delivery = await collectInlineImages(files);
+      content.push(...delivery.images);
       return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(result, null, 2)
-          }
-        ],
-        structuredContent: structured
+        content,
+        structuredContent: structured,
+        ...(files.length ? { _meta: { imageDelivery: delivery.metadata } } : {}),
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1061,11 +1115,10 @@ export async function main() {
     logger.error('MCP Error: ' + (error instanceof Error ? error.message : String(error)));
   };
 
-  process.on('SIGINT', async function() {
-    logger.info('Shutting down...');
-    await server.close();
-    process.exit(0);
-  });
+  process.once('SIGINT', () => { void shutdown(); });
+  process.once('SIGTERM', () => { void shutdown(); });
+  process.stdin.once('end', () => { void shutdown(); });
+  server.onclose = () => { void shutdown(); };
 
   const transport = new StdioServerTransport();
   if (process.env.RPGMV_STRING_IDS === '1') {

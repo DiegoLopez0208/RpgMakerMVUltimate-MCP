@@ -37,7 +37,7 @@ const STOPWORDS = new Set([
 ]);
 
 function tokenize(s: string): string[] {
-  return (s.toLowerCase().match(/[a-z0-9áéíóúñü]+/gi) ?? []).map((t) => t.toLowerCase());
+  return s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
 function queryTerms(q: string): string[] {
@@ -98,9 +98,13 @@ function dialogueOf(pages: unknown): string {
     if (!Array.isArray(list)) continue;
     for (const cmd of list) {
       const code = Number(cmd?.code);
-      if (code === 401 || code === 405 || code === 108 || code === 408) {
+      if (code === 401 || code === 405 || code === 108 || code === 408 || code === 356) {
         const v = (cmd.parameters ?? [])[0];
         if (typeof v === "string") parts.push(v);
+      } else if (code === 102 && Array.isArray(cmd.parameters?.[0])) {
+        parts.push(...cmd.parameters[0].filter((value): value is string => typeof value === 'string'));
+      } else if (code === 402 && typeof cmd.parameters?.[1] === 'string') {
+        parts.push(cmd.parameters[1]);
       }
     }
   }
@@ -124,6 +128,8 @@ export async function gatherDocuments(projectPath: string): Promise<SearchDoc[]>
   const docs: SearchDoc[] = [];
   const safe = async (f: string) => { try { return await readJson(projectPath, f); } catch { return null; } };
 
+  docs.push(...entityDocs(await safe('Actors.json'), 'actor', ['profile', 'nickname', 'note']));
+  docs.push(...entityDocs(await safe('Classes.json'), 'class', ['note']));
   docs.push(...entityDocs(await safe("Items.json"), "item", ["description", "note"]));
   docs.push(...entityDocs(await safe("Weapons.json"), "weapon", ["description", "note"]));
   docs.push(...entityDocs(await safe("Armors.json"), "armor", ["description", "note"]));
@@ -131,6 +137,11 @@ export async function gatherDocuments(projectPath: string): Promise<SearchDoc[]>
   docs.push(...entityDocs(await safe("Actors.json"), "actor", ["nickname", "profile", "note"]));
   docs.push(...entityDocs(await safe("Enemies.json"), "enemy", ["note"]));
   docs.push(...entityDocs(await safe("States.json"), "state", ["note"]));
+  const troops = await safe('Troops.json');
+  if (Array.isArray(troops)) for (const troop of troops) {
+    if (!troop || typeof troop !== 'object') continue;
+    docs.push({ type: 'troop', id: Number(troop.id), label: String(troop.name ?? ''), text: dialogueOf(troop.pages) });
+  }
 
   const commons = await safe("CommonEvents.json");
   if (Array.isArray(commons)) {
@@ -150,12 +161,12 @@ export async function gatherDocuments(projectPath: string): Promise<SearchDoc[]>
       const name = String((info as Record<string, unknown>).name ?? "");
       const map = await safe(`Map${String(id).padStart(3, "0")}.json`) as Record<string, unknown> | null;
       if (!map) continue;
-      docs.push({ type: "map", id, label: name, text: String(map.displayName ?? ""), mapId: id });
+      docs.push({ type: "map", id, label: name, text: `${String(map.displayName ?? '')} ${String(map.note ?? '')}`, mapId: id });
       const events = Array.isArray(map.events) ? map.events : [];
       for (const ev of events) {
         if (!ev || typeof ev !== "object") continue;
         const e = ev as Record<string, unknown>;
-        docs.push({ type: "event", id: Number(e.id), label: String(e.name ?? ""), text: dialogueOf(e.pages), mapId: id });
+        docs.push({ type: "event", id: Number(e.id), label: String(e.name ?? ""), text: `${String(e.note ?? '')} ${dialogueOf(e.pages)}`, mapId: id });
       }
     }
   }

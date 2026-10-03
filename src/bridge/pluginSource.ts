@@ -98,6 +98,9 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     var ws = null;
     var authed = false;
     var pendingReload = null;
+    var pendingTransfer = null;
+    var currentEvent = null;
+    var startupFrames = [];
     var diagnosticPath = null;
     var diagnosticSeen = {};
     var videoRecorder = null;
@@ -149,8 +152,17 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     }
 
     function send(payload) {
-        if (!ws || ws.readyState !== 1 || !authed) return;
-        try { ws.send(JSON.stringify(payload)); } catch (e) { /* socket died mid-frame */ }
+        if (ws && ws.bufferedAmount > 1048576 && ['interpreter_step', 'player_state', 'performance'].indexOf(payload.type) >= 0) return;
+        var text;
+        try { text = JSON.stringify(payload); } catch (e) { return; }
+        if (!ws || ws.readyState !== 1 || !authed) {
+            if (text.length <= 16384 && ['exception', 'log'].indexOf(payload.type) >= 0) {
+                startupFrames.push(text);
+                if (startupFrames.length > 32) startupFrames.shift();
+            }
+            return;
+        }
+        try { ws.send(text); } catch (e) { /* socket died mid-frame */ }
     }
 
     function connect() {
@@ -169,20 +181,20 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
 
         ws.onopen = function () {
             diagnose('socket open on port ' + port);
-            authed = true; // the server closes the socket if the token is wrong
-            try { ws.send(JSON.stringify({ type: 'auth', token: token })); } catch (e) { /* ignore */ }
-            send({
-                type: 'ready',
-                engine: 'RPG Maker MV',
-                mvVersion: Utils.RPGMAKER_VERSION || 'unknown',
-                scene: SceneManager._scene ? SceneManager._scene.constructor.name : 'None'
-            });
+            try { ws.send(JSON.stringify({ type: 'auth', token: token, projectPath: fs.realpathSync(projectRoot()) })); } catch (e) { /* ignore */ }
         };
 
         ws.onmessage = function (event) {
             var msg;
             try { msg = JSON.parse(event.data); } catch (e) { return; }
             if (!msg || !msg.action) return;
+            if (msg.requestId === 'auth-ok' && msg.action === 'ping') {
+                authed = true;
+                while (startupFrames.length) ws.send(startupFrames.shift());
+                send({ type: 'ready', engine: 'RPG Maker MV', mvVersion: Utils.RPGMAKER_VERSION || 'unknown',
+                    scene: SceneManager._scene ? SceneManager._scene.constructor.name : 'None' });
+            }
+            if (!authed) return;
             try {
                 handleCommand(msg);
             } catch (e) {
@@ -207,15 +219,26 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
             case 'ping':
                 send({ type: 'log', level: 'info', requestId: msg.requestId, message: 'pong' });
                 break;
+            case 'start_new_game':
+                if (!(SceneManager._scene instanceof Scene_Title)) throw new Error('Start new game only from the title scene.');
+                DataManager.setupNewGame();
+                pendingTransfer = { requestId: msg.requestId };
+                SceneManager.goto(Scene_Map);
+                break;
             case 'get_state':
                 var messageWindow = SceneManager._scene && SceneManager._scene._messageWindow;
                 var textState = messageWindow && messageWindow._textState;
                 send({
                     type: 'state_dump',
                     requestId: msg.requestId,
+                    scene: SceneManager._scene ? SceneManager._scene.constructor.name : 'None',
+                    currentEvent: currentEvent,
+                    frameCount: Graphics.frameCount,
+                    player: window.$gamePlayer && window.$gameMap ? { mapId: $gameMap.mapId(), x: $gamePlayer.x, y: $gamePlayer.y, direction: $gamePlayer.direction() } : null,
                     switches: dumpSwitches(),
                     variables: dumpVariables(),
                     message: {
+                        busy: !!(window.$gameMessage && $gameMessage.isBusy()),
                         allText: window.$gameMessage ? $gameMessage.allText() : '',
                         index: textState ? textState.index : null,
                         length: textState ? textState.text.length : null,
@@ -288,6 +311,7 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
             send({ type: 'error', requestId: requestId, message: 'No map is loaded yet.' });
             return;
         }
+        if (!(SceneManager._scene instanceof Scene_Map) || $gameMap.isEventRunning() || $gameMessage.isBusy() || pendingReload || pendingTransfer) throw new Error('Map reload requires an idle map.');
         var mapId = $gameMap.mapId();
         pendingReload = { requestId: requestId, mapId: mapId };
         $gamePlayer.reserveTransfer(mapId, $gamePlayer.x, $gamePlayer.y, $gamePlayer.direction(), 2);
@@ -295,22 +319,15 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     }
 
     function reloadDatabase(requestId, file, globalVar) {
-        if (!file || !globalVar) {
-            send({ type: 'error', requestId: requestId, message: 'reload_database needs file and globalVar.' });
-            return;
-        }
-        DataManager.loadDataFile(globalVar, file);
-        var tries = 0;
-        var check = function () {
-            if (window[globalVar]) {
-                send({ type: 'reload_complete', requestId: requestId, target: 'database', file: file });
-            } else if (++tries < 100) {
-                setTimeout(check, 50);
-            } else {
-                send({ type: 'error', requestId: requestId, message: 'Timed out reloading ' + file });
-            }
-        };
-        setTimeout(check, 50);
+        var allowed = { 'Actors.json':'$dataActors', 'Classes.json':'$dataClasses', 'Skills.json':'$dataSkills',
+            'Items.json':'$dataItems', 'Weapons.json':'$dataWeapons', 'Armors.json':'$dataArmors',
+            'Enemies.json':'$dataEnemies', 'Troops.json':'$dataTroops', 'States.json':'$dataStates', 'CommonEvents.json':'$dataCommonEvents' };
+        if (!allowed[file] || allowed[file] !== globalVar) throw new Error('Unsupported database reload.');
+        var value = JSON.parse(fs.readFileSync(path.join(projectRoot(), 'data', file), 'utf8'));
+        if (!Array.isArray(value)) throw new Error('Database must contain an array.');
+        DataManager.onLoad(value);
+        window[globalVar] = value;
+        send({ type: 'reload_complete', requestId: requestId, target: 'database', file: file });
     }
 
     function captureScreenshot(requestId) {
@@ -419,9 +436,14 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
             send({ type: 'error', requestId: msg.requestId, message: 'No active map yet; start or load a game before teleporting.' });
             return;
         }
+        if ($gameMap.isEventRunning() || $gameMessage.isBusy() || pendingReload || pendingTransfer) throw new Error('Transfer requires an idle map.');
         var mapId = msg.mapId || $gameMap.mapId();
-        $gamePlayer.reserveTransfer(mapId, msg.x | 0, msg.y | 0, msg.direction || $gamePlayer.direction(), 0);
-        send({ type: 'log', level: 'info', requestId: msg.requestId, message: 'Transfer reserved to map ' + mapId });
+        if (mapId !== Math.floor(mapId) || mapId < 1 || mapId > 999999) throw new Error('Invalid destination map.');
+        var name = ('000' + mapId).slice(-Math.max(3, String(mapId).length));
+        var data = JSON.parse(fs.readFileSync(path.join(projectRoot(), 'data', 'Map' + name + '.json'), 'utf8'));
+        if (msg.x !== Math.floor(msg.x) || msg.y !== Math.floor(msg.y) || msg.x < 0 || msg.y < 0 || msg.x >= data.width || msg.y >= data.height) throw new Error('Transfer tile is outside the destination map.');
+        pendingTransfer = { requestId: msg.requestId };
+        $gamePlayer.reserveTransfer(mapId, msg.x, msg.y, msg.direction || $gamePlayer.direction(), 0);
     }
 
     function interact(msg) {
@@ -453,6 +475,10 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
         });
     });
 
+    window.addEventListener('unhandledrejection', function (event) {
+        send({ type: 'exception', message: String(event.reason), stack: event.reason && event.reason.stack || '' });
+    });
+
     var _consoleError = console.error;
     console.error = function () {
         _consoleError.apply(console, arguments);
@@ -481,6 +507,12 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     var _Scene_Map_onMapLoaded = Scene_Map.prototype.onMapLoaded;
     Scene_Map.prototype.onMapLoaded = function () {
         _Scene_Map_onMapLoaded.call(this);
+        if (pendingTransfer) {
+            var transfer = pendingTransfer;
+            pendingTransfer = null;
+            send({ type: 'reload_complete', target: 'transfer', requestId: transfer.requestId,
+                mapId: $gameMap.mapId(), x: $gamePlayer.x, y: $gamePlayer.y });
+        }
         if (pendingReload) {
             var p = pendingReload;
             pendingReload = null;
@@ -551,22 +583,18 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
         });
     };
 
-    // Which command an event is on, so a hung event can be pinpointed. Only map
-    // events are reported; common events would flood the channel.
+    // Include nested/common interpreters; byte budgets and backpressure bound traces.
     var _Game_Interpreter_executeCommand = Game_Interpreter.prototype.executeCommand;
     Game_Interpreter.prototype.executeCommand = function () {
         var cmd = this.currentCommand();
-        if (cmd && this._eventId > 0 && window.$gameMap) {
-            send({
-                type: 'interpreter_step',
-                mapId: $gameMap.mapId(),
-                eventId: this._eventId,
-                commandIndex: this._index,
-                code: cmd.code,
-                indent: cmd.indent
-            });
+        if (cmd && window.$gameMap) {
+            currentEvent = { type: 'interpreter_step', mapId: this._mapId, eventId: this._eventId,
+                depth: this._depth, commandIndex: this._index, code: cmd.code, indent: cmd.indent };
+            send(currentEvent);
         }
-        return _Game_Interpreter_executeCommand.call(this);
+        var result = _Game_Interpreter_executeCommand.call(this);
+        if ((!this._list || !this.currentCommand()) && currentEvent && currentEvent.eventId === this._eventId && currentEvent.depth === this._depth) currentEvent = null;
+        return result;
     };
 
     try {

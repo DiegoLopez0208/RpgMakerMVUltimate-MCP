@@ -128,11 +128,36 @@ function scanStrs(re: RegExp, text: string, set: Set<string>): void {
 /** Add every id in the inclusive range start..end to a set (handles reversed/garbage input). */
 function addRange(set: Set<number>, start: unknown, end: unknown): void {
   const a = Number(start); const b = Number(end);
-  if (!Number.isFinite(a)) return;
-  const hi = Number.isFinite(b) ? b : a;
+  if (!Number.isSafeInteger(a)) return;
+  const hi = Number.isSafeInteger(b) ? b : a;
   const lo = Math.min(a, hi); const top = Math.max(a, hi);
   if (top - lo > 10000) { set.add(a); return; } // guard against absurd ranges
   for (let i = lo; i <= top; i++) if (i > 0) set.add(i);
+}
+
+/** Keep large switch/variable ranges compact for exact single-ID queries. */
+export interface CommandRanges {
+  switches: [number, number][];
+  variables: [number, number][];
+}
+
+export function extractCommandRanges(lists: RawCommand[][], reads = false): CommandRanges {
+  const result: CommandRanges = { switches: [], variables: [] };
+  for (const list of lists) for (const command of list) {
+    const code = Number(command?.code);
+    const p = Array.isArray(command?.parameters) ? command.parameters : [];
+    if (code !== 121 && code !== 122) continue;
+    // Non-assignment variable operations read the previous value as well.
+    if (reads && (code !== 122 || ![1, 2, 3, 4, 5].includes(Number(p[2])))) continue;
+    const start = Number(p[0]), end = Number(p[1]);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start <= 0 || end < start) continue;
+    result[code === 121 ? 'switches' : 'variables'].push([start, end]);
+  }
+  return result;
+}
+
+export function rangeContains(ranges: [number, number][] | undefined, id: number): boolean {
+  return Number.isSafeInteger(id) && !!ranges?.some(([start, end]) => start <= id && id <= end);
 }
 
 function addNum(set: Set<number>, v: unknown): void {

@@ -37,6 +37,18 @@ const KIND_MAP: Record<string, RefKind> = {
 };
 
 async function eventCommandList(projectPath: string, args: Args): Promise<RawCommand[]> {
+  const targets = [args.commonEventId !== undefined, args.troopId !== undefined, args.mapId !== undefined].filter(Boolean).length;
+  if (targets !== 1) throw new Error('view "ast" requires exactly one of mapId (+ eventId), commonEventId or troopId');
+  const pageIdx = args.page !== undefined ? num(args.page) : 0;
+  if (!Number.isSafeInteger(pageIdx) || pageIdx < 0) throw new Error('page must be a nonnegative integer');
+  if (args.troopId !== undefined) {
+    const troops = await readJson(projectPath, 'Troops.json');
+    const troop = Array.isArray(troops) ? troops.find(t => t && num(t.id) === num(args.troopId)) : undefined;
+    if (!troop) throw new Error(`Troop ${args.troopId} not found`);
+    const page = Array.isArray(troop.pages) ? troop.pages[pageIdx] : undefined;
+    if (!page) throw new Error(`Page ${pageIdx} not found on troop ${args.troopId}`);
+    return Array.isArray(page.list) ? page.list : [];
+  }
   if (args.commonEventId !== undefined) {
     const ces = (await readJson(projectPath, "CommonEvents.json")) as Record<string, unknown>[];
     const ce = Array.isArray(ces) ? ces.find((c) => c && num(c.id) === num(args.commonEventId)) : null;
@@ -51,7 +63,6 @@ async function eventCommandList(projectPath: string, args: Args): Promise<RawCom
   const ev = events.find((e) => e && num(e.id) === num(args.eventId));
   if (!ev) throw new Error(`Event ${args.eventId} not found on map ${mapId}`);
   const pages = (ev.pages as Record<string, unknown>[]) ?? [];
-  const pageIdx = args.page !== undefined ? num(args.page) : 0;
   const page = pages[pageIdx];
   if (!page) throw new Error(`Page ${pageIdx} not found on event ${args.eventId}`);
   return (page.list as RawCommand[]) ?? [];
@@ -96,6 +107,14 @@ async function gatherCommandSources(projectPath: string): Promise<RefactorSource
     }
   }
 
+  const troops = await safe('Troops.json');
+  if (Array.isArray(troops)) for (const troop of troops) {
+    if (!troop || typeof troop !== 'object' || !Array.isArray(troop.pages)) continue;
+    troop.pages.forEach((page: Record<string, unknown>, index: number) => {
+      if (Array.isArray(page?.list) && page.list.length > 1) sources.push({ label: `Troop ${num(troop.id)} "${String(troop.name ?? '')}" p${index}`, commands: page.list as RawCommand[] });
+    });
+  }
+
   const infos = await safe("MapInfos.json");
   if (Array.isArray(infos)) {
     for (const info of infos) {
@@ -134,7 +153,7 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
     const query = String(args.query ?? "");
     if (!query.trim()) throw new Error('view "search" requires a non-empty query');
     const docs = await gatherDocuments(projectPath);
-    return { query, results: rankDocuments(docs, query, args.limit ? num(args.limit) : 20) };
+    return { query, results: rankDocuments(docs, query, args.limit ? num(args.limit) : 20), coverage: 'Offline lexical ranking of names, dialogue, choices, comments, MV plugin-command text, notes and database descriptions/profiles, including troop pages. No embeddings, script execution or dynamically generated text.' };
   }
   if (view === "refactor") {
     const sources = await gatherCommandSources(projectPath);

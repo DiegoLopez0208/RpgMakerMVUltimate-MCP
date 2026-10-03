@@ -96,6 +96,8 @@ async function checkReferences(projectPath: string, commands: EventCommand[]): P
     } else if (command.code === 301) {
       if (p[0] === 0) entry(await read('Troops.json'), p[1] as number, 'Troop');
       if (p[0] === 1) checkSystemId('variables', p[1]);
+    } else if (command.code === 212 || command.code === 337) {
+      entry(await read('Animations.json'), p[1] as number, 'Animation');
     }
   }
   return warnings;

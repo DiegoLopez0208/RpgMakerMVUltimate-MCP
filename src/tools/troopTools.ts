@@ -1,5 +1,11 @@
 import { createCrud } from "../utils/crudHelper.js";
 import type { TroopParams, RpgMakerDbEntry } from "../types/rpgmaker.js";
+import { assertMvCompatibility } from "../utils/eventCommandValidation.js";
+
+function assertPageCompatibility(pages: unknown): void {
+  if (!Array.isArray(pages)) return;
+  for (const page of pages) assertMvCompatibility(page?.list);
+}
 
 interface Troop extends RpgMakerDbEntry {
   members: { enemyId: number; x: number; y: number; hidden: boolean }[];
@@ -33,6 +39,7 @@ async function getTroop(projectPath: string, id: number) {
 }
 
 async function createTroop(projectPath: string, params: TroopParams) {
+  assertPageCompatibility(params.pages);
   return troopsCrud.create(projectPath, (id) => ({
     ...troopFactory(id),
     members: params.members || [],
@@ -43,6 +50,7 @@ async function createTroop(projectPath: string, params: TroopParams) {
 }
 
 async function updateTroop(projectPath: string, id: number, fields: Partial<Troop>) {
+  assertPageCompatibility(fields.pages);
   return troopsCrud.update(projectPath, id, fields);
 }
 

@@ -165,7 +165,7 @@ describe('analyseBalance — shop and enemies', () => {
 
     const enemies = category(await analyseBalance(dir), 'enemies');
     expect(enemies.outliers.map((o) => o.id)).toContain(5);
-    expect(enemies.outliers[0].message).toMatch(/grind/);
+    expect(enemies.outliers[0].message).toMatch(/less HP per point of EXP/);
   });
 
   it('skips entries with nothing to measure', async () => {

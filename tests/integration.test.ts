@@ -61,7 +61,7 @@ describe("consolidated tool surface", () => {
     expect(SERVER_VERSION).not.toBe("0.0.0-unknown");
   });
 
-  it("hardcodes no version number anywhere in src/", () => {
+  it("hardcodes no package version in runtime source statements", () => {
     // Pinning the handshake was only half the fix: the startup banner kept its own
     // literal and went on announcing v5.14.2 after the handshake was correct, so a
     // client and its log disagreed about what was running. Any "v1.2.3" in source
@@ -73,6 +73,8 @@ describe("consolidated tool surface", () => {
         if (entry.isDirectory()) { walk(full); continue; }
         if (!entry.name.endsWith(".ts")) continue;
         readFileSync(full, "utf-8").split(/\r?\n/).forEach((line, i) => {
+          // Engine-version provenance in comments is independent of our package version.
+          if (/^\s*(\/\/|\/\*|\*)/.test(line)) return;
           if (/v\d+\.\d+\.\d+/.test(line)) offenders.push(`${full}:${i + 1}: ${line.trim()}`);
         });
       }
@@ -1045,15 +1047,17 @@ describe("Wave 3 tile painting and plugin management", () => {
     expect(result).toContain("Another");
   });
 
-  it("toggle_plugin enables/disables plugins in System.json (W3-S5)", async () => {
+  it("toggle_plugin changes the real MV manifest and preserves System.json", async () => {
     const systemPath = path.join(projectDir, "data", "System.json");
-    const sys = JSON.parse(readFileSync(systemPath, "utf-8"));
-    sys.plugins = [{ name: "TestPlugin", status: false, parameters: {} }];
-    writeFileSync(systemPath, JSON.stringify(sys));
+    const systemBefore = readFileSync(systemPath, "utf-8");
+    const manifestPath = path.join(projectDir, 'js', 'plugins.js');
+    writeFileSync(manifestPath, 'var $plugins = [{"name":"TestPlugin","status":false,"parameters":{"keep":"yes"}}];');
 
     await dispatchTool("toggle_plugin", { pluginName: "TestPlugin", enabled: true });
-    const after = JSON.parse(readFileSync(systemPath, "utf-8"));
-    expect(after.plugins[0].status).toBe(true);
+    const after = await dispatchTool('get_plugin_status', {}) as any[];
+    expect(after[0].status).toBe(true);
+    expect(after[0].parameters).toEqual({keep:'yes'});
+    expect(readFileSync(systemPath, "utf-8")).toBe(systemBefore);
 
     await expect(dispatchTool("toggle_plugin", { pluginName: "Missing", enabled: true })).rejects.toThrow(/Missing/);
   });

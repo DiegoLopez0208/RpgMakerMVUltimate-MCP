@@ -1,4 +1,5 @@
 import { createCrud } from "../utils/crudHelper.js";
+import { assertMvActionScope } from "../utils/actionScope.js";
 import type { SkillParams, RpgMakerDbEntry } from "../types/rpgmaker.js";
 
 interface Skill extends RpgMakerDbEntry {
@@ -49,6 +50,7 @@ async function getSkill(projectPath: string, id: number) {
 }
 
 async function createSkill(projectPath: string, params: SkillParams) {
+  if ('scope' in params) assertMvActionScope(params.scope);
   return skillsCrud.create(projectPath, (id) => ({
     ...skillFactory(id),
     ...params,
@@ -74,6 +76,7 @@ async function createStateSkill(projectPath: string, name: string, mpCost: numbe
 }
 
 async function updateSkill(projectPath: string, id: number, fields: Partial<SkillParams>) {
+  if ('scope' in fields) assertMvActionScope(fields.scope);
   return skillsCrud.update(projectPath, id, fields);
 }
 

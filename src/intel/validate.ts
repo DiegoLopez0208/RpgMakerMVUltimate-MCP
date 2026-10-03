@@ -12,7 +12,7 @@
 
 import type { ProjectIndex, EntityKind } from "./projectIndex.js";
 import type { RefSet } from "./references.js";
-import { unreachableMaps } from "./graph.js";
+import { unreachableMaps, findUsage } from "./graph.js";
 
 export type Severity = "error" | "warning" | "info";
 
@@ -106,26 +106,13 @@ export function validateProject(index: ProjectIndex): ValidationReport {
     }
   }
 
-  // 5. Unused named switches / variables.
-  const usedSwitches = new Set<number>();
-  const usedVariables = new Set<number>();
-  for (const src of index.refSources) {
-    for (const id of src.refs.switches) usedSwitches.add(id);
-    for (const id of src.refs.variables) usedVariables.add(id);
-  }
-  for (const m of index.maps) {
-    for (const e of m.events) {
-      for (const id of e.conditionRefs.switches) usedSwitches.add(id);
-      for (const id of e.conditionRefs.variables) usedVariables.add(id);
-    }
-  }
-  for (const ce of index.commonEvents) if (ce.trigger === 1 || ce.trigger === 2) usedSwitches.add(ce.switchId);
-
+  // 5. Names without observed static use. Query compact ranges rather than
+  // expanding them: an assignment spanning a billion IDs remains inexpensive.
   for (const s of index.switches) {
-    if (s.id > 0 && s.name && !usedSwitches.has(s.id)) issues.push({ severity: "warning", category: "unused-switch", id: s.id, message: `Switch ${s.id} "${s.name}" is named but never used` });
+    if (s.id > 0 && s.name && findUsage(index, 'switches', s.id).length === 0) issues.push({ severity: 'warning', category: 'unused-switch', id: s.id, message: `Switch ${s.id} "${s.name}" has no static use found; scripts, plugins or saved state may still use it` });
   }
   for (const v of index.variables) {
-    if (v.id > 0 && v.name && !usedVariables.has(v.id)) issues.push({ severity: "warning", category: "unused-variable", id: v.id, message: `Variable ${v.id} "${v.name}" is named but never used` });
+    if (v.id > 0 && v.name && findUsage(index, 'variables', v.id).length === 0) issues.push({ severity: 'warning', category: 'unused-variable', id: v.id, message: `Variable ${v.id} "${v.name}" has no static use found; scripts, plugins or saved state may still use it` });
   }
 
   // 6. Starting position sanity.
@@ -140,7 +127,7 @@ export function validateProject(index: ProjectIndex): ValidationReport {
 
   // 7. Maps unreachable from the start map.
   for (const m of unreachableMaps(index)) {
-    issues.push({ severity: "info", category: "unreachable-map", mapId: m.id, message: `Map ${m.id} "${m.name}" has no transfer path from the starting map` });
+    issues.push({ severity: "info", category: "unreachable-map", mapId: m.id, message: `Map ${m.id} "${m.name}" has no statically resolved transfer path from the starting map; scripts, plugins, variable destinations or automatic common events may provide one` });
   }
 
   const bySeverity: Record<Severity, number> = { error: 0, warning: 0, info: 0 };

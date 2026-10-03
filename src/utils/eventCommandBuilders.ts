@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { EventCommand } from "../types/rpgmaker.js";
 import { validateEventCommands } from "./eventCommandValidation.js";
+import { showText } from "../parity/events/commandBuilders.js";
+import { textLineWidthWarnings } from "../parity/validation/eventCommands.js";
 
 // Numeric strings follow the server's convention without coercing null, blanks or booleans.
 function numberField(integer = false, min?: number, max?: number) {
@@ -33,6 +35,7 @@ const textSchema = z.object({
   lines: z.array(z.string()).min(1), faceName: z.string().default(""),
   faceIndex: integer(0, 7).default(0), background,
   position: z.enum(["top", "middle", "bottom"]).default("bottom"),
+  wrap: z.union([z.boolean(), z.enum(["soft", "hard"])]).optional(),
 }).strict();
 
 const choicesSchema = z.object({
@@ -202,9 +205,9 @@ export function buildEventCommands(args: Record<string, unknown>): { commands: E
   switch (args.kind) {
     case "show_text": {
       const a = textSchema.parse(args);
-      commands = [command(101, a.indent, [
-        a.faceName, a.faceIndex, backgroundCodes[a.background], { top: 0, middle: 1, bottom: 2 }[a.position],
-      ]), ...a.lines.map(line => command(401, a.indent, [line]))];
+      const built = showText(a.lines, a);
+      commands = built;
+      warnings.push(...textLineWidthWarnings(built, "show_text").map(w => w.message));
       break;
     }
     case "show_choices": {

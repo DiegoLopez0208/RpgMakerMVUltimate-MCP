@@ -9,8 +9,10 @@
  * Roadmap #3 (Grafo del proyecto) and #8 (Comprensión del juego).
  */
 
-import type { ProjectIndex, RefSource } from "./projectIndex.js";
-import type { RefSet } from "./references.js";
+import type { ProjectIndex, RefSource, UnresolvedTransfer } from "./projectIndex.js";
+import { rangeContains, type RefSet } from "./references.js";
+
+export const STATIC_GRAPH_COVERAGE = 'Static possibilities only: page conditions are not executed. Direct transfers and called common events are followed cycle-safely. Variable destinations, scripts, plugins, automatically triggered common events and battle-triggered transfers may add routes not shown here; missing static writers do not prove an event cannot run.';
 
 export type RefKind = Extract<
   keyof RefSet,
@@ -36,13 +38,15 @@ export function findUsage(index: ProjectIndex, kind: RefKind, id: number): Usage
   const writable = kind === "switches" || kind === "variables";
 
   for (const src of index.refSources) {
-    if (!src.refs[kind].includes(id)) continue;
+    const rangeWrite = writable && rangeContains(src.writeRanges?.[kind as 'switches' | 'variables'], id);
+    const rangeRead = writable && rangeContains(src.readRanges?.[kind as 'switches' | 'variables'], id);
+    if (!src.refs[kind].includes(id) && !rangeWrite && !rangeRead) continue;
     let role: Role | undefined;
     if (writable) {
       const writes = kind === "switches" ? src.writes.switches : src.writes.variables;
       const reads = kind === "switches" ? src.reads.switches : src.reads.variables;
-      const w = writes.includes(id);
-      const r = reads.includes(id);
+      const w = writes.includes(id) || rangeWrite;
+      const r = reads.includes(id) || rangeRead;
       role = w && r ? "both" : w ? "write" : "read";
     }
     hits.push({
@@ -103,11 +107,11 @@ export function explainSwitch(index: ProjectIndex, id: number): SwitchReport {
 
   let diagnosis: string;
   if (setters.length === 0 && readers.length === 0) {
-    diagnosis = `Switch ${id}${name ? ` "${name}"` : ""} is never used anywhere.`;
+    diagnosis = `No static references were found for switch ${id}${name ? ` "${name}"` : ""}. Scripts, plugins and runtime state may still use it.`;
   } else if (setters.length === 0) {
-    diagnosis = `Switch ${id}${name ? ` "${name}"` : ""} is read/gated in ${readers.length} place(s) but is NEVER set ON. Anything waiting on it can never trigger — this is a common reason a door, event or page never activates.`;
+    diagnosis = `Switch ${id}${name ? ` "${name}"` : ""} is read/gated in ${readers.length} place(s), but no static writer was found. Check initialization, scripts, plugins and saved state before concluding the gate cannot open.`;
   } else if (readers.length === 0) {
-    diagnosis = `Switch ${id}${name ? ` "${name}"` : ""} is set in ${setters.length} place(s) but never read. It has no effect (dead write) and can likely be removed.`;
+    diagnosis = `Switch ${id}${name ? ` "${name}"` : ""} is set in ${setters.length} place(s) with no static reader found (possible dead write). Check script/plugin use before removing it.`;
   } else {
     diagnosis = `Switch ${id}${name ? ` "${name}"` : ""} is set in ${setters.length} place(s) and read in ${readers.length}.`;
   }
@@ -128,9 +132,9 @@ export function explainVariable(index: ProjectIndex, id: number): VariableReport
   const setters = usage.filter((u) => u.role === "write" || u.role === "both");
   const readers = usage.filter((u) => u.role === "read" || u.role === "both");
   let diagnosis: string;
-  if (setters.length === 0 && readers.length === 0) diagnosis = `Variable ${id}${name ? ` "${name}"` : ""} is never used.`;
-  else if (setters.length === 0) diagnosis = `Variable ${id}${name ? ` "${name}"` : ""} is read but never assigned — it stays 0.`;
-  else if (readers.length === 0) diagnosis = `Variable ${id}${name ? ` "${name}"` : ""} is assigned but never read (dead write).`;
+  if (setters.length === 0 && readers.length === 0) diagnosis = `No static references were found for variable ${id}${name ? ` "${name}"` : ""}. Scripts, plugins and saved state may still use it.`;
+  else if (setters.length === 0) diagnosis = `Variable ${id}${name ? ` "${name}"` : ""} is read but no static assignment was found. Scripts, plugins and saved state may supply its value.`;
+  else if (readers.length === 0) diagnosis = `Variable ${id}${name ? ` "${name}"` : ""} is assigned with no static reader found (possible dead write). Check script/plugin use before removing it.`;
   else diagnosis = `Variable ${id}${name ? ` "${name}"` : ""} is assigned in ${setters.length} place(s) and read in ${readers.length}.`;
   return { id, name, setters, readers, diagnosis };
 }
@@ -140,11 +144,14 @@ export function explainVariable(index: ProjectIndex, id: number): VariableReport
 export interface MapGraph {
   nodes: { id: number; name: string }[];
   edges: { from: number; to: number; via: number | null }[];
+  unresolved: UnresolvedTransfer[];
+  missingMaps: { id: number; name: string }[];
+  coverage: string;
 }
 
 /** Directed graph of player transfers between maps. */
 export function buildMapGraph(index: ProjectIndex): MapGraph {
-  const nodes = index.maps.map((m) => ({ id: m.id, name: m.name }));
+  const nodes = index.maps.filter(m => !m.missing).map((m) => ({ id: m.id, name: m.name }));
   const edges: MapGraph["edges"] = [];
   const seen = new Set<string>();
   for (const map of index.maps) {
@@ -155,11 +162,13 @@ export function buildMapGraph(index: ProjectIndex): MapGraph {
       edges.push({ from: t.fromMap, to: t.toMap, via: t.fromEvent });
     }
   }
-  return { nodes, edges };
+  return { nodes, edges, unresolved: index.maps.flatMap(m => m.unresolvedTransfers ?? []), missingMaps: index.maps.filter(m => m.missing).map(({id,name}) => ({id,name})), coverage: STATIC_GRAPH_COVERAGE };
 }
 
 /** Map ids reachable from `startId` by following transfers (includes startId). */
 export function reachableMaps(index: ProjectIndex, startId: number): number[] {
+  const loaded = new Set(index.maps.filter(map => !map.missing).map(map => map.id));
+  if (!loaded.has(startId)) return [];
   const adjacency = new Map<number, number[]>();
   for (const map of index.maps) {
     const outs = adjacency.get(map.id) ?? [];
@@ -172,7 +181,7 @@ export function reachableMaps(index: ProjectIndex, startId: number): number[] {
     const cur = stack.pop()!;
     if (seen.has(cur)) continue;
     seen.add(cur);
-    for (const next of adjacency.get(cur) ?? []) if (!seen.has(next)) stack.push(next);
+    for (const next of adjacency.get(cur) ?? []) if (loaded.has(next) && !seen.has(next)) stack.push(next);
   }
   return [...seen].sort((a, b) => a - b);
 }

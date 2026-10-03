@@ -19,9 +19,8 @@
  *    ask the game to evaluate arbitrary JavaScript.
  */
 import { randomBytes, timingSafeEqual } from 'crypto';
-import { writeFile, unlink } from 'fs/promises';
-import path from 'path';
-import { resolveSafePath } from '../utils/security.js';
+import { writeFile, unlink, readFile, realpath } from 'fs/promises';
+import { projectFile } from './projectPaths.js';
 import * as logger from '../utils/logger.js';
 import { startWsServer, type WsConnection, type WsServer } from './wsServer.js';
 import {
@@ -32,8 +31,6 @@ import {
 export interface BridgeStatus {
   running: boolean;
   port: number | null;
-  /** Present only while running; the plugin needs it, nobody else does. */
-  token: string | null;
   projectPath: string | null;
   clients: number;
   authenticatedClients: number;
@@ -57,6 +54,10 @@ let startedAtIso: string | null = null;
 let handshakePath: string | null = null;
 let dropped = 0;
 let requestSeq = 0;
+let bufferedBytes = 0;
+const FRAME_LIMIT = 64 * 1024;
+const BUFFER_LIMIT = 2 * 1024 * 1024;
+const frameSizes = new WeakMap<StampedTelemetry, number>();
 
 const buffer: StampedTelemetry[] = [];
 const pending = new Map<string, Pending>();
@@ -113,8 +114,16 @@ function push(frame: Telemetry): void {
   // Binary capture replies are delivered directly to their waiter. Keeping a
   // second base64 copy in telemetry wastes tens of MB for a short video.
   if (frame.type !== 'screenshot_result' && frame.type !== 'recording_result') {
-    buffer.push(stamped);
-    while (buffer.length > TELEMETRY_BUFFER_MAX) { buffer.shift(); dropped++; }
+    const bytes = Buffer.byteLength(JSON.stringify(stamped));
+    if (bytes <= FRAME_LIMIT) {
+      buffer.push(stamped);
+      frameSizes.set(stamped, bytes);
+      bufferedBytes += bytes;
+      while (buffer.length > TELEMETRY_BUFFER_MAX || bufferedBytes > BUFFER_LIMIT) {
+        bufferedBytes -= frameSizes.get(buffer.shift()!) ?? 0;
+        dropped++;
+      }
+    } else { dropped++; }
   }
   const id = (frame as { requestId?: string }).requestId;
   if (id) {
@@ -138,7 +147,7 @@ function handleMessage(conn: WsConnection, text: string): void {
   if (!msg || typeof msg.type !== 'string') return;
 
   if (msg.type === 'auth') {
-    if (!tokenMatches(msg.token)) {
+    if (!tokenMatches(msg.token) || msg.projectPath !== projectRoot || authedConnections().some((c) => c !== conn)) {
       logger.warn('Bridge auth rejected', { conn: conn.id });
       conn.close(4401, 'bad token');
       return;
@@ -167,8 +176,9 @@ function handleMessage(conn: WsConnection, text: string): void {
  */
 export async function startBridge(projectPath: string, port?: number): Promise<BridgeStatus> {
   if (!projectPath) throw new Error('No project path set — call set_project_path first.');
+  projectPath = await realpath(projectPath);
   if (server) {
-    if (path.resolve(projectRoot) === path.resolve(projectPath)) return statusBridge();
+    if (projectRoot === projectPath) return statusBridge();
     // The active MCP project changed. Keeping the old singleton would leave
     // the new project's plugin reading a stale/missing handshake while tools
     // reported that a bridge was already running.
@@ -176,11 +186,14 @@ export async function startBridge(projectPath: string, port?: number): Promise<B
   }
 
   const wanted = port ?? Number(process.env.RPGMV_BRIDGE_PORT || DEFAULT_PORT);
+  if (!Number.isInteger(wanted) || wanted < 0 || wanted > 65535) throw new Error('Bridge port must be 0-65535.');
+  const handshakeTarget = await projectFile(projectPath, HANDSHAKE_FILE);
   token = randomBytes(16).toString('hex');
   projectRoot = projectPath;
   startedAtMs = Date.now();
   startedAtIso = new Date(startedAtMs).toISOString();
   buffer.length = 0;
+  bufferedBytes = 0;
   dropped = 0;
 
   server = await startWsServer(wanted, {
@@ -199,14 +212,19 @@ export async function startBridge(projectPath: string, port?: number): Promise<B
   });
 
   // The plugin has no way to learn the port or token except from disk.
-  handshakePath = resolveSafePath(projectRoot, HANDSHAKE_FILE);
+  handshakePath = handshakeTarget;
   const handshake: Handshake = {
     port: server.port,
     token,
     pid: process.pid,
     startedAt: startedAtIso,
   };
-  await writeFile(handshakePath, JSON.stringify(handshake, null, 2), 'utf-8');
+  try {
+    await writeFile(handshakePath, JSON.stringify(handshake, null, 2), { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    await stopBridge();
+    throw new Error('Cannot create bridge handshake; an existing handshake must be inspected before removal. ' + String(error));
+  }
   logger.info('Bridge listening', { port: server.port });
   return statusBridge();
 }
@@ -221,10 +239,15 @@ export async function stopBridge(): Promise<BridgeStatus> {
     server = null;
   }
   if (handshakePath) {
-    await unlink(handshakePath).catch(() => {}); // already gone is fine
+    try {
+      const existing = JSON.parse(await readFile(handshakePath, 'utf8')) as Handshake;
+      if (existing.token === token) await unlink(handshakePath);
+    } catch { /* Missing or changed handshake is never removed. */ }
     handshakePath = null;
   }
   token = '';
+  buffer.length = 0;
+  bufferedBytes = 0;
   startedAtIso = null;
   return statusBridge();
 }
@@ -234,7 +257,6 @@ export function statusBridge(): BridgeStatus {
   return {
     running: server !== null,
     port: server ? server.port : null,
-    token: server ? token : null,
     projectPath: server ? projectRoot : null,
     clients: conns.length,
     authenticatedClients: conns.filter(isAuthed).length,
@@ -257,16 +279,19 @@ export function drainTelemetry(opts: { limit?: number; types?: string[]; peek?: 
   const out = matching.slice(-limit);
   if (!opts.peek) {
     const taken = new Set(out);
-    for (let i = buffer.length - 1; i >= 0; i--) if (taken.has(buffer[i])) buffer.splice(i, 1);
+    for (let i = buffer.length - 1; i >= 0; i--) if (taken.has(buffer[i])) {
+      bufferedBytes -= frameSizes.get(buffer[i]) ?? 0;
+      buffer.splice(i, 1);
+    }
   }
   return out;
 }
 
 function authedConnections(): WsConnection[] {
-  return server ? server.connections().filter(isAuthed) : [];
+  return server ? server.connections().filter((connection) => isAuthed(connection) && !connection.closed) : [];
 }
 
-/** Send a command to every authenticated client. Returns how many got it. */
+/** Send a command to the single authenticated client. Returns how many got it. */
 export function sendCommand(cmd: Command): number {
   if (!server) throw new Error('Bridge is not running — start it with manage_system action "bridge_start".');
   if (!isCommandAction(cmd.action)) throw new Error('Refused command action "' + String(cmd.action) + '".');
@@ -309,3 +334,11 @@ export async function requestCommand(cmd: Omit<Command, 'requestId'>, timeoutMs 
   });
 }
 
+
+/** Stop stale project connections before any tool can observe or control another game. */
+export async function assertBridgeProject(projectPath: string): Promise<void> {
+  if (server && await realpath(projectPath) !== projectRoot) {
+    await stopBridge();
+    throw new Error('The runtime bridge belonged to another project and was stopped. Start a bridge for the active project.');
+  }
+}

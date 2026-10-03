@@ -11,6 +11,7 @@
  */
 import { cp, readFile, writeFile, access, mkdir } from 'fs/promises';
 import path from 'path';
+import { commitStore } from '../parity/utils/commit.js';
 
 const DEFAULT_INSTALL = 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\RPG Maker MV';
 const RPGPROJECT_CONTENT = 'RPGMV 1.6.2';
@@ -51,6 +52,7 @@ export async function scaffoldProject(_projectPath: string, params: ScaffoldPara
     throw new Error('Destination "' + destPath + '" already contains an RPG Maker MV project (data/System.json). Choose an empty directory.');
   }
 
+  if (commitStore.getStore()?.dryRun) return { dryRun: true, sourcePath: source, destPath, title: params.title, wouldCopyProject: true };
   await mkdir(destPath, { recursive: true });
   await cp(source, destPath, { recursive: true });
 

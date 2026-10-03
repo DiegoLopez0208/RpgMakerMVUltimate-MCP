@@ -152,7 +152,7 @@ export const TOOL_DEFINITIONS_LEGACY = [
         description: { type: 'string', description: 'Help text shown when the item is highlighted in a menu' },
         price: { type: ['number', 'string'], description: 'Default buy price in shops (sell price is half); 0 makes it unsellable' },
         consumable: { type: 'boolean', description: 'true = removed from inventory on use (potions); false = reusable (key items, tools). Default true' },
-        scope: { type: ['number', 'string'], description: 'Who the item targets when used: 0=none, 1=one enemy, 2=all enemies, 7=one ally, 8=all allies, 11=the user' },
+        scope: { type: ['integer', 'string'], minimum: 0, maximum: 11, pattern: '^(?:[0-9]|10|11)$', description: 'Who the item targets when used: 0=none, 1=one enemy, 2=all enemies, 7=one ally, 8=all allies, 11=the user' },
         occasion: { type: ['number', 'string'], description: 'When the item can be used: 0=always, 1=battle only, 2=menu only, 3=never (e.g. quest items)' },
         animationId: { type: ['number', 'string'], description: 'ID from Animations.json played on the target when used; 0 = no animation' },
         effects: { type: 'array', description: 'Effect objects {code, dataId, value1, value2}; e.g. {code:11, dataId:0, value1:0, value2:500} recovers 500 HP. Common codes: 11=recover HP, 12=recover MP, 21=add state, 22=remove state' },
@@ -265,7 +265,7 @@ export const TOOL_DEFINITIONS_LEGACY = [
         description: { type: 'string', description: 'Help text shown when the skill is highlighted' },
         mpCost: { type: ['number', 'string'], description: 'MP consumed each use (default 0)' },
         tpCost: { type: ['number', 'string'], description: 'TP consumed each use (default 0)' },
-        scope: { type: ['number', 'string'], description: 'Targeting: 0=none, 1=one enemy, 2=all enemies, 3-6=random enemies, 7=one ally, 8=all allies, 9=one dead ally (revives), 11=the user' },
+        scope: { type: ['integer', 'string'], minimum: 0, maximum: 11, pattern: '^(?:[0-9]|10|11)$', description: 'Targeting: 0=none, 1=one enemy, 2=all enemies, 3-6=random enemies, 7=one ally, 8=all allies, 9=one dead ally (revives), 11=the user' },
         occasion: { type: ['number', 'string'], description: 'When usable: 0=always, 1=battle only (default), 2=menu only, 3=never' },
         animationId: { type: ['number', 'string'], description: 'Animation from Animations.json played on the target; 0=none, -1=use weapon animation' },
         damage: {
@@ -307,7 +307,7 @@ export const TOOL_DEFINITIONS_LEGACY = [
       properties: {
         name: { type: 'string', description: 'Skill name shown in battle and menus' },
         mpCost: { type: ['number', 'string'], description: 'MP consumed each use' },
-        scope: { type: ['number', 'string'], description: 'Targeting: 1=one enemy, 2=all enemies' },
+        scope: { type: ['integer', 'string'], minimum: 0, maximum: 11, pattern: '^(?:[0-9]|10|11)$', description: 'Targeting: 1=one enemy, 2=all enemies' },
         formula: { type: 'string', description: 'JavaScript damage formula where a=user, b=target; e.g. "a.mat * 4 - b.mdf * 2" for magic or "a.atk * 3 - b.def" for physical' },
         element: { type: ['number', 'string'], description: 'Element ID from the Types tab (default database: 2=fire, 3=ice, 4=thunder); 0=non-elemental (default)' },
         animationId: { type: ['number', 'string'], description: 'Animation from Animations.json played on the target (default 1, a basic hit flash)' }
@@ -324,7 +324,7 @@ export const TOOL_DEFINITIONS_LEGACY = [
       properties: {
         name: { type: 'string', description: 'Skill name shown in battle and menus' },
         mpCost: { type: ['number', 'string'], description: 'MP consumed each use' },
-        scope: { type: ['number', 'string'], description: 'Targeting: 7=one ally, 8=all allies, 11=the user' },
+        scope: { type: ['integer', 'string'], minimum: 0, maximum: 11, pattern: '^(?:[0-9]|10|11)$', description: 'Targeting: 7=one ally, 8=all allies, 11=the user' },
         formula: { type: 'string', description: 'JavaScript healing formula where a=user; e.g. "a.mat * 3 + 100" heals more with higher magic attack' },
         animationId: { type: ['number', 'string'], description: 'Animation from Animations.json played on the target (default 47, the standard heal sparkle)' }
       },
@@ -340,7 +340,7 @@ export const TOOL_DEFINITIONS_LEGACY = [
       properties: {
         name: { type: 'string', description: 'Skill name shown in battle and menus' },
         mpCost: { type: ['number', 'string'], description: 'MP consumed each use' },
-        scope: { type: ['number', 'string'], description: 'Targeting: 7=one ally, 8=all allies, 11=the user' },
+        scope: { type: ['integer', 'string'], minimum: 0, maximum: 11, pattern: '^(?:[0-9]|10|11)$', description: 'Targeting: 7=one ally, 8=all allies, 11=the user' },
         paramId: { type: ['number', 'string'], description: 'Which stat to buff: 0=Max HP, 1=Max MP, 2=ATK, 3=DEF, 4=MAT, 5=MDF, 6=AGI, 7=LUK' },
         turns: { type: ['number', 'string'], description: 'How many turns the buff lasts before wearing off, e.g. 5' }
       },
@@ -356,7 +356,7 @@ export const TOOL_DEFINITIONS_LEGACY = [
       properties: {
         name: { type: 'string', description: 'Skill name shown in battle and menus' },
         mpCost: { type: ['number', 'string'], description: 'MP consumed each use' },
-        scope: { type: ['number', 'string'], description: 'Targeting: 1=one enemy, 2=all enemies' },
+        scope: { type: ['integer', 'string'], minimum: 0, maximum: 11, pattern: '^(?:[0-9]|10|11)$', description: 'Targeting: 1=one enemy, 2=all enemies' },
         stateId: { type: ['number', 'string'], description: 'ID of the state to inflict, from States.json (default database: 4=poison, 5=blind, 6=silence, 8=confusion, 9=sleep). Verify with get_states' },
         chance: { type: ['number', 'string'], description: 'Probability the state is applied, from 0.0 to 1.0 (e.g. 0.8 = 80%); target state resistance applies on top' }
       },

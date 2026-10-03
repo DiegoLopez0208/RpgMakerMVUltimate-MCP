@@ -321,7 +321,9 @@ const ManageSystemSchema = z.object({
   // the live bridge
   port: idLike.optional(),
   telemetryInterval: idLike.optional(),
-  command: z.enum(["ping", "get_state", "reload_map", "reload_database", "capture_screenshot", "teleport_player", "interact", "press_button"]).optional(),
+  command: z.enum(["ping", "get_state", "start_new_game", "reload_map", "reload_database", "capture_screenshot", "teleport_player", "interact", "press_button"]).optional(),
+  dryRun: z.boolean().optional(),
+  replaceExisting: z.boolean().optional(),
   file: z.string().optional(),
   types: z.array(z.string()).optional(),
   limit: idLike.optional(),
@@ -351,11 +353,13 @@ const ManageSystemSchema = z.object({
 });
 
 const TakeScreenshotSchema = z.object({
+  dryRun: z.boolean().optional(),
   name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
   timeoutMs: idLike.optional(),
 });
 
 const RecordVideoSchema = z.object({
+  dryRun: z.boolean().optional(),
   action: z.enum(["start", "stop"]),
   name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
   // Ranges match the ones the tool definition advertises. idLike would have let

@@ -36,7 +36,7 @@ export interface Handshake {
 // ── game -> server ─────────────────────────────────────────────────────────
 
 export type Telemetry =
-  | { type: 'auth'; token: string }
+  | { type: 'auth'; token: string; projectPath: string }
   | { type: 'ready'; engine: string; mvVersion: string; scene: string }
   | { type: 'scene_change'; from: string; to: string; mapId?: number }
   | { type: 'player_state'; mapId: number; x: number; y: number; direction: number; isMoving: boolean }
@@ -64,6 +64,7 @@ export type StampedTelemetry = Telemetry & { t: number };
 export const COMMAND_ACTIONS = [
   'ping',
   'get_state',
+  'start_new_game',
   'reload_map',
   'reload_database',
   'capture_screenshot',

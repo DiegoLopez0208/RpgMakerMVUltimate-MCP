@@ -16,6 +16,7 @@ import path from "path";
 import {
   extractRefs, extractRefsFromMany, extractWrites, extractWritesFromMany,
   extractReads, extractReadsFromMany, type RefSet, type WriteSet, type ReadSet,
+  extractCommandRanges, type CommandRanges,
 } from "./references.js";
 import type { RawCommand } from "./eventAst.js";
 
@@ -50,6 +51,15 @@ export interface Transfer {
   toMap: number;
   x: number;
   y: number;
+  viaCommonEvents?: number[];
+}
+
+export interface UnresolvedTransfer {
+  fromMap: number;
+  fromEvent: number | null;
+  commandIndex: number;
+  viaCommonEvents: number[];
+  reason: string;
 }
 
 export interface IndexedMap {
@@ -64,6 +74,7 @@ export interface IndexedMap {
   events: IndexedEvent[];
   refs: RefSet;
   transfers: Transfer[];
+  unresolvedTransfers?: UnresolvedTransfer[];
   encounterTroops: number[];
   /** True when MapInfos lists the map but the MapNNN.json file is absent. */
   missing: boolean;
@@ -88,6 +99,8 @@ export interface RefSource {
   refs: RefSet;
   writes: WriteSet;
   reads: ReadSet;
+  writeRanges?: CommandRanges;
+  readRanges?: CommandRanges;
 }
 
 export interface ProjectIndex {
@@ -187,20 +200,38 @@ function conditionRefs(pages: unknown): IndexedEvent["conditionRefs"] {
   return { switches: pick(switches), variables: pick(variables), items: pick(items) };
 }
 
-function scanTransfers(mapId: number, eventId: number | null, lists: RawCommand[][]): Transfer[] {
+function scanTransfers(mapId: number, eventId: number | null, lists: RawCommand[][], commonLists: Map<number, RawCommand[]>): { transfers: Transfer[]; unresolved: UnresolvedTransfer[] } {
   const transfers: Transfer[] = [];
-  for (const list of lists) {
-    for (const cmd of list) {
-      if (num(cmd?.code) === 201) {
-        const p = Array.isArray(cmd.parameters) ? cmd.parameters : [];
-        if (p[0] === 0) transfers.push({ fromMap: mapId, fromEvent: eventId, toMap: num(p[1]), x: num(p[2]), y: num(p[3]) });
-      }
+  const unresolved: UnresolvedTransfer[] = [];
+  const pending = lists.map(list => ({ list, viaCommonEvents: [] as number[] }));
+  const visited = new Set<number>();
+  while (pending.length) {
+    const { list, viaCommonEvents } = pending.pop()!;
+    for (let commandIndex = 0; commandIndex < list.length; commandIndex++) {
+      const cmd = list[commandIndex];
+      const code = num(cmd?.code);
+      const p = Array.isArray(cmd?.parameters) ? cmd.parameters : [];
+      let reason: string | undefined;
+      if (code === 201) {
+        if (p[0] === 0 && Number.isSafeInteger(p[1]) && Number(p[1]) > 0) {
+          transfers.push({ fromMap: mapId, fromEvent: eventId, toMap: Number(p[1]), x: num(p[2]), y: num(p[3]), ...(viaCommonEvents.length ? { viaCommonEvents } : {}) });
+        } else reason = 'Transfer destination is variable-based or malformed';
+      } else if (code === 117) {
+        const id = num(p[0]);
+        const called = commonLists.get(id);
+        if (!called) reason = `Common event ${id} was not loaded`;
+        else if (!visited.has(id)) {
+          visited.add(id);
+          pending.push({ list: called, viaCommonEvents: [...viaCommonEvents, id] });
+        }
+      } else if ([355, 356, 655].includes(code)) reason = 'Script/plugin behavior is not statically resolved';
+      if (reason) unresolved.push({ fromMap: mapId, fromEvent: eventId, commandIndex, viaCommonEvents, reason });
     }
   }
-  return transfers;
+  return { transfers, unresolved };
 }
 
-async function buildMap(dataDir: string, info: Record<string, unknown>, refSources: RefSource[]): Promise<IndexedMap> {
+async function buildMap(dataDir: string, info: Record<string, unknown>, refSources: RefSource[], commonLists: Map<number, RawCommand[]>): Promise<IndexedMap> {
   const id = num(info.id);
   const file = `Map${String(id).padStart(3, "0")}.json`;
   const raw = (await readJsonSafe(dataDir, file)) as Record<string, unknown> | null;
@@ -216,6 +247,7 @@ async function buildMap(dataDir: string, info: Record<string, unknown>, refSourc
     events: [],
     refs: extractRefs([]),
     transfers: [],
+    unresolvedTransfers: [],
     encounterTroops: [],
     missing: raw === null,
   };
@@ -247,8 +279,10 @@ async function buildMap(dataDir: string, info: Record<string, unknown>, refSourc
       refs,
       conditionRefs: conditionRefs(e.pages),
     });
-    base.transfers.push(...scanTransfers(id, evId, lists));
-    refSources.push({ kind: "map-event", label: `Map ${id} / event ${evId} "${String(e.name ?? "")}"`, mapId: id, eventId: evId, refs, writes: extractWritesFromMany(lists), reads: extractReadsFromMany(lists) });
+    const scanned = scanTransfers(id, evId, lists, commonLists);
+    base.transfers.push(...scanned.transfers);
+    base.unresolvedTransfers!.push(...scanned.unresolved);
+    refSources.push({ kind: "map-event", label: `Map ${id} / event ${evId} "${String(e.name ?? "")}"`, mapId: id, eventId: evId, refs, writes: extractWritesFromMany(lists), reads: extractReadsFromMany(lists), writeRanges: extractCommandRanges(lists), readRanges: extractCommandRanges(lists, true) });
   }
   base.eventCount = base.events.length;
   base.refs = extractRefsFromMany(mapLists);
@@ -286,13 +320,14 @@ export async function getProjectIndex(projectPath: string, force = false): Promi
       const lists = pageLists(tr.pages);
       if (lists.length === 0) continue;
       const refs = extractRefsFromMany(lists);
-      refSources.push({ kind: "troop", label: `Troop ${num(tr.id)} "${String(tr.name ?? "")}"`, troopId: num(tr.id), refs, writes: extractWritesFromMany(lists), reads: extractReadsFromMany(lists) });
+      refSources.push({ kind: "troop", label: `Troop ${num(tr.id)} "${String(tr.name ?? "")}"`, troopId: num(tr.id), refs, writes: extractWritesFromMany(lists), reads: extractReadsFromMany(lists), writeRanges: extractCommandRanges(lists), readRanges: extractCommandRanges(lists, true) });
     }
   }
 
   // Common events
   const commonRaw = (await readJsonSafe(dataDir, "CommonEvents.json")) as unknown[] | null;
   const commonEvents: IndexedCommonEvent[] = [];
+  const commonLists = new Map<number, RawCommand[]>();
   if (Array.isArray(commonRaw)) {
     for (const ce of commonRaw) {
       if (!ce || typeof ce !== "object") continue;
@@ -300,8 +335,9 @@ export async function getProjectIndex(projectPath: string, force = false): Promi
       const list = Array.isArray(c.list) ? (c.list as RawCommand[]) : [];
       const refs = extractRefs(list);
       const id = num(c.id);
+      commonLists.set(id, list);
       commonEvents.push({ id, name: String(c.name ?? ""), trigger: num(c.trigger), switchId: num(c.switchId), refs });
-      refSources.push({ kind: "common-event", label: `Common Event ${id} "${String(c.name ?? "")}"`, commonEventId: id, refs, writes: extractWrites(list), reads: extractReads(list) });
+      refSources.push({ kind: "common-event", label: `Common Event ${id} "${String(c.name ?? "")}"`, commonEventId: id, refs, writes: extractWrites(list), reads: extractReads(list), writeRanges: extractCommandRanges([list]), readRanges: extractCommandRanges([list], true) });
     }
   }
 
@@ -318,7 +354,7 @@ export async function getProjectIndex(projectPath: string, force = false): Promi
   if (Array.isArray(mapInfos)) {
     for (const info of mapInfos) {
       if (!info || typeof info !== "object") continue;
-      maps.push(await buildMap(dataDir, info as Record<string, unknown>, refSources));
+      maps.push(await buildMap(dataDir, info as Record<string, unknown>, refSources, commonLists));
     }
   }
   maps.sort((a, b) => a.id - b.id);

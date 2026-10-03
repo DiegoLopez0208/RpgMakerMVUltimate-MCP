@@ -42,6 +42,7 @@
     "skill",
     "README.md",
     "docs/event-commands.md",
+    "docs/mv-parity.md",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE"
   ],
@@ -57,12 +58,17 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:protocol": "node scripts/verify-event-command-protocol.mjs",
-    "test:mv-runtime": "node scripts/verify-mv-event-runtime.mjs"
+    "test:mv-runtime": "node scripts/verify-mv-event-runtime.mjs",
+    "test:parity-protocol": "node scripts/verify-mv-parity-protocol.mjs",
+    "test:mv-authoring": "node scripts/verify-mv-authoring-runtime.mjs",
+    "test:mv-parity-runtime": "node scripts/verify-mv-parity-runtime.mjs",
+    "test:mv-headless-protocol": "node scripts/verify-mv-headless-protocol.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "sharp": "^0.33.0",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -73,5 +79,8 @@
     "typescript-eslint": "^8.61.1",
     "vitest": "^2.1.9"
   },
-  "mcpName": "io.github.DiegoLopez0208/rpgmaker-mv-ultimate"
+  "mcpName": "io.github.DiegoLopez0208/rpgmaker-mv-ultimate",
+  "optionalDependencies": {
+    "playwright-core": "^1.63.0"
+  }
 }

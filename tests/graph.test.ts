@@ -77,11 +77,12 @@ beforeAll(async () => {
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("explainSwitch", () => {
-  it("flags a switch that is read/gated but never set ON", () => {
+  it("reports a gate with no static writer without assuming runtime impossibility", () => {
     const r = explainSwitch(index, 1);
     expect(r.setters).toHaveLength(0);
     expect(r.readers.length).toBeGreaterThan(0);
-    expect(r.diagnosis).toMatch(/NEVER set ON/);
+    expect(r.diagnosis).toMatch(/no static writer/);
+    expect(r.diagnosis).not.toMatch(/can never trigger/);
   });
 
   it("flags a dead write (set but never read)", () => {

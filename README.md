@@ -17,7 +17,7 @@
 
 ---
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent work on a **real RPG Maker MV project on disk** — database, maps, events, plugins, system — through **17 consolidated tools** validated against the actual engine, so what comes out is coherent and playable.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent work on a **real RPG Maker MV project on disk** — database, maps, events, plugins, system. The default surface contains **17 consolidated tools and 79 specialist tools** for event authoring, custom tile catalogs, painting, database administration, validation, headless playtesting and web export. See the [MV parity guide](docs/mv-parity.md) for the new operations, previews, requirements and verification limits.
 
 It does three things that are usually missing:
 

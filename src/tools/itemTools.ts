@@ -1,4 +1,5 @@
 import { createCrud } from "../utils/crudHelper.js";
+import { assertMvActionScope } from "../utils/actionScope.js";
 import type { ItemParams, WeaponParams, ArmorParams, ItemType, RpgMakerDbEntry } from "../types/rpgmaker.js";
 
 interface Item extends RpgMakerDbEntry {
@@ -107,6 +108,7 @@ async function getArmors(projectPath: string) {
 }
 
 async function createItem(projectPath: string, params: ItemParams) {
+  if ('scope' in params) assertMvActionScope(params.scope);
   return itemsCrud.create(projectPath, (id) => ({
     ...itemFactory(id),
     ...params,
@@ -128,6 +130,7 @@ async function createArmor(projectPath: string, params: ArmorParams) {
 }
 
 async function updateItem(projectPath: string, id: number, type: ItemType, fields: Partial<ItemParams | WeaponParams | ArmorParams>) {
+  if (type === 'item' && 'scope' in fields) assertMvActionScope(fields.scope);
   if (!fileMap[type]) throw new Error('Unknown item type: ' + type + '. Use "item", "weapon", or "armor".');
 
   if (type === "weapon") {

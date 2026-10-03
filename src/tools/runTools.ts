@@ -18,6 +18,7 @@ const DEFAULT_INSTALL = 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\RPG 
 const RPGPROJECT_CONTENT = 'RPGMV 1.6.2';
 
 export interface RunParams {
+  dryRun?: boolean;
   install?: string;  // RPG Maker MV install root (contains the nwjs runtime and RPGMV.exe)
   gameExe?: string;  // explicit path to the nwjs game exe (overrides auto-detection)
   test?: boolean;    // playtest: run in test mode (default true; false = plain run)
@@ -87,7 +88,8 @@ export async function playtest(projectPath: string, params?: RunParams) {
   // so a plugin inside the game cannot derive the project root from its location and
   // falls back to process.cwd(); without this the game would inherit the MCP server's
   // directory and the bridge would look for the handshake file in the wrong place.
-  const child = spawn(gameExe, args, { cwd: projectPath, detached: true, stdio: 'ignore', windowsHide: false });
+  if (params?.dryRun) return { dryRun: true, exe: gameExe, project: projectPath, testMode, args };
+  const child = spawn(gameExe, args, { cwd: projectPath, detached: true, stdio: 'ignore', windowsHide: true });
   child.unref();
   return { launched: true, pid: child.pid ?? null, exe: gameExe, project: projectPath, testMode };
 }
@@ -108,6 +110,7 @@ export async function openInEditor(projectPath: string, params?: RunParams) {
     throw new Error('Editor not found at "' + editorExe + '". Set the RPGMAKER_MV_INSTALL env var or pass install.');
   }
   const rpgproject = path.join(projectPath, 'Game.rpgproject');
+  if (params?.dryRun) return { dryRun: true, exe: editorExe, opened: rpgproject };
   let createdProjectFile = false;
   if (!(await pathExists(rpgproject))) {
     // 'wx' so a descriptor that appeared between the check and the write is never
@@ -122,7 +125,7 @@ export async function openInEditor(projectPath: string, params?: RunParams) {
     }
   }
   const child = spawn(editorExe, [rpgproject], {
-    cwd: projectPath, detached: true, stdio: 'ignore', windowsHide: false,
+    cwd: projectPath, detached: true, stdio: 'ignore', windowsHide: true,
   });
   child.unref();
   return {

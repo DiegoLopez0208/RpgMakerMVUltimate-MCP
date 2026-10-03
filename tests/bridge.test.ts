@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtemp, readFile, rm, access } from 'fs/promises';
+import { mkdtemp, readFile, rm, access, realpath, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import nodePath, { basename, join } from 'path';
 import { randomBytes } from 'crypto';
@@ -11,6 +11,8 @@ import type { Handshake } from '../src/bridge/protocol.js';
 import { HOT_RELOADABLE, isCommandAction } from '../src/bridge/protocol.js';
 import { buildBridgePlugin, BRIDGE_PLUGIN_NAME } from '../src/bridge/pluginSource.js';
 import { bridgeCommand, bridgeRecordVideo, bridgeScreenshot } from '../src/tools/bridgeTools.js';
+import { dispatchTool } from '../src/server.js';
+import { getProjectPath, initProjectPath } from '../src/tools/projectTools.js';
 
 /** Mask a payload the way a conforming client must, so decodeFrame accepts it. */
 function clientFrame(text: string, opcode = 0x1): Buffer {
@@ -130,6 +132,10 @@ class TestClient {
 }
 
 /** Connect a client and resolve once the server has accepted its token. */
+async function bridgeToken(): Promise<string> {
+  return JSON.parse(await readFile(statusBridge().handshakeFile!, "utf8")).token;
+}
+
 async function connectAuthed(port: number, token: string): Promise<TestClient> {
   const client = new TestClient();
   await client.connect(port);
@@ -139,7 +145,7 @@ async function connectAuthed(port: number, token: string): Promise<TestClient> {
     client.onMessage((msg) => {
       if (msg.requestId === 'auth-ok') { clearTimeout(timer); resolve(client); }
     });
-    client.send({ type: 'auth', token });
+    client.send({ type: 'auth', token, projectPath: statusBridge().projectPath });
   });
 }
 
@@ -250,6 +256,7 @@ describe('generated plugin', () => {
  * breaks the behaviour and fails for any that preserves it.
  */
 interface RunOptions {
+  exerciseEventEnd?: boolean;
   nwjs?: boolean;
   /** What Utils.isOptionValid('test') returns — MV only inspects argv[0]. */
   optionValid?: boolean;
@@ -312,6 +319,10 @@ function runPlugin(opts: RunOptions = {}): RunResult {
   };
   const processStub = { cwd: () => opts.cwd ?? 'C:/cwd', memoryUsage: () => ({ heapUsed: 0 }) };
 
+  const interpreter = {
+    executeCommand(this: { _list: unknown }) { this._list = null; return false; },
+    currentCommand(this: { _list: { code: number }[] | null; _index: number }) { return this._list![this._index]; },
+  };
   const body = buildBridgePlugin().body;
   const fn = new Function(
     'Utils', 'nw', 'window', 'process', 'require', 'WebSocket',
@@ -324,15 +335,22 @@ function runPlugin(opts: RunOptions = {}): RunResult {
     { parameters: () => ({}) },
     { goto: () => {}, _scene: null, snap: () => null },
     { prototype: { update: () => {}, onMapLoaded: () => {} } },
-    { prototype: { executeCommand: () => {}, currentCommand: () => null } },
+    { prototype: interpreter },
     { frameCount: 0 },
     () => 0,                       // no retries: one pass per run
     { error: () => {}, warn: () => {} },
   );
+  if (opts.exerciseEventEnd) {
+    const event = Object.assign(Object.create(interpreter), { _list: [{ code: 0 }], _index: 0 });
+    event.executeCommand();
+  }
   return result;
 }
 
 describe('the playtest guard, executed', () => {
+  it('does not dereference an interpreter list after the engine terminates the event', () => {
+    expect(() => runPlugin({ optionValid: true, exerciseEventEnd: true })).not.toThrow();
+  });
   it('does nothing at all outside nwjs', () => {
     const r = runPlugin({ nwjs: false, optionValid: true });
     expect(r.required).toEqual([]);   // it never even reached require('fs')
@@ -444,13 +462,15 @@ describe('bridge lifecycle', () => {
     const first = await tempProject();
     const second = await tempProject();
     const initial = await startBridge(first, 0);
+    const initialToken = await bridgeToken();
     const switched = await startBridge(second, 0);
 
     expect(switched.projectPath).toBe(second);
-    expect(switched.token).not.toBe(initial.token);
+    expect(await bridgeToken()).not.toBe(initialToken);
+    expect(initial).not.toHaveProperty("token");
     await expect(access(join(first, '.mcp-bridge.json'))).rejects.toThrow();
     const handshake = JSON.parse(await readFile(join(second, '.mcp-bridge.json'), 'utf-8')) as Handshake;
-    expect(handshake.token).toBe(switched.token);
+    expect(handshake.token).toBe(await bridgeToken());
   });
 });
 
@@ -458,7 +478,7 @@ describe('bridge session', () => {
   it('accepts an authenticated client and buffers its telemetry', async () => {
     const dir = await tempProject();
     const status = await startBridge(dir, 0);
-    const ws = await connectAuthed(status.port!, status.token!);
+    const ws = await connectAuthed(status.port!, await bridgeToken());
 
     expect(statusBridge().authenticatedClients).toBe(1);
 
@@ -497,7 +517,7 @@ describe('bridge session', () => {
   it('matches a reply to its request', async () => {
     const dir = await tempProject();
     const status = await startBridge(dir, 0);
-    const ws = await connectAuthed(status.port!, status.token!);
+    const ws = await connectAuthed(status.port!, await bridgeToken());
 
     // Stand in for the game: answer get_state with a state dump.
     ws.onMessage((msg) => {
@@ -519,7 +539,7 @@ describe('bridge session', () => {
   it('surfaces a game-side command refusal as a failed MCP call', async () => {
     const dir = await tempProject();
     const status = await startBridge(dir, 0);
-    const ws = await connectAuthed(status.port!, status.token!);
+    const ws = await connectAuthed(status.port!, await bridgeToken());
     ws.onMessage((msg) => {
       if (msg.action === 'teleport_player') {
         ws.send({ type: 'error', requestId: msg.requestId, message: 'No active map yet.' });
@@ -546,7 +566,7 @@ describe('bridge session', () => {
     // This used to fail immediately before the newly launched game had time to
     // authenticate, even though the playtest connected a moment later.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    client.send({ type: 'auth', token: status.token });
+    client.send({ type: 'auth', token: await bridgeToken(), projectPath: await realpath(dir) });
 
     const reply = await request;
     expect(reply.type).toBe('log');
@@ -557,7 +577,7 @@ describe('bridge session', () => {
   it('times out instead of hanging when the game never answers', async () => {
     const dir = await tempProject();
     const status = await startBridge(dir, 0);
-    const ws = await connectAuthed(status.port!, status.token!);
+    const ws = await connectAuthed(status.port!, await bridgeToken());
 
     await expect(requestCommand({ action: 'get_state' }, 200)).rejects.toThrow(/Timed out/);
     ws.close();
@@ -572,8 +592,8 @@ describe('bridge session', () => {
   it('captures a named screenshot through the authenticated bridge', async () => {
     const dir = await tempProject();
     const status = await startBridge(dir, 0);
-    const ws = await connectAuthed(status.port!, status.token!);
-    const png = Buffer.from('fake-png-for-bridge-test');
+    const ws = await connectAuthed(status.port!, await bridgeToken());
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2GAAAAABJRU5ErkJggg==', 'base64');
 
     ws.onMessage((msg) => {
       if (msg.action === 'capture_screenshot') {
@@ -597,8 +617,8 @@ describe('bridge session', () => {
   it('starts and saves a named playtest recording through the bridge', async () => {
     const dir = await tempProject();
     const status = await startBridge(dir, 0);
-    const ws = await connectAuthed(status.port!, status.token!);
-    const webm = Buffer.from('fake-webm-for-bridge-test');
+    const ws = await connectAuthed(status.port!, await bridgeToken());
+    const webm = Buffer.from([26,69,223,163,1,2,3]);
 
     ws.onMessage((msg) => {
       if (msg.action === 'start_recording') {
@@ -633,5 +653,75 @@ describe('bridge session', () => {
     expect(body).toContain("case 'press_button':");
     expect(body).toContain('canvas.captureStream');
     expect(body).toContain("type: 'recording_result'");
+  });
+});
+
+
+describe('project-bound bridge safety', () => {
+  it('previews telemetry through dispatch without draining any frames', async () => {
+    const project = await tempProject();
+    const previous = getProjectPath();
+    initProjectPath(project);
+    const status = await startBridge(project, 0);
+    const client = await connectAuthed(status.port!, await bridgeToken());
+    try {
+      client.send({ type: 'log', level: 'info', message: 'retain this diagnostic' });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const result = await dispatchTool('manage_system', { action: 'bridge_telemetry', dryRun: true }) as { result: { dryRun: boolean; count: number } };
+      expect(result.result).toMatchObject({ dryRun: true, count: 1 });
+      expect(drainTelemetry()).toHaveLength(1);
+    } finally {
+      client.close();
+      initProjectPath(previous);
+    }
+  });
+
+  it('rejects a copied handshake used from another project and second clients', async () => {
+    const project = await tempProject();
+    const copy = await tempProject();
+    const status = await startBridge(project, 0);
+    const token = await bridgeToken();
+    for (const wrongProject of [await realpath(copy), null]) {
+      const client = new TestClient();
+      await client.connect(status.port!);
+      const closed = new Promise<void>((resolve) => client.onClose(resolve));
+      client.send({ type: 'auth', token, projectPath: wrongProject });
+      await closed;
+      expect(statusBridge().authenticatedClients).toBe(0);
+    }
+    const first = await connectAuthed(status.port!, token);
+    const second = new TestClient();
+    await second.connect(status.port!);
+    const closed = new Promise<void>((resolve) => second.onClose(resolve));
+    second.send({ type: 'auth', token, projectPath: await realpath(project) });
+    await closed;
+    expect(statusBridge().authenticatedClients).toBe(1);
+    first.close();
+  });
+
+  it('does not overwrite an existing handshake or delete a replacement', async () => {
+    const project = await tempProject();
+    const file = join(project, '.mcp-bridge.json');
+    const foreign = JSON.stringify({ token: 'foreign-session' });
+    await writeFile(file, foreign);
+    await expect(startBridge(project, 0)).rejects.toThrow(/existing handshake/);
+    expect(statusBridge().running).toBe(false);
+    expect(await readFile(file, 'utf8')).toBe(foreign);
+    await rm(file);
+    await startBridge(project, 0);
+    await writeFile(file, foreign);
+    await stopBridge();
+    expect(await readFile(file, 'utf8')).toBe(foreign);
+  });
+
+  it('bounds retained telemetry by total bytes while preserving command replies', async () => {
+    const project = await tempProject();
+    const status = await startBridge(project, 0);
+    const client = await connectAuthed(status.port!, await bridgeToken());
+    for (let i = 0; i < 70; i++) client.send({ type: 'log', level: 'info', message: 'x'.repeat(60000) });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(Buffer.byteLength(JSON.stringify(drainTelemetry({ peek: true })))).toBeLessThan(2.1 * 1024 * 1024);
+    expect(statusBridge().droppedFrames).toBeGreaterThan(0);
+    client.close();
   });
 });

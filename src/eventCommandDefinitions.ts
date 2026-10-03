@@ -19,7 +19,8 @@ export const EVENT_COMMAND_TOOL_DEFINITIONS: Tool[] = [
       properties: {
         kind: { type: 'string', enum: ['show_text', 'show_choices', 'conditional_branch', 'control_switch', 'control_variable', 'transfer_player', 'common_event', 'flow', 'plugin_command'] },
         indent: { ...integer, description: 'Base indentation, default 0. Nested branch bodies are rebased without mutating their inputs.' },
-        lines: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'show_text: message lines. MV does not automatically wrap long lines.' },
+        lines: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'show_text: message lines. Long lines receive width warnings; use wrap for automatic wrapping.' },
+        wrap: { oneOf: [{ type: 'boolean' }, { type: 'string', enum: ['soft', 'hard'] }], description: 'show_text: true/soft reflows the text; hard preserves input line breaks. Uses project text metrics when configured and splits into four-line MV message boxes.' },
         faceName: { type: 'string', description: 'show_text: face image basename, default empty.' },
         faceIndex: { ...integer, description: 'show_text: face slot 0-7, default 0.' },
         background: { type: 'string', enum: ['window', 'dim', 'transparent'], description: 'Text/choice window background.' },

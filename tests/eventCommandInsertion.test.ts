@@ -25,11 +25,24 @@ beforeEach(async () => {
   await save('Map001.json', { width: 20, height: 15, events: [null, { id: 1, pages: [{ list: original }] }] });
   await save('CommonEvents.json', [null, { id: 1, list: original }]);
   await save('Troops.json', [null, { id: 1, pages: [{ list: original }] }]);
-  for (const name of ['Actors', 'Items', 'Weapons', 'Armors']) await save(`${name}.json`, [null, { id: 1, name: 'Fixture' }]);
+  for (const name of ['Actors', 'Items', 'Weapons', 'Armors', 'Animations']) await save(`${name}.json`, [null, { id: 1, name: 'Fixture' }]);
 });
 afterEach(async () => { await rm(project, { recursive: true, force: true }); });
 
 describe('guarded event command insertion', () => {
+  it.each([212, 337])('checks command %s animation IDs before writing or creating backups', async (code) => {
+    const before = await snapshot();
+    await expect(insertEventCommands(project, {
+      mapId: 1, eventId: 1, commands: [c(code, [-1, 999, false])],
+    })).rejects.toThrow('Animation 999');
+    expect(await snapshot()).toEqual(before);
+    const result = await insertEventCommands(project, {
+      mapId: 1, eventId: 1, commands: [c(code, [-1, 1, false])], dryRun: true,
+    });
+    expect(result.after).toContainEqual(c(code, [-1, 1, false]));
+    expect(await snapshot()).toEqual(before);
+  });
+
   it.each([
     [{ mapId: 1, eventId: 1 }, 'Map001.json'],
     [{ target: 'common_event', commonEventId: 1 }, 'CommonEvents.json'],

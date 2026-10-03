@@ -1,4 +1,5 @@
 import type { EventCommand } from '../types/rpgmaker.js';
+import { validateMoveRoute, validateMoveCommand } from '../parity/validation/moveCommands.js';
 
 export interface EventCommandValidation {
   commands: EventCommand[];
@@ -14,6 +15,8 @@ const arities: Record<number, number> = {
   212: 3, 213: 3, 221: 0, 222: 0, 223: 3, 224: 3, 225: 4,
   230: 1, 231: 10, 235: 1, 241: 1, 245: 1, 249: 1, 250: 1,
   301: 4, 302: 5, 303: 2, 351: 0, 352: 0, 353: 0, 354: 0,
+  311: 6, 312: 5, 313: 4, 314: 2, 315: 6, 316: 6,
+  333: 3, 335: 1, 340: 0,
   355: 1, 356: 1, 401: 1, 402: 2, 403: 0, 404: 0, 405: 1,
   408: 1, 411: 0, 412: 0, 413: 0, 505: 1, 601: 0, 602: 0,
   603: 0, 604: 0, 605: 4, 655: 1,
@@ -110,7 +113,84 @@ function checkShape(command: EventCommand, index: number, warnings: string[]): v
   else if (code === 301) {
     range(0, 0, 2); if (p[0] !== 2) id(1);
     require(typeof p[2] === 'boolean' && typeof p[3] === 'boolean', 'battle escape/lose flags must be booleans');
+  } else if ([125, 126, 127, 128].includes(code)) {
+    const offset = code === 125 ? 0 : 1;
+    if (offset) id(0);
+    range(offset, 0, 1); range(offset + 1, 0, 1);
+    if (p[offset + 1] === 1) id(offset + 2);
+    else require(typeof p[offset + 2] === 'number' && Number.isFinite(p[offset + 2]), 'amount must be finite');
+    if (code === 127 || code === 128) require(typeof p[4] === 'boolean', 'include equipment must be boolean');
+  } else if (code === 129) {
+    id(0); range(1, 0, 1); require(typeof p[2] === 'boolean', 'initialize must be boolean');
+  } else if (code === 212 || code === 213) {
+    range(0, -1, Number.MAX_SAFE_INTEGER); id(1);
+    require(typeof p[2] === 'boolean', 'wait must be boolean');
+  } else if (code === 223 || code === 224) {
+    require(Array.isArray(p[0]) && p[0].length === 4 && p[0].every((v, i) => integer(v, code === 223 && i < 3 ? -255 : 0, 255)), 'color must contain four valid integer channels');
+    range(1, 0, Number.MAX_SAFE_INTEGER); require(typeof p[2] === 'boolean', 'wait must be boolean');
+  } else if (code === 225) {
+    range(0, 1, 9); range(1, 1, 9); range(2, 0, Number.MAX_SAFE_INTEGER);
+    require(typeof p[3] === 'boolean', 'wait must be boolean');
+  } else if (code === 231) {
+    range(0, 1, 100); require(typeof p[1] === 'string', 'picture name must be a string');
+    range(2, 0, 1); range(3, 0, 1);
+    for (const slot of [4, 5, 6, 7]) require(typeof p[slot] === 'number' && Number.isFinite(p[slot]), 'picture coordinates/scales must be finite');
+    if (p[3] === 1) { id(4); id(5); }
+    range(8, 0, 255); range(9, 0, 3);
+  } else if (code === 235) range(0, 1, 100);
+  else if ([241, 245, 249, 250].includes(code)) {
+    const audio = p[0] as Record<string, unknown>;
+    require(!!audio && typeof audio === 'object' && !Array.isArray(audio), 'audio must be an object');
+    require(typeof audio.name === 'string', 'audio name must be a string');
+    for (const [key, min, max] of [['volume', 0, 100], ['pitch', 50, 150], ['pan', -100, 100]] as const) {
+      require(typeof audio[key] === 'number' && Number.isFinite(audio[key]) && (audio[key] as number) >= min && (audio[key] as number) <= max, `invalid audio ${key}`);
+    }
+  } else if (code === 302 || code === 605) {
+    range(0, 0, 2); id(1); range(2, 0, 1); range(3, 0, Number.MAX_SAFE_INTEGER);
+    if (code === 302) require(typeof p[4] === 'boolean', 'purchaseOnly must be boolean');
+  } else if (code === 303) { id(0); range(1, 1, 16); }
+  else if ([311, 312, 313, 314, 315, 316].includes(code)) {
+    range(0, 0, 1); range(1, p[0] === 1 ? 1 : 0, Number.MAX_SAFE_INTEGER);
+    if (code === 313) { range(2, 0, 1); id(3); }
+    else if (code !== 314) {
+      range(2, 0, 1); range(3, 0, 1);
+      if (p[3] === 1) id(4);
+      else require(typeof p[4] === 'number' && Number.isFinite(p[4]), 'amount must be finite');
+      if (code !== 312) require(typeof p[5] === 'boolean', 'actor change flag must be boolean');
+    }
+  } else if (code === 333) { range(0, -1, 7); range(1, 0, 1); id(2); }
+  else if (code === 335) range(0, 0, 7);
+  else if (code === 205) {
+    range(0, -1, Number.MAX_SAFE_INTEGER);
+    for (const finding of validateMoveRoute(p[1])) {
+      if (finding.severity === 'error') fail(index, finding.message);
+      warnings.push(finding.message);
+    }
+  } else if (code === 505) {
+    for (const finding of validateMoveCommand(p[0] as never, 'move step')) {
+      if (finding.severity === 'error') fail(index, finding.message);
+      warnings.push(finding.message);
+    }
   }
+}
+
+/** Shared parameter checks for pure builders before a complete list exists. */
+export function assertMvCommandShape(command: EventCommand): void {
+  if (!integer(command.code, 0) || !integer(command.indent ?? 0, 0, 100)) throw new Error('command code/indent must be valid integers');
+  if (!Array.isArray(command.parameters)) throw new Error('command parameters must be an array');
+  checkShape(command, 0, []);
+}
+
+/** Engine incompatibilities cannot be overridden by a structural-warning force flag. */
+export function assertMvCompatibility(input: unknown): void {
+  if (!Array.isArray(input)) return;
+  input.forEach((command, index) => {
+    const code = command?.code;
+    const p = command?.parameters;
+    if (code === 357 || code === 657) fail(index, `MZ code ${code} cannot be written to MV; use plugin command 356`);
+    if (code === 101 && Array.isArray(p) && p.length > 4) fail(index, 'MV Show Text has four parameters; MZ speakerName is unsupported');
+    if (code === 122 && Array.isArray(p) && p[3] === 3 && p[4] === 8) fail(index, 'MZ last-game-data operand 8 is unsupported in MV');
+  });
 }
 
 /** Validate an MV list or complete fragment without executing scripts or touching disk. */

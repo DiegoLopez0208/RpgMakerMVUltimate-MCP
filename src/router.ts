@@ -397,29 +397,29 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         startMapId: args.mapId, startX: args.x, startY: args.y
       });
     case 'playtest':
-      return executeTool('playtest_project', { install: args.install, test: args.test });
+      return executeTool('playtest_project', { install: args.install, test: args.test, dryRun: args.dryRun });
     case 'open_editor':
-      return executeTool('open_in_editor', { install: args.install });
+      return executeTool('open_in_editor', { install: args.install, dryRun: args.dryRun });
     case 'install_bridge_plugin':
-      return executeTool('install_bridge_plugin', { port: args.port, telemetryInterval: args.telemetryInterval });
+      return executeTool('install_bridge_plugin', { port: args.port, telemetryInterval: args.telemetryInterval, replaceExisting: args.replaceExisting, dryRun: args.dryRun });
     case 'bridge_start':
-      return executeTool('bridge_start', { port: args.port });
+      return executeTool('bridge_start', { port: args.port, dryRun: args.dryRun });
     case 'bridge_stop':
-      return executeTool('bridge_stop', {});
+      return executeTool('bridge_stop', { dryRun: args.dryRun });
     case 'bridge_status':
-      return executeTool('bridge_status', {});
+      return executeTool('bridge_status', { dryRun: args.dryRun });
     case 'bridge_telemetry':
-      return executeTool('bridge_telemetry', { limit: args.limit, types: args.types, peek: args.peek });
+      return executeTool('bridge_telemetry', { limit: args.limit, types: args.types, peek: args.peek, dryRun: args.dryRun });
     case 'bridge_command':
       return executeTool('bridge_command', {
         action: requireArg(args, 'command', 'manage_system action "bridge_command"'),
         file: args.file, mapId: args.mapId, x: args.x, y: args.y,
         direction: args.direction, button: args.button, durationMs: args.durationMs,
-        wait: args.wait, timeoutMs: args.timeoutMs
+        wait: args.wait, timeoutMs: args.timeoutMs, dryRun: args.dryRun
       });
     case 'take_screenshot':
     case 'bridge_screenshot':
-      return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.screenshotName });
+      return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.screenshotName, dryRun: args.dryRun });
     case 'mine_templates':
       return executeTool('mine_templates', { minDistinctTiles: args.minDistinctTiles, limit: args.limit });
     default:
@@ -490,10 +490,10 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
     case 'edit_map': return editMap(executeTool, args);
     case 'manage_map_event': return manageMapEvent(executeTool, args);
     case 'manage_system': return manageSystem(executeTool, args);
-    case 'take_screenshot': return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.name });
+    case 'take_screenshot': return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.name, dryRun: args.dryRun });
     case 'record_video': return executeTool('bridge_record_video', {
       action: requireArg(args, 'action', 'record_video'), name: args.name,
-      fps: args.fps, bitrateKbps: args.bitrateKbps, timeoutMs: args.timeoutMs
+      fps: args.fps, bitrateKbps: args.bitrateKbps, timeoutMs: args.timeoutMs, dryRun: args.dryRun
     });
     case 'list_plugins': return executeTool('list_plugins', {});
     case 'get_plugin_status': return executeTool('get_plugin_status', {});

@@ -7,6 +7,7 @@ import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Par
 
 import { generateTileLayoutV3, generateFromTemplate, templateTilesetId, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
+import { assertMvCompatibility } from '../utils/eventCommandValidation.js';
 import { nearestStandable, chooseSpawn } from '../utils/placement.js';
 import { normalizeMapEvents } from '../utils/eventNormalize.js';
 
@@ -1514,6 +1515,14 @@ async function writeMapJson(projectPath: string, filePath: string, map: RpgMaker
 }
 
 async function writeJsonDirect(filePath: string, data: unknown) {
+  const events = (data as RpgMakerMap | null)?.events;
+  if (Array.isArray(events)) {
+    for (const event of events) {
+      if (Array.isArray(event?.pages)) {
+        for (const page of event.pages) assertMvCompatibility(page?.list);
+      }
+    }
+  }
   // Compact, matching the editor -- see writeJson in fileHandler.
   await safeWrite(filePath, JSON.stringify(data));
 }

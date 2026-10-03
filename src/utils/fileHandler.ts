@@ -86,8 +86,22 @@ async function rotateBackup(filePath: string): Promise<void> {
  *     half-written JSON in place — the old file survives until the rename.
  * The legacy single-level `.bak` is still produced for backward compatibility.
  */
-async function safeWrite(filePath: string, content: string): Promise<void> {
-  if (dryRunActive) {
+async function safeWrite(filePath: string, content: string, trackCommit = true): Promise<void> {
+  const { commitStore, diffJson } = await import('../parity/utils/commit.js');
+  const context = commitStore.getStore();
+  const dry = dryRunActive || context?.dryRun === true;
+  if (context && trackCommit) {
+    let old: string | undefined;
+    try { old = await readFile(filePath, 'utf8'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    const parse = (text: string | undefined): unknown => {
+      if (text === undefined) return undefined;
+      try { return JSON.parse(text.replace(/^\uFEFF/, '')); } catch { return text; }
+    };
+    const diff = diffJson(parse(old), parse(content));
+    context.commits.push({ path: filePath, changed: diff.changes.length > 0, dryRun: dry, diff });
+  }
+  if (dry) {
     dryRunLog.push({ filePath, bytes: Buffer.byteLength(content, 'utf-8') });
     console.error(`[DRY-RUN] would write ${filePath}`);
     return;

@@ -3,11 +3,17 @@
 ## [Unreleased]
 
 ### Added
+- MV parity tools for the remaining event builders, movement routes, partial event pages, troop pages, map administration, autotile/blueprint/object painting, custom tile catalogs, database batches and deletion previews, system settings, and asset/reference audits. Default discovery now includes 96 tools; existing consolidated/legacy contracts remain available.
+- Headless MV map rendering and scripted playtests, optional native PNG responses and progress notifications, plus folder/ZIP web export with optional asset pruning and MV encryption preservation.
+- Leaf-level dry-run diffs across new and retained write paths, protected grouped plugin writes, and a custom tile-catalog workflow. See [the MV parity guide](docs/mv-parity.md) for requirements and limitations.
 - `build_event_commands`: project-independent, read-only builders for MV dialogue, choices, conditions, switches/self switches, variables, transfers, common-event calls, flow control, and plugin commands. Nested branches compose without mutating input arrays; schemas reject invalid fields and MZ-only formats.
 - `insert_event_commands`: validated insertion into map-event, common-event, and troop-page lists. Supports explicit before/after dry-run previews, safe nested insertion boundaries, relevant reference checks, and the existing atomic backup-protected writer.
 - Stdio protocol verification for both normal and legacy tool listings, plus an optional headless check against a locally installed MV interpreter. The runtime check does not redistribute engine files or modify game projects.
 
 ### Fixed
+- Plugin status and toggles use the actual `js/plugins.js` manifest and preserve parameters. MV plugin command builders emit raw code 356 text; MZ-only event data is refused throughout authoring paths.
+- Live bridge sessions bind to the intended project, enforce handshake ownership and message limits, and clean up on retarget/EOF. Runtime previews preserve game state, captures and telemetry. Existing video/FPS features remain supported.
+- Static analysis handles called-common-event transfers, troop command trees, relative-indent duplicates, huge ID ranges and zero-variance comparisons; formula parsing refuses invalid grammar and unsupported properties.
 - A client with no active project can now call `set_project_path`; the previous transport guard refused the very call needed to select one. Pure command builders also work without a project. Project-dependent calls remain guarded.
 
 ## [5.18.0] - 2026-09-08

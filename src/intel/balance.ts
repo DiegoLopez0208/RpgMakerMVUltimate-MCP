@@ -30,7 +30,7 @@ export interface BalanceOutlier {
   name: string;
   value: number;
   /** How many standard deviations from the leave-one-out mean. */
-  deviations: number;
+  deviations: number | null;
   direction: 'high' | 'low';
   message: string;
 }
@@ -65,6 +65,7 @@ export interface BalanceReport {
    * are excluded from the statistics rather than counted as zero.
    */
   unreadableFormulas: UnreadableFormula[];
+  coverage: string;
 }
 
 interface Sample { id: number; name: string; value: number }
@@ -104,6 +105,9 @@ function analyseCategory(
   thresholdSd: number,
   describe: (s: Sample, dir: 'high' | 'low') => string,
 ): BalanceCategory {
+  const measured = samples.filter(sample => Number.isFinite(sample.value) && sample.value >= 0);
+  skipped += samples.length - measured.length;
+  samples = measured;
   const values = samples.map((s) => s.value);
   const sorted = [...values].sort((a, b) => a - b);
   const byValue = [...samples].sort((a, b) => b.value - a.value);
@@ -126,20 +130,20 @@ function analyseCategory(
       const others = samples.filter((o) => o !== s).map((o) => o.value);
       const mu = mean(others);
       const sd = stdev(others, mu);
-      if (sd === 0) continue; // every peer identical: nothing to be unusual against
-      const deviations = (s.value - mu) / sd;
-      if (Math.abs(deviations) < thresholdSd) continue;
-      const direction = deviations > 0 ? 'high' : 'low';
+      if (sd === 0 && s.value === mu) continue;
+      const deviations = sd === 0 ? null : (s.value - mu) / sd;
+      if (deviations !== null && Math.abs(deviations) < thresholdSd) continue;
+      const direction = s.value > mu ? 'high' : 'low';
       outliers.push({
         id: s.id,
         name: s.name,
         value: round(s.value),
-        deviations: round(deviations),
+        deviations: deviations === null ? null : round(deviations),
         direction,
-        message: describe(s, direction),
+        message: describe(s, direction) + (deviations === null ? ' All other sampled entries have the same value, so a standard-deviation score is undefined.' : ''),
       });
     }
-    outliers.sort((a, b) => Math.abs(b.deviations) - Math.abs(a.deviations));
+    outliers.sort((a, b) => Math.abs(b.deviations ?? Infinity) - Math.abs(a.deviations ?? Infinity));
   }
 
   return {
@@ -189,7 +193,7 @@ export async function analyseBalance(
   opts: { thresholdSd?: number; category?: string } = {},
 ): Promise<BalanceReport> {
   if (!projectPath) throw new Error('No project path set. Use set_project_path or RPGMAKER_PROJECT_PATH first.');
-  const thresholdSd = opts.thresholdSd && opts.thresholdSd > 0 ? opts.thresholdSd : DEFAULT_THRESHOLD_SD;
+  const thresholdSd = opts.thresholdSd && Number.isFinite(opts.thresholdSd) && opts.thresholdSd > 0 ? opts.thresholdSd : DEFAULT_THRESHOLD_SD;
   const only = opts.category && opts.category !== 'all' ? opts.category : null;
 
   const unreadableFormulas: UnreadableFormula[] = [];
@@ -215,15 +219,17 @@ export async function analyseBalance(
         skipped++;
         continue;
       }
-      samples.push({ id: num(s.id), name: String(s.name ?? ''), value: result.value / mpCost });
+      const value = Math.max(0, result.value) / mpCost;
+      if (!Number.isFinite(value)) { skipped++; continue; }
+      samples.push({ id: num(s.id), name: String(s.name ?? ''), value });
     }
     categories.push(analyseCategory(
       'skills',
       'damage per MP, with both combatants on the reference stat line',
       samples, skipped, thresholdSd,
       (s, dir) => dir === 'high'
-        ? `Skill ${s.id} "${s.name}" returns far more damage per MP than the rest — it will crowd out every other option in the list.`
-        : `Skill ${s.id} "${s.name}" returns far less damage per MP than the rest — there is no reason to ever pick it.`,
+        ? `Skill ${s.id} "${s.name}" returns more reference damage per MP than its sampled peers; review costs, effects and availability.`
+        : `Skill ${s.id} "${s.name}" returns less reference damage per MP than its sampled peers; review whether other effects justify it.`,
     ));
   }
 
@@ -244,8 +250,8 @@ export async function analyseBalance(
       'gold per point of ATK+MAT',
       samples, skipped, thresholdSd,
       (s, dir) => dir === 'high'
-        ? `Weapon ${s.id} "${s.name}" costs far more per point of power than its peers — nobody will buy it.`
-        : `Weapon ${s.id} "${s.name}" costs far less per point of power than its peers — it makes the rest of the shop pointless.`,
+        ? `Weapon ${s.id} "${s.name}" costs more per point of ATK+MAT than its sampled peers; review traits and progression.`
+        : `Weapon ${s.id} "${s.name}" costs less per point of ATK+MAT than its sampled peers; review traits and progression.`,
     ));
   }
 
@@ -266,7 +272,7 @@ export async function analyseBalance(
       samples, skipped, thresholdSd,
       (s, dir) => dir === 'high'
         ? `Armor ${s.id} "${s.name}" costs far more per point of protection than its peers.`
-        : `Armor ${s.id} "${s.name}" costs far less per point of protection than its peers — it trivialises the shop.`,
+        : `Armor ${s.id} "${s.name}" costs less per point of DEF+MDF than its sampled peers; review traits and progression.`,
     ));
   }
 
@@ -286,8 +292,8 @@ export async function analyseBalance(
       'HP per point of EXP',
       samples, skipped, thresholdSd,
       (s, dir) => dir === 'high'
-        ? `Enemy ${s.id} "${s.name}" takes far more effort per point of EXP than the rest — fighting it wastes the player's time.`
-        : `Enemy ${s.id} "${s.name}" gives far more EXP for the effort than the rest — it is the one the player will grind.`,
+        ? `Enemy ${s.id} "${s.name}" has more HP per point of EXP than its sampled peers; review defenses, rewards and encounter context.`
+        : `Enemy ${s.id} "${s.name}" has less HP per point of EXP than its sampled peers; review defenses, rewards and encounter context.`,
     ));
   }
 
@@ -296,5 +302,6 @@ export async function analyseBalance(
     outlierCount: categories.reduce((n, c) => n + c.outliers.length, 0),
     categories,
     unreadableFormulas,
+    coverage: 'Advisory leave-one-out comparisons, not battle simulation or an automatic rebalance. Formulas use fixed reference stats; scope, effects, elements, variance, traits, progression and plugins may justify differences. A null deviations value means peers have zero variance.',
   };
 }
