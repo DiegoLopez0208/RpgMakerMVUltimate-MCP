@@ -18,7 +18,7 @@ Source baseline: MV `f3d0dad`; MZ `c863b4d`. This is the complete scope approved
 - [x] Runtime hardening without losing video/performance telemetry: project authentication, handshake ownership, bounded buffers, safe installation/screenshots, completed transfers, retarget/EOF cleanup.
 - [x] Analysis backports: strict formula parsing, common-event transfer traversal, troop outlines/duplicates, relative-indent matching, huge ID ranges, zero-variance outliers.
 - [x] Documentation, MIT attribution, protocol regression checks, full test/build/lint and licensed engine verification.
-- [ ] GitHub delivery.
+- [x] GitHub delivery: upstream PR #20 from IXTLIA:feat/mv-mz-parity.
 
 ## Invariants
 
@@ -39,4 +39,4 @@ Verified locally on 2026-10-03 with Node.js 22.18.0:
 - Packaging dry run: 544 entries, approximately 0.99 MB compressed and 7.28 MB unpacked. No engine JS, purchased PNG/audio, game projects, videos or environment files included. MIT attribution and the custom catalog helpers are packaged.
 - All runtime work used a separate disposable licensed project. The user's game project and editor were not modified. Older MV/NW.js versions and arbitrary third-party plugin combinations remain outside this acceptance run. Headless tools require Node.js 20+; core tools retain Node.js 18 support.
 
-GitHub delivery remains the final step; package version is unchanged so this work does not trigger an npm release.
+Submitted as [upstream PR #20](https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/pull/20), from `IXTLIA:feat/mv-mz-parity`. Implementation commit: `ed947a87d65de728fa320bbb0749997a0e5b4c26`. It builds on still-open PR #19; upstream review/merge remains with the maintainer. Package version is unchanged so this work does not trigger an npm release.
