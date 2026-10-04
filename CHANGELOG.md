@@ -20,6 +20,7 @@
 - Stdio protocol verification for both normal and legacy tool listings, plus an optional headless check against a locally installed MV interpreter. The runtime check does not redistribute engine files or modify game projects.
 
 ### Changed
+- **`delete_database_entry` refuses to delete an entry that is still referenced**, listing every place: events, common events, troop pages, page conditions, map encounters, the starting party, actor classes and starting equipment, class learnings, enemy actions and drops, troop members, traits, item and skill effects, animations. `dryRun: true` previews the list; `force: true` deletes anyway and returns `brokenReferences`. Deleting used to null the entry silently and leave the game to fail at runtime.
 - Event command names, parameter counts, numeric slots and block structure now come from one table (`eventCommandTable.ts`) shared by the validator, the event outline and the numeric normaliser.
 
 ### Security

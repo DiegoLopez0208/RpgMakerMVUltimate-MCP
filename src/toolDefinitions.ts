@@ -69,13 +69,14 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'delete_database_entry',
-    description: 'DESTRUCTIVE: delete a database entry by nulling it out in its data file (written immediately; not undoable — re-create it if needed; IDs are never reused). References elsewhere are NOT cleaned up and will break at runtime: actors in the starting party, classes assigned to actors, skills in class learnings/enemy actions, items in chests/shops, enemies in troops, states in skill effects, troops in map encounters — check and update those first with query_database/update_database_entry. NEVER delete skill 1 (Attack), skill 2 (Guard) or state 1 (KO); the engine uses them directly. Supported entities: actors, classes, skills, items, weapons, armors, enemies, states, troops, animations. Returns the deleted object for reference; fails with an error if the ID does not exist.',
+    description: 'DESTRUCTIVE: delete a database entry by nulling it out in its data file (written immediately; not undoable — re-create it if needed; IDs are never reused). The delete is refused while anything still references the entry, listing every place: events, common events, troop pages, page conditions, map encounters, the starting party, actor classes and starting equipment, class learnings, enemy actions and drops, troop members, traits, item and skill effects, animations. Fix those first, pass dryRun:true to preview the list, or force:true to delete anyway (the result then lists brokenReferences). References are never cleaned up automatically. NEVER delete skill 1 (Attack), skill 2 (Guard) or state 1 (KO); the engine uses them directly. Supported entities: actors, classes, skills, items, weapons, armors, enemies, states, troops, animations. Returns the deleted object for reference; fails with an error if the ID does not exist.',
     annotations: { title: 'Delete database entry', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     inputSchema: {
       type: 'object',
       properties: {
         entity: { type: 'string', enum: ['actors', 'classes', 'skills', 'items', 'weapons', 'armors', 'enemies', 'states', 'troops', 'animations'], description: 'Which database contains the entry to delete' },
-        id: { ...ID_TYPE, description: 'ID of the entry to delete (never skill 1/2 or state 1)' }
+        id: { ...ID_TYPE, description: 'ID of the entry to delete (never skill 1/2 or state 1)' },
+        force: { type: 'boolean', description: 'Delete even though something still references it (default false)' }
       },
       required: ['entity', 'id']
     }
