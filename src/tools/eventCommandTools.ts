@@ -56,7 +56,8 @@ function relativeFragment(input: unknown): unknown {
   return entries.map((value, index) => ({ ...value, indent: indents[index] - base }));
 }
 
-async function checkReferences(projectPath: string, commands: EventCommand[]): Promise<string[]> {
+/** Throw on statically resolvable references that do not exist; return advisories for runtime-only ones. */
+export async function checkReferences(projectPath: string, commands: EventCommand[]): Promise<string[]> {
   const warnings: string[] = [];
   const cache = new Map<string, unknown>();
   const read = async (name: string) => {
@@ -127,6 +128,12 @@ async function checkReferences(projectPath: string, commands: EventCommand[]): P
       else if (command.code !== 314 && p[3] === 1) checkSystemId('variables', p[4]);
     } else if (command.code === 333) {
       entry(await read('States.json'), p[2] as number, 'State');
+    } else if (command.code === 205) {
+      // Route steps 27/28 (switch on/off) carry a switch ID.
+      const route = p[1] as { list?: { code?: number; parameters?: unknown[] }[] } | undefined;
+      for (const step of route?.list ?? []) {
+        if (step.code === 27 || step.code === 28) checkSystemId('switches', step.parameters?.[0]);
+      }
     }
   }
   return warnings;

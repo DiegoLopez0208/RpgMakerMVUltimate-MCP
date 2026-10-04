@@ -274,6 +274,71 @@ const enemyStateSchema = z.object({
 }).strict();
 const abortBattleSchema = z.object({ kind: z.literal("abort_battle"), indent: indentField }).strict();
 
+// Set Movement Route. Step names are Game_Character's ROUTE_* constants in lower case
+// (ROUTE_MOVE_DOWN is "move_down"), so each can be checked against the engine.
+const ROUTE_STEP_CODES = {
+  move_down: 1, move_left: 2, move_right: 3, move_up: 4, move_lower_l: 5, move_lower_r: 6, move_upper_l: 7, move_upper_r: 8,
+  move_random: 9, move_toward: 10, move_away: 11, move_forward: 12, move_backward: 13, jump: 14, wait: 15,
+  turn_down: 16, turn_left: 17, turn_right: 18, turn_up: 19, turn_90d_r: 20, turn_90d_l: 21, turn_180d: 22, turn_90d_r_l: 23,
+  turn_random: 24, turn_toward: 25, turn_away: 26, switch_on: 27, switch_off: 28, change_speed: 29, change_freq: 30,
+  walk_anime_on: 31, walk_anime_off: 32, step_anime_on: 33, step_anime_off: 34, dir_fix_on: 35, dir_fix_off: 36,
+  through_on: 37, through_off: 38, transparent_on: 39, transparent_off: 40, change_image: 41, change_opacity: 42,
+  change_blend_mode: 43, play_se: 44, script: 45,
+} as const;
+type RouteStepName = keyof typeof ROUTE_STEP_CODES;
+/** Fields each step with parameters accepts; a step not listed takes none. */
+const ROUTE_STEP_FIELDS: Partial<Record<RouteStepName, string[]>> = {
+  jump: ["x", "y"], wait: ["frames"], switch_on: ["switchId"], switch_off: ["switchId"], change_speed: ["value"],
+  change_freq: ["value"], change_image: ["name", "index"], change_opacity: ["value"], change_blend_mode: ["value"],
+  play_se: ["name", "volume", "pitch", "pan"], script: ["text"],
+};
+const VALUE_RANGE: Partial<Record<RouteStepName, [number, number]>> = {
+  change_speed: [1, 6], change_freq: [1, 5], change_opacity: [0, 255], change_blend_mode: [0, 3],
+};
+const routeStepSchema = z.object({
+  step: z.enum(Object.keys(ROUTE_STEP_CODES) as [RouteStepName, ...RouteStepName[]]),
+  times: integer(1, 99).default(1),
+  x: integer().optional(), y: integer().optional(), frames: integer(1, 999).optional(), switchId: id().optional(),
+  value: integer().optional(), name: z.string().optional(), index: integer(0, 7).optional(),
+  volume: integer(0, 100).optional(), pitch: integer(50, 150).optional(), pan: integer(-100, 100).optional(),
+  text: z.string().optional(),
+}).strict().superRefine((value, ctx) => {
+  const allowed = ROUTE_STEP_FIELDS[value.step] ?? [];
+  for (const key of Object.keys(value)) {
+    if (key !== "step" && key !== "times" && !allowed.includes(key)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${value.step} does not take ${key}` });
+    }
+  }
+  const required = { wait: "frames", switch_on: "switchId", switch_off: "switchId", change_speed: "value", change_freq: "value",
+    change_image: "name", change_opacity: "value", change_blend_mode: "value", play_se: "name", script: "text" } as Record<string, keyof typeof value>;
+  const need = required[value.step];
+  if (need && value[need] === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [need], message: `${value.step} requires ${need}` });
+  const range = VALUE_RANGE[value.step];
+  if (range && value.value !== undefined && (value.value < range[0] || value.value > range[1])) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["value"], message: `${value.step} value must be ${range[0]}-${range[1]}` });
+  }
+});
+const moveRouteSchema = z.object({
+  kind: z.literal("move_route"), indent: indentField, characterId,
+  steps: z.array(routeStepSchema).min(1),
+  repeat: z.boolean().default(false), skippable: z.boolean().default(false), wait: z.boolean().default(true),
+}).strict();
+
+/** One route step as the editor stores it: parameters only when the step has them, indent null. */
+function routeStep(step: z.infer<typeof routeStepSchema>): Record<string, unknown> {
+  const code = ROUTE_STEP_CODES[step.step];
+  const parameters: unknown[] | undefined =
+    step.step === "jump" ? [step.x ?? 0, step.y ?? 0]
+    : step.step === "wait" ? [step.frames]
+    : step.step === "switch_on" || step.step === "switch_off" ? [step.switchId]
+    : step.step === "change_image" ? [step.name, step.index ?? 0]
+    : step.step === "play_se" ? [{ name: step.name, pan: step.pan ?? 0, pitch: step.pitch ?? 100, volume: step.volume ?? 90 }]
+    : step.step === "script" ? [step.text]
+    : ROUTE_STEP_FIELDS[step.step]?.includes("value") ? [step.value]
+    : undefined;
+  return parameters ? { code, parameters, indent: null } : { code, indent: null };
+}
+
 // Show Text wrapping. MV never wraps; these are character budgets for the stock 816px window and font.
 const LINE_BUDGET = 55;
 const LINE_BUDGET_WITH_FACE = 38;
@@ -528,6 +593,15 @@ export function buildEventCommands(args: Record<string, unknown>): { commands: E
     case "abort_battle": {
       const a = abortBattleSchema.parse(args);
       commands = [command(340, a.indent)];
+      break;
+    }
+    case "move_route": {
+      const a = moveRouteSchema.parse(args);
+      const list = [...a.steps.flatMap(step => Array.from({ length: step.times }, () => routeStep(step))), { code: 0, parameters: [] }];
+      // The engine runs parameters[1]; the editor lists the route from the 505 rows, one per step and
+      // without the end marker (all 42 routes in the official DLC samples follow this, see #12).
+      commands = [command(205, a.indent, [a.characterId, { list, repeat: a.repeat, skippable: a.skippable, wait: a.wait }]),
+        ...list.slice(0, -1).map(step => command(505, a.indent, [step]))];
       break;
     }
     default: throw new Error(`Unknown event builder kind: ${String(args.kind)}`);

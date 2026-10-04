@@ -17,7 +17,7 @@ export const EVENT_COMMAND_TOOL_DEFINITIONS: Tool[] = [
     inputSchema: {
       type: 'object', additionalProperties: false,
       properties: {
-        kind: { type: 'string', enum: ['show_text', 'show_choices', 'conditional_branch', 'control_switch', 'control_variable', 'transfer_player', 'common_event', 'flow', 'plugin_command', 'change_gold', 'change_items', 'change_party_member', 'change_actor', 'play_audio', 'screen_effect', 'show_picture', 'erase_picture', 'show_animation', 'show_balloon', 'battle_processing', 'shop_processing', 'name_input', 'enemy_appear', 'change_enemy_state', 'abort_battle'] },
+        kind: { type: 'string', enum: ['show_text', 'show_choices', 'conditional_branch', 'control_switch', 'control_variable', 'transfer_player', 'common_event', 'flow', 'plugin_command', 'change_gold', 'change_items', 'change_party_member', 'change_actor', 'play_audio', 'screen_effect', 'show_picture', 'erase_picture', 'show_animation', 'show_balloon', 'battle_processing', 'shop_processing', 'name_input', 'enemy_appear', 'change_enemy_state', 'abort_battle', 'move_route'] },
         indent: { ...integer, description: 'Base indentation, default 0. Nested branch bodies are rebased without mutating their inputs.' },
         lines: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'show_text: message lines. MV does not wrap; long lines are warned about unless wrap is set.' },
         wrap: { type: ['boolean', 'string'], enum: [true, false, 'hard'], description: 'show_text: true reflows all lines as one paragraph, "hard" keeps each line as a break; both split into 4-line boxes. Width ~55 chars, ~38 with a face.' },
@@ -85,13 +85,13 @@ export const EVENT_COMMAND_TOOL_DEFINITIONS: Tool[] = [
         effect: { type: 'string', enum: ['fadeout', 'fadein', 'tint', 'flash', 'shake'], description: 'screen_effect. tint: color [r,g,b,gray] -255..255; flash: color [r,g,b,strength] 0..255; shake: power, speed 1-9.' },
         color: { type: 'array', items: { type: 'integer' }, minItems: 4, maxItems: 4 },
         duration: { ...integer, description: 'screen_effect: frames, default 60.' },
-        wait: { type: 'boolean', description: 'Wait for the effect, animation or balloon to finish.' },
+        wait: { type: 'boolean', description: 'Wait for the effect, animation, balloon or move route to finish (move_route default true).' },
         power: integer, speed: integer,
         pictureId: { ...integer, description: 'show_picture/erase_picture: slot 1-100.' },
         origin: { type: 'string', enum: ['upper_left', 'center'] },
         scaleX: integer, scaleY: integer, opacity: integer,
         blend: { type: 'string', enum: ['normal', 'additive', 'multiply', 'screen'] },
-        characterId: { ...integer, description: 'show_animation/show_balloon: -1 player, 0 this event (default), n map event n.' },
+        characterId: { ...integer, description: 'show_animation/show_balloon/move_route: -1 player, 0 this event (default), n map event n.' },
         animationId: integer,
         balloonId: { ...integer, description: '1-15 as in the editor list (1 exclamation).' },
         troopId: { ...integer, description: 'battle_processing: give troopId, troopVariableId, or randomEncounter: true.' },
@@ -105,6 +105,14 @@ export const EVENT_COMMAND_TOOL_DEFINITIONS: Tool[] = [
         goods: { type: 'array', minItems: 1, description: 'shop_processing: goods in order; omit price to use the database price.', items: { type: 'object', additionalProperties: false, properties: { type: { type: 'string', enum: ['item', 'weapon', 'armor'] }, id: integer, price: integer }, required: ['id'] } },
         purchaseOnly: { type: 'boolean' },
         maxLength: { ...integer, description: 'name_input: 1-16, default 8.' },
+        steps: {
+          type: 'array', minItems: 1, description: 'move_route: steps in order; times repeats one. toward/away are relative to the player. Parameters: jump x,y; wait frames; switch_on/off switchId; change_speed value 1-6; change_freq value 1-5; change_image name,index; change_opacity value 0-255; change_blend_mode value 0-3; play_se name,volume?,pitch?,pan?; script text.',
+          items: { type: 'object', additionalProperties: false, required: ['step'], properties: {
+            step: { type: 'string', enum: ['move_down', 'move_left', 'move_right', 'move_up', 'move_lower_l', 'move_lower_r', 'move_upper_l', 'move_upper_r', 'move_random', 'move_toward', 'move_away', 'move_forward', 'move_backward', 'jump', 'wait', 'turn_down', 'turn_left', 'turn_right', 'turn_up', 'turn_90d_r', 'turn_90d_l', 'turn_180d', 'turn_90d_r_l', 'turn_random', 'turn_toward', 'turn_away', 'switch_on', 'switch_off', 'change_speed', 'change_freq', 'walk_anime_on', 'walk_anime_off', 'step_anime_on', 'step_anime_off', 'dir_fix_on', 'dir_fix_off', 'through_on', 'through_off', 'transparent_on', 'transparent_off', 'change_image', 'change_opacity', 'change_blend_mode', 'play_se', 'script'] }, times: integer, x: integer, y: integer, frames: integer, switchId: integer,
+            value: integer, name: { type: 'string' }, index: integer, volume: integer, pitch: integer, pan: integer, text: { type: 'string' } } }
+        },
+        repeat: { type: 'boolean', description: 'move_route: loop the route. Default false.' },
+        skippable: { type: 'boolean', description: 'move_route: skip a step that cannot be performed. Default false.' },
         enemyIndex: { ...integer, description: 'Troop slot from 0; change_enemy_state also accepts -1 for the entire troop.' },
         text: { type: 'string', description: 'plugin_command: full MV command string, e.g. "DoorCtl open 1".' }
       },

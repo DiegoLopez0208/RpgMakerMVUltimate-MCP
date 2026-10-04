@@ -352,7 +352,7 @@ interface ToolArgs {
   enabled: boolean; show_events: boolean; show_regions: boolean;
   peek: boolean; wait: boolean;
   // structural
-  pages: EventPage[]; command: EventCommand; fields: Record<string, unknown>;
+  pages: EventPage[]; page: unknown; command: EventCommand; fields: Record<string, unknown>;
   items: Record<string, unknown>[]; goods: unknown[][]; dialogues: string[];
   enemyIds: number[]; encounters: Record<string, unknown>[]; types: string[];
   names: Record<string, unknown>[]; folders: Record<string, unknown>[];
@@ -604,6 +604,8 @@ case 'update_troop':
   return await troopTools.updateTroop(p, args.id, args.fields);
 case 'delete_troop':
   return await troopTools.deleteTroop(p, args.id);
+            case 'add_troop_page':
+                return await troopTools.addTroopPage(p, Number(args.troopId), args.page);
             case 'add_enemy_to_troop':
                 return await troopTools.addEnemyToTroop(p, args.troopId, args.enemyId);
             case 'create_random_encounter_troop':

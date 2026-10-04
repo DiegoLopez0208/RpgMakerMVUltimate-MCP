@@ -309,7 +309,7 @@ the supported kinds, nesting rules, MV-specific differences, and verification.
 | `RPGMV_BRIDGE_PORT` | optional | Loopback port for the live bridge (default `32123`) |
 | `RPGMV_BACKUP_KEEP` | optional | Backups kept per file (default `10`) |
 | `RPGMV_LEGACY_TOOLS` | optional | `1` also advertises the 101 legacy tool names |
-| `RPGMV_TOOLSET` | optional | Advertise only some tool groups, e.g. `events,media`. `core` (project, database, maps, events, system, analysis) is always on; the others are `events` (build/insert event commands), `mapgen` (generate_map) and `media` (screenshot, video, image analysis). Unset or `all` lists everything. `core` alone is about 10k tokens instead of 17k. |
+| `RPGMV_TOOLSET` | optional | Advertise only some tool groups, e.g. `events,media`. `core` (project, database, maps, events, system, analysis) is always on; the others are `events` (build/insert event commands), `mapgen` (generate_map) and `media` (screenshot, video, image analysis). Unset or `all` lists everything. `core` alone is about 11k tokens instead of 18k. |
 | `VISION_API_URL` | to enable vision | Base URL of an OpenAI-compatible vision endpoint. **Unset = vision disabled** |
 | `VISION_API_KEY` | optional | Bearer token; only sent when set |
 | `VISION_MODEL` | optional | Model name (default `meta/llama-3.2-90b-vision-instruct`) |
