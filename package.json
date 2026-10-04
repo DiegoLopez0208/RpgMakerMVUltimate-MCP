@@ -57,7 +57,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:protocol": "node scripts/verify-event-command-protocol.mjs",
-    "test:mv-runtime": "node scripts/verify-mv-event-runtime.mjs"
+    "test:mv-runtime": "node scripts/verify-mv-event-runtime.mjs",
+    "test:mv-effects": "node scripts/verify-mv-command-effects.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

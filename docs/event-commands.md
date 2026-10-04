@@ -13,7 +13,7 @@ integer strings; numeric constants may be fractional finite numbers.
 
 | `kind` | Required fields | Useful optional fields |
 | --- | --- | --- |
-| `show_text` | `lines: string[]` | `faceName`, `faceIndex`, `background`, `position` |
+| `show_text` | `lines: string[]` | `faceName`, `faceIndex`, `background`, `position`, `wrap: true / "hard"`, `wrapWidth` |
 | `show_choices` | `choices: string[]` | `branches`, `cancelBranch`, `cancelType`, `defaultType`, `background`, `position` |
 | `conditional_branch` | `condition` | `thenBranch`, `elseBranch` |
 | `control_switch` | `scope: "switch"`, `switchId`; or `scope: "self_switch"`, `name: "A".."D"` | `value: "on" / "off"`, `endId` for a switch range |
@@ -22,6 +22,22 @@ integer strings; numeric constants may be fractional finite numbers.
 | `common_event` | `commonEventId` | — |
 | `flow` | `action: wait/exit_event/label/jump_to_label` | `frames` for wait; `name` for label/jump |
 | `plugin_command` | `text` | — |
+| `change_gold` | `amount` or `amountVariableId` | `decrease` |
+| `change_items` | `itemId`, `amount` or `amountVariableId` | `itemType: item/weapon/armor`, `decrease`, `includeEquip` (weapon/armor) |
+| `change_party_member` | `actorId` | `remove`, `initialize` |
+| `change_actor` | `stat`, `actorId` (0 = entire party) or `actorVariableId` | per stat: `amount`/`amountVariableId`/`decrease` (hp, mp, exp, level), `allowDeath` (hp), `showLevelUp` (exp, level), `stateId`/`remove` (state); `recover_all` takes nothing else |
+| `play_audio` | `channel: bgm/bgs/me/se`, `name` | `volume`, `pitch`, `pan` |
+| `screen_effect` | `effect: fadeout/fadein/tint/flash/shake` | `color` (tint, flash), `duration`, `wait`, `power`/`speed` (shake) |
+| `show_picture` | `pictureId`, `name` | `origin`, `designation`, `x`, `y`, `scaleX`, `scaleY`, `opacity`, `blend` |
+| `erase_picture` | `pictureId` | — |
+| `show_animation` | `animationId` | `characterId` (-1 player, 0 this event), `wait` |
+| `show_balloon` | `balloonId` | `characterId`, `wait` |
+| `battle_processing` | `troopId`, `troopVariableId` or `randomEncounter: true` | `canEscape`, `canLose`, `winBranch`, `escapeBranch`, `loseBranch` |
+| `shop_processing` | `goods: [{ type?, id, price? }]` | `purchaseOnly` |
+| `name_input` | `actorId` | `maxLength` |
+| `enemy_appear` | `enemyIndex` | — (troop pages) |
+| `change_enemy_state` | `enemyIndex` (-1 = entire troop), `stateId` | `remove` (troop pages) |
+| `abort_battle` | — | — (troop pages) |
 
 Each response has `commands`, plus advisory `warnings` when applicable. Fragments
 omit the final root end marker. Nested branches include their own end markers.
@@ -109,7 +125,11 @@ advisories rather than being executed or silently claimed valid.
   representation is accepted too). `-1` disables cancellation; a choice index
   routes cancellation to that choice.
 - Game-data operand type `8` is MZ-only and is rejected.
-- Long dialogue lines are not automatically wrapped by vanilla MV.
+- Long dialogue lines are not automatically wrapped by vanilla MV. `show_text` warns about
+  lines over about 55 characters (38 with a face); `wrap: true` reflows them and splits
+  the message into four-line boxes. The width is a character estimate for the stock font.
+- Battle Processing has result branches only when `canEscape` or `canLose` is set, as in
+  the editor. Shop Processing writes the first good on the 302 row itself, as the engine reads it.
 - Self switches depend on the interpreter's event context.
 
 ## Verification
@@ -121,8 +141,14 @@ npm run build
 npm test
 npm run test:protocol
 npm run test:mv-runtime -- --engine "/path/to/MV/project/js/rpg_objects.js"
+npm run test:mv-effects -- --engine "/path/to/MV/project/js/rpg_objects.js"
 ```
 
 The optional final command runs the real local MV interpreter in a Node VM with
 scene/asset boundaries stubbed. It checks command execution, not GUI rendering or
 third-party plugin behavior. The engine files stay local and are read-only.
+
+`test:mv-effects` runs the party, presentation, scene and troop builders through the same
+interpreter with the game world replaced by spies, and checks the exact calls it makes
+(for example `$gameParty.gainItem(weapon 2, -3, true)` or `SceneManager.prepareNextScene(goods, true)`),
+so each parameter is proven to sit in the slot the engine reads.

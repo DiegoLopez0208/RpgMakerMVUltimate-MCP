@@ -103,6 +103,30 @@ async function checkReferences(projectPath: string, commands: EventCommand[]): P
     } else if (command.code === 301) {
       if (p[0] === 0) entry(await read('Troops.json'), p[1] as number, 'Troop');
       if (p[0] === 1) checkSystemId('variables', p[1]);
+    } else if (command.code === 125) {
+      if (p[1] === 1) checkSystemId('variables', p[2]);
+    } else if (command.code >= 126 && command.code <= 128) {
+      const database = { 126: 'Items', 127: 'Weapons', 128: 'Armors' }[command.code]!;
+      entry(await read(`${database}.json`), p[0] as number, database.slice(0, -1));
+      if (p[2] === 1) checkSystemId('variables', p[3]);
+    } else if (command.code === 129 || command.code === 303) {
+      entry(await read('Actors.json'), p[0] as number, 'Actor');
+    } else if (command.code === 212) {
+      entry(await read('Animations.json'), p[1] as number, 'Animation');
+    } else if (command.code === 231 && p[3] === 1) {
+      checkSystemId('variables', p[4]); checkSystemId('variables', p[5]);
+    } else if (command.code === 302 || command.code === 605) {
+      // The 302 row is the first good; each 605 row is another: [type, id, priceType, price].
+      const database = ['Items', 'Weapons', 'Armors'][p[0] as number];
+      if (database) entry(await read(`${database}.json`), p[1] as number, database.slice(0, -1));
+    } else if (command.code >= 311 && command.code <= 316) {
+      // [0, actorId (0 = entire party)] or [1, variableId], then the code's own operands.
+      if (p[0] === 0 && p[1] !== 0) entry(await read('Actors.json'), p[1] as number, 'Actor');
+      if (p[0] === 1) checkSystemId('variables', p[1]);
+      if (command.code === 313) entry(await read('States.json'), p[3] as number, 'State');
+      else if (command.code !== 314 && p[3] === 1) checkSystemId('variables', p[4]);
+    } else if (command.code === 333) {
+      entry(await read('States.json'), p[2] as number, 'State');
     }
   }
   return warnings;
