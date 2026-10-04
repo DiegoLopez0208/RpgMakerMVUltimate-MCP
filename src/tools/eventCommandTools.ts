@@ -15,8 +15,13 @@ export interface InsertEventCommandsResult {
   pageIndex?: number;
   position: number;
   insertedCount: number;
-  before: EventCommand[];
-  after: EventCommand[];
+  /** Length of the resulting list, including the root terminator. */
+  listLength: number;
+  /** Command codes of the resulting list: enough to verify a splice without echoing every parameter. */
+  listCodes: number[];
+  /** Full lists, only with verbose: true (they can cost thousands of tokens on long events). */
+  before?: EventCommand[];
+  after?: EventCommand[];
   warnings: string[];
 }
 
@@ -81,6 +86,8 @@ async function checkReferences(projectPath: string, commands: EventCommand[]): P
       if (p[0] === 1) { checkSystemId('variables', p[1]); if (p[2] === 1) checkSystemId('variables', p[3]); }
       if (p[0] === 4 && p[2] === 0) entry(await read('Actors.json'), p[1] as number, 'Actor');
       if (p[0] === 8) entry(await read('Items.json'), p[1] as number, 'Item');
+      if (p[0] === 9) entry(await read('Weapons.json'), p[1] as number, 'Weapon');
+      if (p[0] === 10) entry(await read('Armors.json'), p[1] as number, 'Armor');
     } else if (command.code === 103 || command.code === 104) checkSystemId('variables', p[0]);
     else if (command.code === 117) entry(await read('CommonEvents.json'), p[0] as number, 'Common event');
     else if (command.code === 201) {
@@ -106,9 +113,10 @@ export async function insertEventCommands(projectPath: string, args: JsonObject)
   object(args, 'arguments');
   const target = args.target ?? 'map_event';
   if (!['map_event', 'common_event', 'troop_page'].includes(target as string)) throw new Error('target must be map_event, common_event, or troop_page');
-  const keys = ['target', 'commands', 'position', 'dryRun', ...(target === 'map_event' ? ['mapId', 'eventId', 'pageIndex'] : target === 'common_event' ? ['commonEventId'] : ['troopId', 'pageIndex'])];
+  const keys = ['target', 'commands', 'position', 'dryRun', 'verbose', ...(target === 'map_event' ? ['mapId', 'eventId', 'pageIndex'] : target === 'common_event' ? ['commonEventId'] : ['troopId', 'pageIndex'])];
   for (const key of Object.keys(args)) if (!keys.includes(key)) throw new Error(`Unexpected argument ${key} for ${target}`);
   if (args.dryRun !== undefined && typeof args.dryRun !== 'boolean') throw new Error('dryRun must be a boolean');
+  if (args.verbose !== undefined && typeof args.verbose !== 'boolean') throw new Error('verbose must be a boolean');
   const fragment = validateEventCommands(relativeFragment(args.commands), { fragment: true });
   if (!fragment.commands.length) throw new Error('commands must contain at least one executable command');
   let filename: string;
@@ -145,7 +153,11 @@ export async function insertEventCommands(projectPath: string, args: JsonObject)
   // Existing unrelated stale references should not prevent a scoped insertion.
   const referenceWarnings = await checkReferences(projectPath, shifted);
   const warnings = [...new Set([...beforeValidation.warnings, ...fragment.warnings, ...afterValidation.warnings, ...referenceWarnings])];
-  const result = { target: target as Target, filename, dryRun: args.dryRun === true, ...ids, position, insertedCount: shifted.length, before, after, warnings };
+  const result: InsertEventCommandsResult = {
+    target: target as Target, filename, dryRun: args.dryRun === true, ...ids, position, insertedCount: shifted.length,
+    listLength: after.length, listCodes: after.map(command => command.code),
+    ...(args.verbose === true ? { before, after } : {}), warnings,
+  };
   if (args.dryRun !== true) {
     holder.list = after;
     await writeJson(projectPath, filename, data);

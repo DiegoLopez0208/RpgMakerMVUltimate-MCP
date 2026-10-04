@@ -36,7 +36,7 @@ describe('guarded event command insertion', () => {
     [{ target: 'troop_page', troopId: 1 }, 'Troops.json'],
   ])('inserts into %j with a final root terminator and backups', async (target, filename) => {
     const before = await bytes(filename);
-    const result = await insertEventCommands(project, { ...target, commands: [c(230, [30]), c(0)] });
+    const result = await insertEventCommands(project, { ...target, commands: [c(230, [30]), c(0)], verbose: true });
     expect(result.after).toEqual([c(108, ['Original']), c(230, [30]), c(0)]);
     expect(result.insertedCount).toBe(1);
     expect(await bytes(filename)).not.toBe(before);
@@ -46,7 +46,7 @@ describe('guarded event command insertion', () => {
 
   it('direct dryRun validates and previews without changing files or creating backups', async () => {
     const before = await snapshot();
-    const result = await insertEventCommands(project, { mapId: 1, eventId: 1, commands: [c(121, [1, 1, 0])], dryRun: true });
+    const result = await insertEventCommands(project, { mapId: 1, eventId: 1, commands: [c(121, [1, 1, 0])], dryRun: true, verbose: true });
     expect(result.before).toEqual(original);
     expect(result.dryRun).toBe(true);
     expect(result.after).toHaveLength(3);
@@ -56,7 +56,7 @@ describe('guarded event command insertion', () => {
   it('rebases fragments into nested branch bodies and preserves child terminators', async () => {
     const list = [c(111, [0, 1, 0]), c(0, [], 1), c(411), c(0, [], 1), c(412), c(0)];
     await save('Map001.json', { events: [null, { id: 1, pages: [{ list }] }] });
-    const result = await insertEventCommands(project, { mapId: 1, eventId: 1, position: 1, commands: [c(108, ['Inside'])] });
+    const result = await insertEventCommands(project, { mapId: 1, eventId: 1, position: 1, commands: [c(108, ['Inside'])], verbose: true });
     expect(result.after).toEqual([list[0], c(108, ['Inside'], 1), ...list.slice(1)]);
   });
 
@@ -68,7 +68,7 @@ describe('guarded event command insertion', () => {
       thenBranch: buildEventCommands({ kind: 'show_text', lines: ['Nested'], indent: 4 }).commands,
     }).commands;
     const unchanged = structuredClone(commands);
-    const result = await insertEventCommands(project, { mapId: 1, eventId: 1, position: 1, commands, dryRun: true });
+    const result = await insertEventCommands(project, { mapId: 1, eventId: 1, position: 1, commands, dryRun: true, verbose: true });
     expect(result.after).toEqual([list[0], ...commands.map(command => ({ ...command, indent: command.indent! - 1 })), ...list.slice(1)]);
     expect(commands).toEqual(unchanged);
   });
@@ -162,6 +162,38 @@ describe('guarded event command insertion', () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  it('returns a compact result by default and the full lists only with verbose', async () => {
+    const compact = await insertEventCommands(project, { mapId: 1, eventId: 1, commands: [c(230, [30])], dryRun: true });
+    expect(compact).not.toHaveProperty('before');
+    expect(compact).not.toHaveProperty('after');
+    expect(compact.listLength).toBe(3);
+    expect(compact.listCodes).toEqual([108, 230, 0]);
+    const full = await insertEventCommands(project, { mapId: 1, eventId: 1, commands: [c(230, [30])], dryRun: true, verbose: true });
+    expect(full.before).toEqual(original);
+    expect(full.after).toHaveLength(3);
+    await expect(insertEventCommands(project, { mapId: 1, eventId: 1, commands: [c(230, [1])], verbose: 'yes' })).rejects.toThrow(/verbose/);
+  });
+
+  it('inserts into a page whose When Cancel row has the editor shape [6, null]', async () => {
+    const list = [c(102, [['Yes', 'No'], -2, 0, 2, 0]), c(402, [0, 'Yes']), c(0, [], 1),
+      c(402, [1, 'No']), c(0, [], 1), c(403, [6, null]), c(0, [], 1), c(404), c(0)];
+    await save('Map001.json', { events: [null, { id: 1, pages: [{ list }] }] });
+    const result = await insertEventCommands(project, { mapId: 1, eventId: 1, position: 6, commands: [c(108, ['Cancelled'])], verbose: true });
+    expect(result.after![6]).toEqual(c(108, ['Cancelled'], 1));
+    expect(result.after![5]).toEqual(c(403, [6, null]));
+  });
+
+  it.each([
+    [c(111, [9, 2, false]), c(0, [], 1), c(412)],
+    [c(111, [10, 2, false]), c(0, [], 1), c(412)],
+  ])('checks weapon and armor condition references %j', async (...commands) => {
+    const before = await snapshot();
+    await expect(insertEventCommands(project, { mapId: 1, eventId: 1, commands })).rejects.toThrow(/Weapon|Armor/);
+    expect(await snapshot()).toEqual(before);
+    commands[0].parameters[1] = 1;
+    await expect(insertEventCommands(project, { mapId: 1, eventId: 1, commands, dryRun: true })).resolves.toBeDefined();
+  });
+
   it('accepts existing actor/item/game-data references', async () => {
     const commands = [c(111, [4, 1, 0]), c(0, [], 1), c(412), c(111, [8, 1]), c(0, [], 1), c(412),
       ...[0, 1, 2, 3].map(type => c(122, [1, 1, 0, 3, type, 1, 0]))];
@@ -176,6 +208,14 @@ describe('MV event-list structure', () => {
       c(402, [1, 'No']), c(111, [0, 1, 0], 1), c(0, [], 2), c(412, [], 1), c(0, [], 1),
       c(403), c(0, [], 1), c(404), c(0)];
     expect(validateEventCommands(list).commands).toEqual(list);
+  });
+
+  it('accepts When Cancel both as the builder writes it and as the editor saves it', () => {
+    const list = (cancel: unknown[]) => [c(102, [['Yes'], 1, 0, 2, 0]), c(402, [0, 'Yes']), c(0, [], 1),
+      c(403, cancel), c(0, [], 1), c(404), c(0)];
+    expect(() => validateEventCommands(list([]))).not.toThrow();
+    expect(() => validateEventCommands(list([6, null]))).not.toThrow();
+    expect(() => validateEventCommands(list([6]))).toThrow(/403 expects 0 or 2/);
   });
 
   it.each([

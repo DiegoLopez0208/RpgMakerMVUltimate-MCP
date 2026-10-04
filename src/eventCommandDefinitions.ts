@@ -71,7 +71,7 @@ export const EVENT_COMMAND_TOOL_DEFINITIONS: Tool[] = [
   },
   {
     name: 'insert_event_commands',
-    description: 'Insert a complete event-command fragment into a map event page, common event, or troop battle page. Validates the fragment, insertion boundary, resulting list, and supported references before writing. Invalid data refuses the write. Omit position to append before the root end marker; an explicit position must be a safe command boundary (not inside a text continuation or between a block header and its branches). Fragments are rebased to the target indentation. dryRun:true returns a before/after preview without writing or creating backups. Normal writes use the existing atomic backup-protected project writer. Returns target identity, insertion count, before/after lists and warnings. Existing unknown extension commands are advisory; known MZ-only commands are rejected.',
+    description: 'Insert a complete event-command fragment into a map event page, common event, or troop battle page. Validates the fragment, insertion boundary, resulting list, and supported references before writing. Invalid data refuses the write. Omit position to append before the root end marker; an explicit position must be a safe command boundary (not inside a text continuation or between a block header and its branches). Fragments are rebased to the target indentation. dryRun:true validates and previews without writing or creating backups. Normal writes use the existing atomic backup-protected project writer. Returns target identity, insertion count, the resulting list length and its command codes (listCodes), and warnings; pass verbose:true to also get the full before/after lists. Existing unknown extension commands are advisory; known MZ-only commands are rejected.',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     inputSchema: {
       type: 'object', additionalProperties: false,
@@ -84,7 +84,8 @@ export const EVENT_COMMAND_TOOL_DEFINITIONS: Tool[] = [
         troopId: { ...integer, description: 'troop_page target troop ID.' },
         commands: { ...commands, minItems: 1, description: 'A complete fragment, typically returned by build_event_commands. A supplied final root terminator is normalized; the target always retains exactly one.' },
         position: { ...integer, description: 'Zero-based insertion index in the existing command list. Out-of-range or unsafe boundaries are rejected.' },
-        dryRun: { type: 'boolean', description: 'Preview the validated change without writing. Default false.' }
+        dryRun: { type: 'boolean', description: 'Preview the validated change without writing. Default false.' },
+        verbose: { type: 'boolean', description: 'Include the full before/after command lists in the result. Default false.' }
       },
       required: ['commands']
     }

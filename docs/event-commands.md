@@ -80,8 +80,10 @@ Pass the returned `commands` to `insert_event_commands` with:
 }
 ```
 
-The response includes the target filename, insertion position/count, `before`,
-`after`, and warnings. A dry run performs the same validation as a commit without
+The response includes the target filename, insertion position/count, the
+resulting `listLength`, its command codes (`listCodes`), and warnings. Pass
+`verbose: true` to also get the full `before` and `after` lists; they are left
+out by default because a long event would echo thousands of tokens. A dry run performs the same validation as a commit without
 writing files or creating backups. Repeat with `dryRun: false` to apply the change.
 
 Other targets are `{target:"common_event", commonEventId:1}` and
