@@ -7,14 +7,16 @@ export interface EventCommandValidation {
   insertionPoints: Map<number, number>;
 }
 
-const arities: Record<number, number> = {
+// A number is the exact parameter count; an array lists every count the editor is known to write.
+const arities: Record<number, number | readonly number[]> = {
   0: 0, 101: 4, 103: 2, 104: 2, 105: 2, 108: 1, 112: 0, 113: 0,
   115: 0, 117: 1, 118: 1, 119: 1, 121: 3, 123: 2, 124: 2,
   125: 3, 126: 4, 127: 5, 128: 5, 129: 3, 201: 6, 205: 2,
   212: 3, 213: 3, 221: 0, 222: 0, 223: 3, 224: 3, 225: 4,
   230: 1, 231: 10, 235: 1, 241: 1, 245: 1, 249: 1, 250: 1,
   301: 4, 302: 5, 303: 2, 351: 0, 352: 0, 353: 0, 354: 0,
-  355: 1, 356: 1, 401: 1, 402: 2, 403: 0, 404: 0, 405: 1,
+  // The editor saves When Cancel as [6, null]; the interpreter ignores the parameters.
+  355: 1, 356: 1, 401: 1, 402: 2, 403: [0, 2], 404: 0, 405: 1,
   408: 1, 411: 0, 412: 0, 413: 0, 505: 1, 601: 0, 602: 0,
   603: 0, 604: 0, 605: 4, 655: 1,
 };
@@ -42,8 +44,10 @@ function checkShape(command: EventCommand, index: number, warnings: string[]): v
   const id = (slot: number) => require(integer(p[slot], 1), `parameter ${slot} must be a positive integer ID`);
   const range = (slot: number, min: number, max: number) => require(integer(p[slot], min, max), `parameter ${slot} must be an integer from ${min} to ${max}`);
   if (code === 357 || code === 657) fail(index, `code ${code} is an MZ plugin command; MV uses code 356`);
-  if (arities[code] !== undefined) {
-    require(p.length === arities[code], `MV code ${code} expects ${arities[code]} parameters, got ${p.length}`);
+  const arity = arities[code];
+  if (arity !== undefined) {
+    const allowed = typeof arity === 'number' ? [arity] : arity;
+    require(allowed.includes(p.length), `MV code ${code} expects ${allowed.join(' or ')} parameters, got ${p.length}`);
   } else if (!otherKnownCodes.has(code)) {
     warnings.push(`commands[${index}]: unrecognized code ${code}; verify its plugin implements MV event-command behavior`);
   }
