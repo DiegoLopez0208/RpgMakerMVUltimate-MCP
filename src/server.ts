@@ -41,6 +41,7 @@ import * as scaffoldTools from './tools/scaffoldTools.js';
 import * as runTools from './tools/runTools.js';
 import * as bridgeTools from './tools/bridgeTools.js';
 import * as playtestTools from './tools/playtestTools.js';
+import { exportWeb } from './tools/exportTools.js';
 import { stopHeadlessSessions } from './playtest/session.js';
 import { assertBridgeProject, stopBridge } from './bridge/bridge.js';
 import * as semanticMapTools from './tools/semanticMapTools.js';
@@ -520,6 +521,8 @@ case 'bridge_stop':
   return await bridgeTools.bridgeStop();
 case 'bridge_status':
   return bridgeTools.bridgeStatus();
+case 'export_web':
+  return await exportWeb(p, args as unknown as { outDir: string; zip?: boolean; prune?: boolean; dryRun?: boolean });
 case 'render_map':
   return await playtestTools.renderMapScreenshot(p, args as unknown as Record<string, unknown>);
 case 'run_playtest':

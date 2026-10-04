@@ -210,7 +210,7 @@ export const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['get', 'set_title', 'name_switch', 'name_variable', 'set_starting_position', 'create_plugin', 'scaffold_project', 'playtest', 'open_editor', 'mine_templates', 'install_bridge_plugin', 'bridge_start', 'bridge_stop', 'bridge_status', 'bridge_telemetry', 'bridge_command', 'take_screenshot', 'bridge_screenshot'], description: 'What to do; see the tool description. Default "get"' },
+        action: { type: 'string', enum: ['get', 'set_title', 'name_switch', 'name_variable', 'set_starting_position', 'create_plugin', 'scaffold_project', 'playtest', 'open_editor', 'mine_templates', 'install_bridge_plugin', 'bridge_start', 'bridge_stop', 'bridge_status', 'bridge_telemetry', 'bridge_command', 'take_screenshot', 'bridge_screenshot', 'export_web'], description: 'What to do; see the tool description. Default "get"' },
         section: { type: 'string', enum: ['full', 'switches', 'variables', 'title'], description: 'action "get": which part of System.json to return (default "full")' },
         title: { type: 'string', description: 'action "set_title": new game title' },
         id: { ...ID_TYPE, description: 'name_switch/name_variable: switch or variable ID to label (1-based)' },
@@ -225,6 +225,9 @@ export const TOOL_DEFINITIONS = [
         commands: { type: 'array', description: 'create_plugin: plugin command names to document (@command) and wire a pluginCommand handler stub for', items: { type: 'string' } },
         body: { type: 'string', description: 'create_plugin: custom JS body; omit for a safe generated skeleton' },
         status: { type: 'boolean', description: 'create_plugin: enable the plugin in js/plugins.js (default true)' },
+        outDir: { type: 'string', description: 'export_web: folder for the HTML5 build, outside the project (absolute, or relative to it). It must be new, empty, or a previous export_web folder; <outDir>.zip is written beside it unless zip:false. Copies js, fonts, data and assets, keeps encrypted assets as they are, never copies saves or backups. Returns file counts, bytes and the screen size for an itch.io embed.' },
+        zip: { type: 'boolean', description: 'export_web: also write <outDir>.zip with index.html at its root (default true)' },
+        prune: { type: 'boolean', description: 'export_web: drop img/audio/movies files no data or script references (default false; assets a plugin names only at runtime would be lost)' },
         destPath: { type: 'string', description: 'scaffold_project: directory for the NEW project (must be empty of a project). title/mapId/x/y set the new game\'s title and start position' },
         sourcePath: { type: 'string', description: 'scaffold_project: a blank-project (NewData) folder to clone; defaults to the RPGMAKER_MV_INSTALL env var or the standard Steam install' },
         install: { type: 'string', description: 'playtest/open_editor: RPG Maker MV install root (contains nwjs-win/ and RPGMV.exe); defaults to RPGMAKER_MV_INSTALL or the standard Steam install' },
