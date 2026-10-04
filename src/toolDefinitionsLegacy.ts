@@ -1076,6 +1076,19 @@ export const TOOL_DEFINITIONS_LEGACY = [
     }
   },
   {
+    name: 'add_troop_page',
+    description: 'Insert one battle-event page into an existing troop from a compact trigger, without resending its other pages; data/Troops.json is written immediately. Refuses conditions the engine could never meet (empty enemy slot, missing actor) and checks the page commands like insert_event_commands. Returns the new page and its index.',
+    annotations: { title: 'Add troop page', ...UPDATE },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        troopId: { type: ['number', 'string'], description: 'Existing troop ID (find with get_troops)' },
+        page: { type: 'object', additionalProperties: false, description: 'troops only: append a battle-event page without resending the others. when (at least one, ANDed): turn [a, b] = turn a + b*X (b 0: only turn a); enemyHpBelow [troopSlot from 0, pct]; actorHpBelow [actorId, pct]; switchId; turnEnd true. span battle|turn|moment (default battle). commands: event commands, e.g. from build_event_commands. position: page index to insert at.', properties: { when: { type: 'object', additionalProperties: false, properties: { turn: { type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 2 }, enemyHpBelow: { type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 2 }, actorHpBelow: { type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 2 }, switchId: { type: 'integer' }, turnEnd: { type: 'boolean' } } }, span: { type: 'string', enum: ['battle', 'turn', 'moment'] }, commands: { type: 'array', items: { type: 'object' } }, position: { type: 'integer' } }, required: ['when'] }
+      },
+      required: ['troopId', 'page']
+    }
+  },
+  {
     name: 'add_enemy_to_troop',
     description: 'Append one enemy to an existing troop at an automatically computed battle position (spread across the screen); data/Troops.json is written immediately. Returns the updated troop object. Fails with an error if the troop does not exist; the enemy ID is not validated, so confirm it with get_enemy. Use create_troop to build a formation from scratch.',
     annotations: { title: 'Add enemy to troop', ...UPDATE },

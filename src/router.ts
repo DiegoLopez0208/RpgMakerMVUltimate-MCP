@@ -144,6 +144,9 @@ async function updateDatabaseEntry(executeTool: ExecuteTool, args: Record<string
   if (entity === 'common_events' && args.appendCommand) {
     return executeTool('add_common_event_command', { id: id, command: args.appendCommand });
   }
+  if (entity === 'troops' && args.addPage !== undefined) {
+    return executeTool('add_troop_page', { troopId: id, page: args.addPage });
+  }
   if (entity === 'troops' && args.addEnemyId !== undefined) {
     return executeTool('add_enemy_to_troop', { troopId: id, enemyId: args.addEnemyId });
   }
