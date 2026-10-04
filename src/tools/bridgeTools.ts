@@ -84,6 +84,9 @@ export async function bridgeCommand(args: Record<string, unknown>) {
     cmd.x = Number(args.x);
     cmd.y = Number(args.y);
     if (args.direction !== undefined) cmd.direction = Number(args.direction);
+    if (![cmd.x, cmd.y].every((n) => Number.isInteger(n) && Number(n) >= 0)) throw new Error('teleport_player needs whole, non-negative x and y.');
+    if (cmd.mapId !== undefined && (!Number.isInteger(cmd.mapId) || cmd.mapId < 1)) throw new Error('teleport_player mapId must be a positive integer.');
+    if (cmd.direction !== undefined && ![2, 4, 6, 8].includes(cmd.direction)) throw new Error('teleport_player direction must be 2, 4, 6 or 8.');
   }
   if (action === 'press_button') {
     const button = String(args.button || '');
@@ -92,12 +95,14 @@ export async function bridgeCommand(args: Record<string, unknown>) {
     }
     cmd.button = button as Command['button'];
     cmd.durationMs = args.durationMs === undefined ? 80 : Number(args.durationMs);
+    if (!Number.isInteger(cmd.durationMs) || cmd.durationMs < 30 || cmd.durationMs > 1000) throw new Error('durationMs must be an integer from 30 to 1000.');
   }
+  const timeout = args.timeoutMs === undefined ? 8000 : Number(args.timeoutMs);
+  if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60000) throw new Error('timeoutMs must be an integer from 1 to 60000.');
   if (args.wait === false) {
     const delivered = sendCommand({ ...cmd } as Command);
     return { sent: true, awaited: false, clients: delivered };
   }
-  const timeout = args.timeoutMs === undefined ? 8000 : Number(args.timeoutMs);
   const reply = await requestCommand(cmd, timeout);
   if (reply.type === 'error') {
     throw new Error('Game refused "' + action + '": ' + reply.message);

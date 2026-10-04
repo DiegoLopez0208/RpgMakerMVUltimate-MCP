@@ -17,7 +17,18 @@
 ### Changed
 - Event command names, parameter counts, numeric slots and block structure now come from one table (`eventCommandTable.ts`) shared by the validator, the event outline and the numeric normaliser.
 
+### Security
+- **The live bridge only accepts a game from its own project.** The plugin sends the realpath of the folder it runs from with the token, and a game from another folder is refused. Windows paths compare without case. **Reinstall the plugin** (`manage_system` action `install_bridge_plugin`) and restart the playtest: an older plugin is refused, and `bridge_status` says so in its new `lastAuthError` field.
+- **`reload_database` can no longer write arbitrary globals in the game.** The plugin accepted any `file` and `globalVar` pair; it now only reloads the database files the server allows, each into its own global (the same list, baked into the plugin).
+- The plugin waits for the server to confirm authentication before sending anything else, and ignores commands until then.
+- `bridge_status` no longer returns the session token.
+- Telemetry frames over 64 KB are dropped and the buffer is capped at 2 MB; a message assembled from fragments is capped like a single frame; high-frequency frames are dropped in the game when the socket backs up.
+- Bridge commands are refused with out-of-range arguments (teleport coordinates and direction, button hold time, timeout), and the plugin refuses a transfer while an event, message or reload is in progress.
+- A bridge left running for another project is stopped before any telemetry, command, screenshot or recording reaches it.
+
 ### Fixed
+- **A second bridge cannot overwrite a live one's handshake, and a dead one's does not block.** The handshake is created exclusively; one left by a server that was killed (its pid is gone) is replaced, one held by a live process is refused with its pid. Stopping only deletes a handshake the bridge itself wrote.
+- A reloaded game (F5) is no longer stuck behind its previous connection: the newest authenticated game replaces the older one, and `bridge_status` counts only live connections.
 - **Shop Processing is written the way the engine reads it.** The engine reads the 302 row as the first good and purchase-only from its fifth slot; the builder wrote `[0, purchaseOnly]`, so purchase-only was ignored, a purchase-only shop gained item #1, and shops from the map generator carried an empty first good.
 - **Reference checks now see what shops sell.** Shops were read as if 302 held a list of goods, so items, weapons and armors sold in shops were invisible to validation and reference search.
 - **Show Animation references the right animation.** References and the event outline read the wait flag (`parameters[2]`) instead of the animation id (`parameters[1]`).

@@ -16,6 +16,8 @@
  * is a full, engine-sanctioned reload that keeps party state and variables.
  */
 
+import { HOT_RELOADABLE } from './protocol.js';
+
 export const BRIDGE_PLUGIN_NAME = 'McpBridge';
 
 export interface BridgePluginOptions {
@@ -86,6 +88,7 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
 
     var parameters = PluginManager.parameters('${BRIDGE_PLUGIN_NAME}');
     var FALLBACK_PORT = Number(parameters['Fallback Port'] || ${port});
+    var RELOADABLE = ${JSON.stringify(HOT_RELOADABLE)};
     var INTERVAL = Number(parameters['Telemetry Interval'] || ${interval});
     var HANDSHAKE = '.mcp-bridge.json';
     var DIAGNOSTIC_DIR = '.mcp-cache';
@@ -150,6 +153,8 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
 
     function send(payload) {
         if (!ws || ws.readyState !== 1 || !authed) return;
+        // Backpressure: drop high-frequency frames rather than queue them without bound.
+        if (ws.bufferedAmount > 1048576 && ['interpreter_step', 'player_state', 'performance'].indexOf(payload.type) >= 0) return;
         try { ws.send(JSON.stringify(payload)); } catch (e) { /* socket died mid-frame */ }
     }
 
@@ -169,20 +174,28 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
 
         ws.onopen = function () {
             diagnose('socket open on port ' + port);
-            authed = true; // the server closes the socket if the token is wrong
-            try { ws.send(JSON.stringify({ type: 'auth', token: token })); } catch (e) { /* ignore */ }
-            send({
-                type: 'ready',
-                engine: 'RPG Maker MV',
-                mvVersion: Utils.RPGMAKER_VERSION || 'unknown',
-                scene: SceneManager._scene ? SceneManager._scene.constructor.name : 'None'
-            });
+            // Nothing but auth is sent until the server confirms it with auth-ok.
+            var realpath = fs.realpathSync.native || fs.realpathSync;
+            var root = projectRoot();
+            try { root = realpath(root); } catch (e) { /* keep the unresolved path */ }
+            try { ws.send(JSON.stringify({ type: 'auth', token: token, projectPath: root })); } catch (e) { /* ignore */ }
         };
 
         ws.onmessage = function (event) {
             var msg;
             try { msg = JSON.parse(event.data); } catch (e) { return; }
             if (!msg || !msg.action) return;
+            if (!authed) {
+                if (msg.action !== 'ping' || msg.requestId !== 'auth-ok') return;
+                authed = true;
+                send({
+                    type: 'ready',
+                    engine: 'RPG Maker MV',
+                    mvVersion: Utils.RPGMAKER_VERSION || 'unknown',
+                    scene: SceneManager._scene ? SceneManager._scene.constructor.name : 'None'
+                });
+                return;
+            }
             try {
                 handleCommand(msg);
             } catch (e) {
@@ -295,8 +308,10 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
     }
 
     function reloadDatabase(requestId, file, globalVar) {
-        if (!file || !globalVar) {
-            send({ type: 'error', requestId: requestId, message: 'reload_database needs file and globalVar.' });
+        // Only the database files the server allows, each into its own global: a
+        // command must never be able to overwrite arbitrary window properties.
+        if (!Object.prototype.hasOwnProperty.call(RELOADABLE, file) || RELOADABLE[file] !== globalVar) {
+            send({ type: 'error', requestId: requestId, message: 'Unsupported database reload: ' + String(file) });
             return;
         }
         DataManager.loadDataFile(globalVar, file);
@@ -419,8 +434,16 @@ export function buildBridgePlugin(opts: BridgePluginOptions = {}): BridgePluginS
             send({ type: 'error', requestId: msg.requestId, message: 'No active map yet; start or load a game before teleporting.' });
             return;
         }
+        if ($gameMap.isEventRunning() || $gameMessage.isBusy() || pendingReload) {
+            send({ type: 'error', requestId: msg.requestId, message: 'Transfer needs an idle map (no running event, message or reload).' });
+            return;
+        }
         var mapId = msg.mapId || $gameMap.mapId();
-        $gamePlayer.reserveTransfer(mapId, msg.x | 0, msg.y | 0, msg.direction || $gamePlayer.direction(), 0);
+        if (mapId !== Math.floor(mapId) || mapId < 1 || mapId > 9999 || msg.x !== Math.floor(msg.x) || msg.y !== Math.floor(msg.y) || msg.x < 0 || msg.y < 0) {
+            send({ type: 'error', requestId: msg.requestId, message: 'Invalid transfer destination.' });
+            return;
+        }
+        $gamePlayer.reserveTransfer(mapId, msg.x, msg.y, msg.direction || $gamePlayer.direction(), 0);
         send({ type: 'log', level: 'info', requestId: msg.requestId, message: 'Transfer reserved to map ' + mapId });
     }
 

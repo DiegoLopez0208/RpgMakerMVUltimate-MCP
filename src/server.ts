@@ -40,6 +40,7 @@ import * as pluginTools from './tools/pluginTools.js';
 import * as scaffoldTools from './tools/scaffoldTools.js';
 import * as runTools from './tools/runTools.js';
 import * as bridgeTools from './tools/bridgeTools.js';
+import { assertBridgeProject } from './bridge/bridge.js';
 import * as semanticMapTools from './tools/semanticMapTools.js';
 import { mineProject } from './intel/templateMiner.js';
 import * as projectTools from './tools/projectTools.js';
@@ -515,12 +516,16 @@ case 'bridge_stop':
 case 'bridge_status':
   return bridgeTools.bridgeStatus();
 case 'bridge_telemetry':
+  await assertBridgeProject(p);
   return bridgeTools.bridgeTelemetry(args as { limit?: number; types?: string[]; peek?: boolean });
 case 'bridge_command':
+  await assertBridgeProject(p);
   return await bridgeTools.bridgeCommand(args as unknown as Record<string, unknown>);
 case 'bridge_screenshot':
+  await assertBridgeProject(p);
   return await bridgeTools.bridgeScreenshot(p, args as { timeoutMs?: number; name?: string });
 case 'bridge_record_video':
+  await assertBridgeProject(p);
   return await bridgeTools.bridgeRecordVideo(p, args as {
     action: 'start' | 'stop'; name?: string; fps?: number; bitrateKbps?: number; timeoutMs?: number;
   });
