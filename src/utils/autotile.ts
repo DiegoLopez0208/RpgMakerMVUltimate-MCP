@@ -17,9 +17,12 @@
  * A2 99% / A3 93% / A4 wall-top 95% / A4 wall-side 87%.
  */
 import {
-  TILE_ID_A1, isAutotile, autotileKind,
-  isFloorTypeAutotile, isWallTypeAutotile,
+  TILE_ID_A1, isAutotile, autotileKind, autotileShape,
+  isFloorTypeAutotile, isWallTypeAutotile, isWaterfallTile,
 } from './engine.js';
+
+/** Shapes in the engine's WATERFALL_AUTOTILE_TABLE. */
+const WATERFALL_SHAPES = 4;
 
 export { TILE_ID_A1, isAutotile, autotileKind, autotileShape } from './engine.js';
 
@@ -58,8 +61,10 @@ export function computeShape(
 /**
  * Recompute autotile shapes in-place for tile layers 0-3 of an MV map data
  * array. Off-map cells count as the same kind (MV extends autotiles past the
- * edge). Waterfall autotiles (A1 kinds 4-7) and non-autotiles are left as-is;
- * shadow (layer 4) and region (layer 5) are untouched.
+ * edge). Waterfall autotiles (odd A1 kinds from 5) keep their shape, except one
+ * the engine has no entry for: its table has 4 shapes, so 4-47 crash the tile
+ * draw and are reset to 0. Non-autotiles, shadow (layer 4) and region (layer 5)
+ * are untouched.
  */
 export function applyAutotileShapes(data: number[], width: number, height: number): void {
   const layerSize = width * height;
@@ -77,7 +82,13 @@ export function applyAutotileShapes(data: number[], width: number, height: numbe
         if (!isAutotile(id)) continue;
         const floor = isFloorTypeAutotile(id);
         const wall = isWallTypeAutotile(id);
-        if (!floor && !wall) continue; // waterfalls etc. — leave untouched
+        if (!floor && !wall) {
+          // The editor's waterfall shapes do not follow the neighbours simply enough to recompute
+          // (half of the reference maps' waterfall cells keep shape 0 next to other tiles), so a
+          // valid shape is kept. An out-of-range one would make ShaderTilemap throw while drawing.
+          if (isWaterfallTile(id) && autotileShape(id) >= WATERFALL_SHAPES) data[base + y * width + x] = TILE_ID_A1 + autotileKind(id) * 48;
+          continue;
+        }
         const k = autotileKind(id);
         const same = (nx: number, ny: number): boolean => {
           const nk = kindAt(nx, ny);
