@@ -23,9 +23,10 @@ export function isTileA3(id: number): boolean { return id >= TILE_ID_A3 && id < 
 export function isTileA4(id: number): boolean { return id >= TILE_ID_A4 && id < TILE_ID_MAX; }
 export function isTileA5(id: number): boolean { return id >= TILE_ID_A5 && id < TILE_ID_A1; }
 
-// Tilemap.isWaterfallTile: A1 autotile kinds 4..7 are waterfalls.
+// Tilemap.isWaterfallTile: every odd A1 kind from 4 on (5, 7, 9, 11, 13, 15) is a waterfall
+// (rpg_core: tileId >= TILE_ID_A1 + 192 && tileId < TILE_ID_A2 && kind % 2 === 1).
 export function isWaterfallTile(id: number): boolean {
-  if (isTileA1(id)) { const k = autotileKind(id); return k % 2 === 1 && k >= 4 && k <= 7; }
+  if (isTileA1(id)) { const k = autotileKind(id); return k % 2 === 1 && k >= 4; }
   return false;
 }
 export function isRoofTile(id: number): boolean { return isTileA3(id) && autotileKind(id) % 16 < 8; }

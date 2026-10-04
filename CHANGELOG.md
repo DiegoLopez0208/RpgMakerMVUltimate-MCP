@@ -32,6 +32,7 @@
 - A bridge left running for another project is stopped before any telemetry, command, screenshot or recording reaches it.
 
 ### Fixed
+- **Generated maps no longer crash the tile renderer on waterfalls.** Only A1 kinds 5 and 7 were treated as waterfalls; the engine also counts 9, 11, 13 and 15. Those got floor shapes up to 47 from the autotile pass, but the waterfall table has 4, so ShaderTilemap threw while drawing them. Waterfalls now keep a valid shape, and an out-of-range one (as in maps generated before this fix) is reset to 0 the next time the map's autotiles are recomputed. Found by the headless renderer on a real project.
 - **A second bridge cannot overwrite a live one's handshake, and a dead one's does not block.** The handshake is created exclusively; one left by a server that was killed (its pid is gone) is replaced, one held by a live process is refused with its pid. Stopping only deletes a handshake the bridge itself wrote.
 - A reloaded game (F5) is no longer stuck behind its previous connection: the newest authenticated game replaces the older one, and `bridge_status` counts only live connections.
 - **Shop Processing is written the way the engine reads it.** The engine reads the 302 row as the first good and purchase-only from its fifth slot; the builder wrote `[0, purchaseOnly]`, so purchase-only was ignored, a purchase-only shop gained item #1, and shops from the map generator carried an empty first good.
