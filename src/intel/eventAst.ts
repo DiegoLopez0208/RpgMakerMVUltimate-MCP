@@ -91,7 +91,7 @@ function summarize(code: number, p: unknown[]): string {
     case 201: return p[0] === 0
       ? `Transfer Player → Map ${n(1)} (${n(2)},${n(3)})`
       : 'Transfer Player → (variable-designated)';
-    case 212: return `Show Animation ${n(2)}`;
+    case 212: return `Show Animation ${n(1)}`;
     case 231: return `Show Picture: ${String(p[1] ?? '')}`;
     case 241: return `Play BGM: ${pName(p[0])}`;
     case 245: return `Play BGS: ${pName(p[0])}`;

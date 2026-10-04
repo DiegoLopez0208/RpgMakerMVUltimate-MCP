@@ -192,9 +192,9 @@ function accumulate(acc: RefAccumulator, commands: RawCommand[]): void {
       case 126: addNum(acc.items, p[0]); break;                                  // Change Items
       case 127: addNum(acc.weapons, p[0]); break;                                // Change Weapons
       case 128: addNum(acc.armors, p[0]); break;                                 // Change Armors
-      case 302: accumulateShop(acc, p[0]); break;                               // Shop Processing
+      case 302: case 605: addShopGood(acc, p); break;                           // Shop Processing: the 302 row is the first good, 605 rows the rest
       case 301: if (p[0] === 0) addNum(acc.troops, p[1]); break;                // Battle Processing
-      case 212: addNum(acc.animations, p[2]); break;                            // Show Animation
+      case 212: addNum(acc.animations, p[1]); break;                            // Show Animation [characterId, animationId, wait]
       case 337: addNum(acc.animations, p[1]); break;                            // Show Battle Animation
       case 129: addNum(acc.actors, p[0]); break;                                // Change Party Member
       case 311: case 312: case 315: case 316: case 317: case 318:               // actor-targeting changes
@@ -247,15 +247,12 @@ function accumulateConditional(acc: RefAccumulator, p: unknown[]): void {
   }
 }
 
-function accumulateShop(acc: RefAccumulator, goods: unknown): void {
-  if (!Array.isArray(goods)) return;
-  for (const g of goods) {
-    if (!Array.isArray(g)) continue;
-    const type = Number(g[0]); const id = g[1];
-    if (type === 0) addNum(acc.items, id);
-    else if (type === 1) addNum(acc.weapons, id);
-    else if (type === 2) addNum(acc.armors, id);
-  }
+/** One shop good: [type (0 item, 1 weapon, 2 armor), id, priceType, price]. */
+function addShopGood(acc: RefAccumulator, good: unknown[]): void {
+  const type = Number(good[0]); const id = good[1];
+  if (type === 0) addNum(acc.items, id);
+  else if (type === 1) addNum(acc.weapons, id);
+  else if (type === 2) addNum(acc.armors, id);
 }
 
 export interface WriteSet {

@@ -199,7 +199,7 @@ function giveItem(itemId: number, amount: number): EventCommand[] {
 function giveWeapon(weaponId: number, amount: number): EventCommand[] {
   amount = amount || 1;
   return [
-    { code: 127, indent: 0, parameters: [weaponId, 0, 0, amount] }
+    { code: 127, indent: 0, parameters: [weaponId, 0, 0, amount, false] }
   ];
 }
 
@@ -213,7 +213,7 @@ function giveWeapon(weaponId: number, amount: number): EventCommand[] {
 function giveArmor(armorId: number, amount: number): EventCommand[] {
   amount = amount || 1;
   return [
-    { code: 128, indent: 0, parameters: [armorId, 0, 0, amount] }
+    { code: 128, indent: 0, parameters: [armorId, 0, 0, amount, false] }
   ];
 }
 
@@ -256,7 +256,7 @@ function teleport(mapId: number, x: number, y: number, direction: number, fadeTy
  */
 function showAnimation(eventId: number, animId: number): EventCommand[] {
   return [
-    { code: 212, indent: 0, parameters: [eventId, animId] }
+    { code: 212, indent: 0, parameters: [eventId, animId, false] }
   ];
 }
 
@@ -576,11 +576,14 @@ function battleProcessing(troopId: number, canEscape: boolean, canLose: boolean)
  */
 function shopProcessing(goods: [number, number, number, number][], purchaseOnly: boolean): EventCommand[] {
     purchaseOnly = purchaseOnly !== undefined ? purchaseOnly : true;
+    if (goods.length === 0) throw new Error('Shop Processing needs at least one good');
+    // The engine reads the 302 row itself as the first good and purchaseOnly from its
+    // fifth slot (Game_Interpreter.command302); only the remaining goods are 605 rows.
     const result: EventCommand[] = [
-        { code: 302, indent: 0, parameters: [0, purchaseOnly ? 1 : 0] }
+        { code: 302, indent: 0, parameters: [...goods[0], purchaseOnly] }
     ];
-    for (let i = 0; i < goods.length; i++) {
-        result.push({ code: 605, indent: 0, parameters: goods[i] as unknown[] });
+    for (let i = 1; i < goods.length; i++) {
+        result.push({ code: 605, indent: 0, parameters: [...goods[i]] });
     }
     return result;
 }
