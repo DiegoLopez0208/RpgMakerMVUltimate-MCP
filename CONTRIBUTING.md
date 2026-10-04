@@ -12,7 +12,7 @@ npm install
 
 - **TypeScript** — all source is in `src/**/*.ts`
 - **ESM** — native ES modules (`import`/`export`)
-- **Node.js 18+** — required for `fs/promises`, `import.meta`, etc.
+- **Node.js 20+** — Node 18 reached end of life in April 2025.
 - **Vitest** — test framework (`npm test`)
 - **No build step** — TypeScript runs via `tsx` or `ts-node` in development
 
