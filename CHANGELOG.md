@@ -11,7 +11,7 @@
 - Event command names, parameter counts, numeric slots and block structure now come from one table (`eventCommandTable.ts`) shared by the validator, the event outline and the numeric normaliser.
 
 ### Fixed
-- **Shops created by the map generator now honor purchase-only and list exactly the goods given.** The engine reads the Shop Processing (302) row as the first good and purchase-only from its fifth slot; the builder wrote `[0, purchaseOnly]`, so purchase-only was ignored and a purchase-only shop gained item #1.
+- **Shop Processing is written the way the engine reads it.** The engine reads the 302 row as the first good and purchase-only from its fifth slot; the builder wrote `[0, purchaseOnly]`, so purchase-only was ignored, a purchase-only shop gained item #1, and shops from the map generator carried an empty first good.
 - **Reference checks now see what shops sell.** Shops were read as if 302 held a list of goods, so items, weapons and armors sold in shops were invisible to validation and reference search.
 - **Show Animation references the right animation.** References and the event outline read the wait flag (`parameters[2]`) instead of the animation id (`parameters[1]`).
 - Change Weapons/Armors and Show Animation write their last flag (include equipment, wait) like the editor does.
