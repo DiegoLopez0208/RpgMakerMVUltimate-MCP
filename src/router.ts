@@ -13,6 +13,7 @@ import * as mapTools from './tools/mapTools.js';
 import { searchTemplates } from './utils/mapGenerator.js';
 import { analyzeProject } from './intel/analyze.js';
 import { validateConsolidated } from './utils/validation.js';
+import { referencesTo, type DeletableEntity } from './intel/deleteGuard.js';
 
 type ExecuteTool = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -162,17 +163,28 @@ async function updateDatabaseEntry(executeTool: ExecuteTool, args: Record<string
   return executeTool(updateTool, { id: id, fields: fields });
 }
 
-async function deleteDatabaseEntry(executeTool: ExecuteTool, args: Record<string, unknown>) {
+async function deleteDatabaseEntry(executeTool: ExecuteTool, projectPath: string, args: Record<string, unknown>) {
   const entity = assertEntity(args.entity);
   const id = requireArg(args, 'id', 'delete_database_entry');
-  if (ITEMISH_TYPE[entity]) {
-    return executeTool('delete_item', { id: id, type: ITEMISH_TYPE[entity] });
-  }
-  const deleteTool = DELETE_TOOL[entity];
+  const deleteTool = ITEMISH_TYPE[entity] ? 'delete_item' : DELETE_TOOL[entity];
   if (!deleteTool) {
     throw new Error('Deleting ' + entity + ' is not supported');
   }
-  return executeTool(deleteTool, { id: id });
+  // Deleting nulls the entry in place, so anything still pointing at it breaks at runtime.
+  // Refuse unless the caller previews (dryRun) or accepts the breakage (force).
+  const references = await referencesTo(projectPath, entity as DeletableEntity, Number(id));
+  if (references.length > 0 && args.force !== true && args.dryRun !== true) {
+    const shown = references.slice(0, 15).join('; ') + (references.length > 15 ? '; and ' + (references.length - 15) + ' more' : '');
+    throw new Error(entity + ' ' + id + ' is still referenced in ' + references.length + ' place(s): ' + shown +
+      '. Update those first, preview with dryRun:true, or pass force:true to delete anyway.');
+  }
+  const deleted = ITEMISH_TYPE[entity]
+    ? await executeTool('delete_item', { id: id, type: ITEMISH_TYPE[entity] })
+    : await executeTool(deleteTool, { id: id });
+  if (references.length === 0) return deleted;
+  return deleted && typeof deleted === 'object' && !Array.isArray(deleted)
+    ? { ...(deleted as Record<string, unknown>), brokenReferences: references }
+    : { deleted, brokenReferences: references };
 }
 
 async function queryMap(executeTool: ExecuteTool, args: Record<string, unknown>) {
@@ -492,7 +504,7 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
     case 'query_database': return queryDatabase(executeTool, projectPath, args);
     case 'create_database_entry': return createDatabaseEntry(executeTool, args);
     case 'update_database_entry': return updateDatabaseEntry(executeTool, args);
-    case 'delete_database_entry': return deleteDatabaseEntry(executeTool, args);
+    case 'delete_database_entry': return deleteDatabaseEntry(executeTool, projectPath, args);
     case 'query_map': return queryMap(executeTool, args);
     case 'generate_map': return generateMap(executeTool, projectPath, args);
     case 'edit_map': return editMap(executeTool, args);
