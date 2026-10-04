@@ -302,6 +302,7 @@ const ManageSystemSchema = z.object({
     "mine_templates",
     "install_bridge_plugin", "bridge_start", "bridge_stop", "bridge_status",
     "bridge_telemetry", "bridge_command", "take_screenshot", "bridge_screenshot",
+    "export_web",
   ]),
   section: z.enum(["full", "switches", "variables", "title"]).optional(),
   title: z.string().optional(),

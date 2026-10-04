@@ -425,8 +425,13 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
       return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.screenshotName });
     case 'mine_templates':
       return executeTool('mine_templates', { minDistinctTiles: args.minDistinctTiles, limit: args.limit });
+    case 'export_web':
+      return executeTool('export_web', {
+        outDir: requireArg(args, 'outDir', 'manage_system action "export_web"'),
+        zip: args.zip, prune: args.prune, dryRun: args.dryRun
+      });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates');
+      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates, export_web');
   }
 }
 
