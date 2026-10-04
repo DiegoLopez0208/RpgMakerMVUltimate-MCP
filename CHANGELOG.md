@@ -7,7 +7,14 @@
 - `insert_event_commands`: validated insertion into map-event, common-event, and troop-page lists. Supports dry-run previews, safe nested insertion boundaries, relevant reference checks (including weapon and armor conditions), and the existing atomic backup-protected writer. The result reports the new list length and its command codes; `verbose: true` adds the full before/after lists. When Cancel rows (code 403) are accepted both empty and with the `[6, null]` parameters the editor saves.
 - Stdio protocol verification for both normal and legacy tool listings, plus an optional headless check against a locally installed MV interpreter. The runtime check does not redistribute engine files or modify game projects.
 
+### Changed
+- Event command names, parameter counts, numeric slots and block structure now come from one table (`eventCommandTable.ts`) shared by the validator, the event outline and the numeric normaliser.
+
 ### Fixed
+- **Shops created by the map generator now honor purchase-only and list exactly the goods given.** The engine reads the Shop Processing (302) row as the first good and purchase-only from its fifth slot; the builder wrote `[0, purchaseOnly]`, so purchase-only was ignored and a purchase-only shop gained item #1.
+- **Reference checks now see what shops sell.** Shops were read as if 302 held a list of goods, so items, weapons and armors sold in shops were invisible to validation and reference search.
+- **Show Animation references the right animation.** References and the event outline read the wait flag (`parameters[2]`) instead of the animation id (`parameters[1]`).
+- Change Weapons/Armors and Show Animation write their last flag (include equipment, wait) like the editor does.
 - A client with no active project can now call `set_project_path`; the previous transport guard refused the very call needed to select one. Pure command builders also work without a project. Project-dependent calls remain guarded.
 
 ## [5.18.0] - 2026-09-08
