@@ -33,7 +33,12 @@ const textSchema = z.object({
   lines: z.array(z.string()).min(1), faceName: z.string().default(""),
   faceIndex: integer(0, 7).default(0), background,
   position: z.enum(["top", "middle", "bottom"]).default("bottom"),
-}).strict();
+  wrap: z.union([z.boolean(), z.literal("hard")]).default(false), wrapWidth: integer(10, 200).optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.wrapWidth !== undefined && value.wrap === false) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["wrapWidth"], message: "wrapWidth needs wrap: true or \"hard\"" });
+  }
+});
 
 const choicesSchema = z.object({
   kind: z.literal("show_choices"), indent: indentField,
@@ -154,6 +159,144 @@ const pluginSchema = z.object({
   text: nameField.refine(value => !/[\r\n]/.test(value), "MV plugin commands must be one line"),
 }).strict();
 
+// Amount operand shared by gold, items and actor stats: MV's operateValue(operation, operandType, operand).
+const amountFields = { amount: integer(0).optional(), amountVariableId: id().optional(), decrease: z.boolean().default(false) };
+function requireOneAmount(value: { amount?: number; amountVariableId?: number }, ctx: z.RefinementCtx) {
+  if ((value.amount === undefined) === (value.amountVariableId === undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["amount"], message: "give exactly one of amount or amountVariableId" });
+  }
+}
+function amountParameters(value: { amount?: number; amountVariableId?: number; decrease: boolean }): unknown[] {
+  return [value.decrease ? 1 : 0, value.amountVariableId === undefined ? 0 : 1, value.amountVariableId ?? value.amount];
+}
+
+const goldSchema = z.object({ kind: z.literal("change_gold"), indent: indentField, ...amountFields }).strict().superRefine(requireOneAmount);
+
+const itemsSchema = z.object({
+  kind: z.literal("change_items"), indent: indentField, itemType: z.enum(["item", "weapon", "armor"]).default("item"),
+  itemId: id(), ...amountFields, includeEquip: z.boolean().default(false),
+}).strict().superRefine((value, ctx) => {
+  requireOneAmount(value, ctx);
+  if (value.itemType === "item" && value.includeEquip) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["includeEquip"], message: "includeEquip applies to weapons and armors only" });
+  }
+});
+
+const partySchema = z.object({
+  kind: z.literal("change_party_member"), indent: indentField, actorId: id(),
+  remove: z.boolean().default(false), initialize: z.boolean().default(false),
+}).strict();
+
+const audioSchema = z.object({
+  kind: z.literal("play_audio"), indent: indentField, channel: z.enum(["bgm", "bgs", "me", "se"]),
+  name: z.string(), volume: integer(0, 100).default(90), pitch: integer(50, 150).default(100), pan: integer(-100, 100).default(0),
+}).strict();
+
+const tone = z.tuple([integer(-255, 255), integer(-255, 255), integer(-255, 255), integer(0, 255)]);
+const flashColor = z.tuple([integer(0, 255), integer(0, 255), integer(0, 255), integer(0, 255)]);
+const duration = integer(1, 999).default(60);
+const screenSchema = z.discriminatedUnion("effect", [
+  z.object({ kind: z.literal("screen_effect"), indent: indentField, effect: z.literal("fadeout") }).strict(),
+  z.object({ kind: z.literal("screen_effect"), indent: indentField, effect: z.literal("fadein") }).strict(),
+  z.object({ kind: z.literal("screen_effect"), indent: indentField, effect: z.literal("tint"), color: tone, duration, wait: z.boolean().default(true) }).strict(),
+  z.object({ kind: z.literal("screen_effect"), indent: indentField, effect: z.literal("flash"), color: flashColor, duration, wait: z.boolean().default(true) }).strict(),
+  z.object({
+    kind: z.literal("screen_effect"), indent: indentField, effect: z.literal("shake"),
+    power: integer(1, 9).default(5), speed: integer(1, 9).default(5), duration, wait: z.boolean().default(true),
+  }).strict(),
+]);
+
+const pictureSchema = z.object({
+  kind: z.literal("show_picture"), indent: indentField, pictureId: integer(1, 100), name: nameField,
+  origin: z.enum(["upper_left", "center"]).default("upper_left"), designation: z.enum(["direct", "variable"]).default("direct"),
+  x: integer().default(0), y: integer().default(0), scaleX: integer(0, 2000).default(100), scaleY: integer(0, 2000).default(100),
+  opacity: integer(0, 255).default(255), blend: z.enum(["normal", "additive", "multiply", "screen"]).default("normal"),
+}).strict().superRefine((value, ctx) => {
+  if (value.designation === "variable" && (value.x < 1 || value.y < 1)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "variable designation requires positive variable IDs for x and y" });
+  }
+});
+const erasePictureSchema = z.object({ kind: z.literal("erase_picture"), indent: indentField, pictureId: integer(1, 100) }).strict();
+
+// MV character IDs: -1 is the player, 0 is the running event, n is map event n.
+const characterId = integer(-1).default(0);
+const animationSchema = z.object({
+  kind: z.literal("show_animation"), indent: indentField, characterId, animationId: id(), wait: z.boolean().default(false),
+}).strict();
+const balloonSchema = z.object({
+  kind: z.literal("show_balloon"), indent: indentField, characterId, balloonId: integer(1, 15), wait: z.boolean().default(false),
+}).strict();
+
+const battleSchema = z.object({
+  kind: z.literal("battle_processing"), indent: indentField,
+  troopId: id().optional(), troopVariableId: id().optional(), randomEncounter: z.boolean().default(false),
+  canEscape: z.boolean().default(false), canLose: z.boolean().default(false),
+  winBranch: body.optional(), escapeBranch: body.optional(), loseBranch: body.optional(),
+}).strict().superRefine((value, ctx) => {
+  const sources = [value.troopId !== undefined, value.troopVariableId !== undefined, value.randomEncounter].filter(Boolean).length;
+  if (sources !== 1) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["troopId"], message: "give exactly one of troopId, troopVariableId or randomEncounter: true" });
+  if (value.escapeBranch && !value.canEscape) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["escapeBranch"], message: "escapeBranch needs canEscape: true" });
+  if (value.loseBranch && !value.canLose) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["loseBranch"], message: "loseBranch needs canLose: true" });
+  if (value.winBranch && !value.canEscape && !value.canLose) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["winBranch"], message: "the editor only has result branches when canEscape or canLose is true" });
+  }
+});
+
+const shopSchema = z.object({
+  kind: z.literal("shop_processing"), indent: indentField, purchaseOnly: z.boolean().default(false),
+  goods: z.array(z.object({ type: z.enum(["item", "weapon", "armor"]).default("item"), id: id(), price: integer(0).optional() }).strict()).min(1),
+}).strict();
+
+const nameInputSchema = z.object({
+  kind: z.literal("name_input"), indent: indentField, actorId: id(), maxLength: integer(1, 16).default(8),
+}).strict();
+
+// actorId 0 is the whole party, as in the editor's "Entire Party".
+const actorBase = { kind: z.literal("change_actor"), indent: indentField, actorId: integer(0).optional(), actorVariableId: id().optional() };
+const actorSchema = z.discriminatedUnion("stat", [
+  z.object({ ...actorBase, stat: z.literal("hp"), ...amountFields, allowDeath: z.boolean().default(false) }).strict(),
+  z.object({ ...actorBase, stat: z.literal("mp"), ...amountFields }).strict(),
+  z.object({ ...actorBase, stat: z.literal("exp"), ...amountFields, showLevelUp: z.boolean().default(false) }).strict(),
+  z.object({ ...actorBase, stat: z.literal("level"), ...amountFields, showLevelUp: z.boolean().default(false) }).strict(),
+  z.object({ ...actorBase, stat: z.literal("state"), stateId: id(), remove: z.boolean().default(false) }).strict(),
+  z.object({ ...actorBase, stat: z.literal("recover_all") }).strict(),
+]).superRefine((value, ctx) => {
+  if ((value.actorId === undefined) === (value.actorVariableId === undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["actorId"], message: "give exactly one of actorId (0 = entire party) or actorVariableId" });
+  }
+  if ("decrease" in value) requireOneAmount(value, ctx);
+});
+
+// Troop battle events. Enemy indexes are troop slots from 0; -1 is the entire troop.
+const enemyAppearSchema = z.object({ kind: z.literal("enemy_appear"), indent: indentField, enemyIndex: integer(0, 7) }).strict();
+const enemyStateSchema = z.object({
+  kind: z.literal("change_enemy_state"), indent: indentField, enemyIndex: integer(-1, 7), stateId: id(), remove: z.boolean().default(false),
+}).strict();
+const abortBattleSchema = z.object({ kind: z.literal("abort_battle"), indent: indentField }).strict();
+
+// Show Text wrapping. MV never wraps; these are character budgets for the stock 816px window and font.
+const LINE_BUDGET = 55;
+const LINE_BUDGET_WITH_FACE = 38;
+const MESSAGE_BOX_LINES = 4;
+/** Length as drawn: escape codes (\C[2], \I[5], \., \!) draw nothing. */
+function visibleLength(line: string): number {
+  return line.replace(/\\[A-Za-z]+\[[^\]]*\]/g, "").replace(/\\./g, "").length;
+}
+/** soft reflows every line as one paragraph; hard keeps each line (and each \n) as a forced break. */
+function wrapMessage(lines: string[], width: number, mode: "soft" | "hard"): string[] {
+  const paragraphs = mode === "soft" ? [lines.join(" ")] : lines.flatMap(line => line.split("\n"));
+  const out: string[] = [];
+  for (const paragraph of paragraphs) {
+    let current = "";
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (current && visibleLength(candidate) > width) { out.push(current); current = word; } else current = candidate;
+    }
+    if (current || mode === "hard") out.push(current);
+  }
+  return out;
+}
+
 function command(code: number, indent: number, parameters: unknown[] = []): EventCommand {
   return { code, indent, parameters };
 }
@@ -202,9 +345,23 @@ export function buildEventCommands(args: Record<string, unknown>): { commands: E
   switch (args.kind) {
     case "show_text": {
       const a = textSchema.parse(args);
-      commands = [command(101, a.indent, [
+      const header = () => command(101, a.indent, [
         a.faceName, a.faceIndex, backgroundCodes[a.background], { top: 0, middle: 1, bottom: 2 }[a.position],
-      ]), ...a.lines.map(line => command(401, a.indent, [line]))];
+      ]);
+      const width = a.wrapWidth ?? (a.faceName ? LINE_BUDGET_WITH_FACE : LINE_BUDGET);
+      if (a.wrap === false) {
+        commands = [header(), ...a.lines.map(line => command(401, a.indent, [line]))];
+        const long = a.lines.filter(line => visibleLength(line) > width).length;
+        if (long) warnings.push(`${long} show_text line(s) exceed ~${width} characters and may be cut off; MV does not wrap (pass wrap: true)`);
+      } else {
+        // One identical 101 header per four-line box, like a long message split by hand in the editor.
+        const wrapped = wrapMessage(a.lines, width, a.wrap === "hard" ? "hard" : "soft");
+        commands = [];
+        for (let i = 0; i < Math.max(wrapped.length, 1); i += MESSAGE_BOX_LINES) {
+          commands.push(header(), ...wrapped.slice(i, i + MESSAGE_BOX_LINES).map(line => command(401, a.indent, [line])));
+        }
+        if (wrapped.some(line => visibleLength(line) > width)) warnings.push(`a single word is longer than ${width} characters and could not be wrapped`);
+      }
       break;
     }
     case "show_choices": {
@@ -266,6 +423,111 @@ export function buildEventCommands(args: Record<string, unknown>): { commands: E
     case "plugin_command": {
       const a = pluginSchema.parse(args);
       commands = [command(356, a.indent, [a.text])];
+      break;
+    }
+    case "change_gold": {
+      const a = goldSchema.parse(args);
+      commands = [command(125, a.indent, amountParameters(a))];
+      break;
+    }
+    case "change_items": {
+      const a = itemsSchema.parse(args);
+      const code = { item: 126, weapon: 127, armor: 128 }[a.itemType];
+      commands = [command(code, a.indent, [a.itemId, ...amountParameters(a), ...(code === 126 ? [] : [a.includeEquip])])];
+      break;
+    }
+    case "change_party_member": {
+      const a = partySchema.parse(args);
+      commands = [command(129, a.indent, [a.actorId, a.remove ? 1 : 0, a.initialize])];
+      break;
+    }
+    case "play_audio": {
+      const a = audioSchema.parse(args);
+      commands = [command({ bgm: 241, bgs: 245, me: 249, se: 250 }[a.channel], a.indent,
+        [{ name: a.name, pan: a.pan, pitch: a.pitch, volume: a.volume }])];
+      break;
+    }
+    case "screen_effect": {
+      const a = screenSchema.parse(args);
+      commands = [a.effect === "fadeout" ? command(221, a.indent)
+        : a.effect === "fadein" ? command(222, a.indent)
+        : a.effect === "shake" ? command(225, a.indent, [a.power, a.speed, a.duration, a.wait])
+        : command(a.effect === "tint" ? 223 : 224, a.indent, [[...a.color], a.duration, a.wait])];
+      break;
+    }
+    case "show_picture": {
+      const a = pictureSchema.parse(args);
+      commands = [command(231, a.indent, [a.pictureId, a.name, a.origin === "center" ? 1 : 0, a.designation === "variable" ? 1 : 0,
+        a.x, a.y, a.scaleX, a.scaleY, a.opacity, { normal: 0, additive: 1, multiply: 2, screen: 3 }[a.blend]])];
+      break;
+    }
+    case "erase_picture": {
+      const a = erasePictureSchema.parse(args);
+      commands = [command(235, a.indent, [a.pictureId])];
+      break;
+    }
+    case "show_animation": {
+      const a = animationSchema.parse(args);
+      commands = [command(212, a.indent, [a.characterId, a.animationId, a.wait])];
+      break;
+    }
+    case "show_balloon": {
+      const a = balloonSchema.parse(args);
+      commands = [command(213, a.indent, [a.characterId, a.balloonId, a.wait])];
+      break;
+    }
+    case "battle_processing": {
+      const a = battleSchema.parse(args);
+      const source = a.troopId !== undefined ? [0, a.troopId] : a.troopVariableId !== undefined ? [1, a.troopVariableId] : [2, 0];
+      commands = [command(301, a.indent, [...source, a.canEscape, a.canLose])];
+      // The editor writes result branches only when escaping or losing is allowed.
+      if (a.canEscape || a.canLose) {
+        commands.push(command(601, a.indent), ...branchBody(a.winBranch as EventCommand[] | undefined, a.indent + 1, warnings));
+        if (a.canEscape) commands.push(command(602, a.indent), ...branchBody(a.escapeBranch as EventCommand[] | undefined, a.indent + 1, warnings));
+        if (a.canLose) commands.push(command(603, a.indent), ...branchBody(a.loseBranch as EventCommand[] | undefined, a.indent + 1, warnings));
+        commands.push(command(604, a.indent));
+      }
+      break;
+    }
+    case "shop_processing": {
+      const a = shopSchema.parse(args);
+      // The engine reads the 302 row itself as the first good and purchaseOnly from its fifth slot.
+      const good = (g: (typeof a.goods)[number]) => [{ item: 0, weapon: 1, armor: 2 }[g.type], g.id, g.price === undefined ? 0 : 1, g.price ?? 0];
+      commands = [command(302, a.indent, [...good(a.goods[0]), a.purchaseOnly]),
+        ...a.goods.slice(1).map(g => command(605, a.indent, good(g)))];
+      break;
+    }
+    case "name_input": {
+      const a = nameInputSchema.parse(args);
+      commands = [command(303, a.indent, [a.actorId, a.maxLength])];
+      break;
+    }
+    case "change_actor": {
+      const a = actorSchema.parse(args);
+      const target = a.actorVariableId === undefined ? [0, a.actorId] : [1, a.actorVariableId];
+      switch (a.stat) {
+        case "hp": commands = [command(311, a.indent, [...target, ...amountParameters(a), a.allowDeath])]; break;
+        case "mp": commands = [command(312, a.indent, [...target, ...amountParameters(a)])]; break;
+        case "exp": commands = [command(315, a.indent, [...target, ...amountParameters(a), a.showLevelUp])]; break;
+        case "level": commands = [command(316, a.indent, [...target, ...amountParameters(a), a.showLevelUp])]; break;
+        case "state": commands = [command(313, a.indent, [...target, a.remove ? 1 : 0, a.stateId])]; break;
+        case "recover_all": commands = [command(314, a.indent, target)]; break;
+      }
+      break;
+    }
+    case "enemy_appear": {
+      const a = enemyAppearSchema.parse(args);
+      commands = [command(335, a.indent, [a.enemyIndex])];
+      break;
+    }
+    case "change_enemy_state": {
+      const a = enemyStateSchema.parse(args);
+      commands = [command(333, a.indent, [a.enemyIndex, a.remove ? 1 : 0, a.stateId])];
+      break;
+    }
+    case "abort_battle": {
+      const a = abortBattleSchema.parse(args);
+      commands = [command(340, a.indent)];
       break;
     }
     default: throw new Error(`Unknown event builder kind: ${String(args.kind)}`);

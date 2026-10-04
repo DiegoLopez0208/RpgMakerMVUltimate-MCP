@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- `build_event_commands` gains 16 kinds: gold, items/weapons/armors, party members, actor HP/MP/EXP/level/state/recover all, audio, screen fade/tint/flash/shake, pictures, animations, balloons, battle processing with result branches, shops, name input, and the troop commands enemy appear, enemy state and abort battle. `insert_event_commands` checks the references they introduce (items, actors, states, animations, variables). Ported from the builders in #20 and checked slot by slot against the MV 1.6.1 interpreter.
+- `show_text` can wrap: `wrap: true` reflows the lines and splits them into four-line boxes; `"hard"` keeps each line as a break. Without it, lines longer than about 55 characters (38 with a face) produce a warning.
+- `npm run test:mv-effects`: runs the new builders through a local MV interpreter with spied game objects and checks every call it makes.
 - `build_event_commands`: project-independent, read-only builders for MV dialogue, choices, conditions, switches/self switches, variables, transfers, common-event calls, flow control, and plugin commands. Nested branches compose without mutating input arrays; schemas reject invalid fields and MZ-only formats.
 - `insert_event_commands`: validated insertion into map-event, common-event, and troop-page lists. Supports dry-run previews, safe nested insertion boundaries, relevant reference checks (including weapon and armor conditions), and the existing atomic backup-protected writer. The result reports the new list length and its command codes; `verbose: true` adds the full before/after lists. When Cancel rows (code 403) are accepted both empty and with the `[6, null]` parameters the editor saves.
 - Stdio protocol verification for both normal and legacy tool listings, plus an optional headless check against a locally installed MV interpreter. The runtime check does not redistribute engine files or modify game projects.

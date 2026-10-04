@@ -25,7 +25,7 @@ beforeEach(async () => {
   await save('Map001.json', { width: 20, height: 15, events: [null, { id: 1, pages: [{ list: original }] }] });
   await save('CommonEvents.json', [null, { id: 1, list: original }]);
   await save('Troops.json', [null, { id: 1, pages: [{ list: original }] }]);
-  for (const name of ['Actors', 'Items', 'Weapons', 'Armors']) await save(`${name}.json`, [null, { id: 1, name: 'Fixture' }]);
+  for (const name of ['Actors', 'Items', 'Weapons', 'Armors', 'States', 'Animations']) await save(`${name}.json`, [null, { id: 1, name: 'Fixture' }]);
 });
 afterEach(async () => { await rm(project, { recursive: true, force: true }); });
 
@@ -191,6 +191,37 @@ describe('guarded event command insertion', () => {
     await expect(insertEventCommands(project, { mapId: 1, eventId: 1, commands })).rejects.toThrow(/Weapon|Armor/);
     expect(await snapshot()).toEqual(before);
     commands[0].parameters[1] = 1;
+    await expect(insertEventCommands(project, { mapId: 1, eventId: 1, commands, dryRun: true })).resolves.toBeDefined();
+  });
+
+  it.each([
+    ['change_items', { itemType: 'weapon', itemId: 2, amount: 1 }],
+    ['change_items', { itemId: 1, amountVariableId: 9 }],
+    ['change_gold', { amountVariableId: 9 }],
+    ['change_party_member', { actorId: 2 }],
+    ['name_input', { actorId: 2 }],
+    ['show_animation', { animationId: 2 }],
+    ['shop_processing', { goods: [{ id: 1 }, { type: 'armor', id: 2 }] }],
+    ['change_actor', { stat: 'state', actorId: 1, stateId: 2 }],
+    ['change_actor', { stat: 'hp', actorId: 2, amount: 1 }],
+    ['change_actor', { stat: 'mp', actorVariableId: 9, amount: 1 }],
+    ['change_enemy_state', { enemyIndex: 0, stateId: 2 }],
+    ['show_picture', { pictureId: 1, name: 'x', designation: 'variable', x: 1, y: 9 }],
+  ])('refuses a %s fragment with a missing reference %j', async (kind, args) => {
+    const before = await snapshot();
+    const commands = buildEventCommands({ kind, ...args }).commands;
+    await expect(insertEventCommands(project, { mapId: 1, eventId: 1, commands })).rejects.toThrow();
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('accepts the new kinds when every reference exists', async () => {
+    const commands = [
+      ...buildEventCommands({ kind: 'change_items', itemType: 'armor', itemId: 1, amountVariableId: 1 }).commands,
+      ...buildEventCommands({ kind: 'shop_processing', goods: [{ id: 1 }, { type: 'weapon', id: 1 }] }).commands,
+      ...buildEventCommands({ kind: 'change_actor', stat: 'state', actorId: 0, stateId: 1 }).commands,
+      ...buildEventCommands({ kind: 'change_party_member', actorId: 1 }).commands,
+      ...buildEventCommands({ kind: 'show_animation', animationId: 1 }).commands,
+    ];
     await expect(insertEventCommands(project, { mapId: 1, eventId: 1, commands, dryRun: true })).resolves.toBeDefined();
   });
 
