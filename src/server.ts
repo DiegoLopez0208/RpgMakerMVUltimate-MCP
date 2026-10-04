@@ -40,7 +40,9 @@ import * as pluginTools from './tools/pluginTools.js';
 import * as scaffoldTools from './tools/scaffoldTools.js';
 import * as runTools from './tools/runTools.js';
 import * as bridgeTools from './tools/bridgeTools.js';
-import { assertBridgeProject } from './bridge/bridge.js';
+import * as playtestTools from './tools/playtestTools.js';
+import { stopHeadlessSessions } from './playtest/session.js';
+import { assertBridgeProject, stopBridge } from './bridge/bridge.js';
 import * as semanticMapTools from './tools/semanticMapTools.js';
 import { mineProject } from './intel/templateMiner.js';
 import * as projectTools from './tools/projectTools.js';
@@ -362,6 +364,9 @@ interface ToolArgs {
 }
 
 // Dispatches tool calls to the appropriate tool module function
+/** Progress sink for the tool call in flight (calls are serialized). */
+let activeProgress: playtestTools.ProgressSink | undefined;
+
 async function handleToolCall(name: string, args: ToolArgs) {
   const p = projectTools.getProjectPath() || PROJECT_PATH;
 
@@ -515,6 +520,10 @@ case 'bridge_stop':
   return await bridgeTools.bridgeStop();
 case 'bridge_status':
   return bridgeTools.bridgeStatus();
+case 'render_map':
+  return await playtestTools.renderMapScreenshot(p, args as unknown as Record<string, unknown>);
+case 'run_playtest':
+  return await playtestTools.runPlaytestScript(p, args as unknown as Record<string, unknown>, activeProgress);
 case 'bridge_telemetry':
   await assertBridgeProject(p);
   return bridgeTools.bridgeTelemetry(args as { limit?: number; types?: string[]; peek?: boolean });
@@ -1021,7 +1030,7 @@ export async function main() {
     return { tools: advertisedTools };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async function(request) {
+  server.setRequestHandler(CallToolRequestSchema, async function(request, extra) {
     const toolName = request.params.name;
     const args = request.params.arguments || {};
     logger.info('Tool call: ' + toolName);
@@ -1040,7 +1049,16 @@ export async function main() {
       // two tools writing the same data file in parallel interleave their writes
       // and corrupt the project JSON. Reads are cheap, so everything goes
       // through one queue for safety.
-      const queuedCall = toolCallQueue.then(function() { return dispatchTool(toolName, args); });
+      // A client that sends a progressToken gets notifications from long tools (run_playtest);
+      // calls are serialized, so one module-level sink is enough.
+      const progressToken = request.params._meta?.progressToken;
+      const reporter: playtestTools.ProgressSink | undefined = progressToken === undefined ? undefined : function(progress, total, message) {
+        void extra.sendNotification({ method: 'notifications/progress', params: { progressToken, progress, total, message } }).catch(function() { /* client gone */ });
+      };
+      const queuedCall = toolCallQueue.then(function() {
+        activeProgress = reporter;
+        return dispatchTool(toolName, args).finally(function() { activeProgress = undefined; });
+      });
       toolCallQueue = queuedCall.then(function() { return undefined; }, function() { return undefined; });
       const result = await queuedCall;
 
@@ -1081,6 +1099,17 @@ export async function main() {
     await server.close();
     process.exit(0);
   });
+
+  // Headless browsers and the bridge socket belong to this process: close them when the client goes away.
+  let shuttingDown = false;
+  const shutdown = function() {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    void Promise.allSettled([stopHeadlessSessions(), stopBridge()]).then(function() { process.exit(0); });
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+  process.stdin.once('end', shutdown);
 
   const transport = new StdioServerTransport();
   if (process.env.RPGMV_STRING_IDS === '1') {

@@ -69,10 +69,14 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.1",
     "eslint": "^10.5.0",
+    "playwright-core": "^1.63.0",
     "rimraf": "^6.1.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
     "vitest": "^2.1.9"
   },
-  "mcpName": "io.github.DiegoLopez0208/rpgmaker-mv-ultimate"
+  "mcpName": "io.github.DiegoLopez0208/rpgmaker-mv-ultimate",
+  "optionalDependencies": {
+    "playwright-core": "^1.63.0"
+  }
 }

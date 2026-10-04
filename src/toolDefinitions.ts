@@ -255,9 +255,45 @@ export const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         name: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$', description: 'Optional safe filename prefix, e.g. boss-room or collision-proof' },
-        timeoutMs: { ...ID_TYPE, description: 'How long to wait for the game response in milliseconds (default 15000)' }
+        timeoutMs: { ...ID_TYPE, description: 'How long to wait for the game response in milliseconds (default 15000)' },
+        mapId: { ...ID_TYPE, description: 'Render this map headless as the engine draws it, with no game running (PNG under .mcp-cache/renders/). Needs the optional playwright-core and a cached Chromium (npx playwright install chromium-headless-shell, or RPGMAKER_MCP_CHROMIUM).' },
+        x: { ...ID_TYPE, description: 'mapId: with y, a normal screen view centred on this tile instead of the whole map' },
+        y: ID_TYPE,
+        showEvents: { type: 'boolean', description: 'mapId: draw event sprites (default true)' },
+        showPlayer: { type: 'boolean', description: 'mapId: draw the player (default: hidden for the whole map, shown for a view)' },
+        switches: { type: 'array', items: ID_TYPE, description: 'mapId: switch IDs to turn ON first, to see later event pages' },
+        runEvents: { type: 'boolean', description: 'mapId: let autorun/parallel events run before the shot (default false)' }
       },
       required: []
+    }
+  },
+  {
+    name: 'run_playtest',
+    description: 'Play the game headless from a script of steps and report what happened: does the door transfer, does the NPC say the right line, does the choice branch, is a tile blocked. Boots the project in Chromium with the real engine; no editor or running game needed, and project data is never changed (screenshots go to .mcp-cache/renders/). Steps by action: load {mapId,x,y,direction?,party?,level?,gold?,switches?,variables?,selfSwitches?,items?,equip?,encounters?} starts a fresh game there; startEvent {eventId} runs a map event until it shows text or goes idle; advanceText {maxMs?} presses OK until idle, stopping at choices or battle, and returns the lines shown; choose {index}; walk {direction,steps?} reports where the player ended or which tile blocked; press {button,times?}; wait {ms}; autoBattle {troopId?,canEscape?,canLose?,maxMs?} fights on auto until the battle ends; screenshot {name?}; eval {script} returns a JS expression evaluated in the game page. The result lists each step with ok, a finalState and page problems (errors, missing files). Runs can take minutes: send a progressToken to get progress notifications. Needs the optional playwright-core and a cached Chromium (npx playwright install chromium-headless-shell, or RPGMAKER_MCP_CHROMIUM).',
+    annotations: { title: 'Run headless playtest', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        steps: {
+          type: 'array', minItems: 1, description: 'The script, run in order. Fields per action are listed in the tool description.',
+          items: { type: 'object', required: ['action'], properties: {
+            action: { type: 'string', enum: ['load', 'startEvent', 'advanceText', 'choose', 'walk', 'press', 'wait', 'autoBattle', 'screenshot', 'eval'] },
+            mapId: { type: 'integer' }, x: { type: 'integer' }, y: { type: 'integer' },
+            direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] },
+            party: { type: 'array', items: { type: 'integer' } }, level: { type: 'integer' }, gold: { type: 'integer' },
+            switches: { type: 'array', items: { type: 'integer' } }, variables: { type: 'object', description: 'variable id to value, e.g. {"3": 2}' },
+            selfSwitches: { type: 'array', items: { type: 'object' }, description: '{mapId,eventId,letter A-D,value?}' },
+            items: { type: 'array', items: { type: 'object' }, description: '{kind? item|weapon|armor, id, count?}' },
+            equip: { type: 'array', items: { type: 'object' }, description: '{actorId, slot, kind weapon|armor, id}' },
+            encounters: { type: 'boolean' }, eventId: { type: 'integer' }, maxMs: { type: 'integer' }, index: { type: 'integer' },
+            steps: { type: 'integer' }, button: { type: 'string', enum: ['ok', 'cancel', 'up', 'down', 'left', 'right', 'shift', 'pageup', 'pagedown'] },
+            times: { type: 'integer' }, ms: { type: 'integer' }, troopId: { type: 'integer' }, canEscape: { type: 'boolean' }, canLose: { type: 'boolean' },
+            name: { type: 'string' }, script: { type: 'string' }
+          } }
+        },
+        realtime: { type: 'boolean', description: 'Play battles at real speed (default false: fast-forwarded, about 10-20x quicker)' }
+      },
+      required: ['steps']
     }
   },
   {

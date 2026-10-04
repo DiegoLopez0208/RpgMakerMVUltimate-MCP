@@ -19,7 +19,7 @@ export const TOOL_PROFILES = {
   ],
   events: ['build_event_commands', 'insert_event_commands'],
   mapgen: ['generate_map'],
-  media: ['take_screenshot', 'record_video', 'analyze_image'],
+  media: ['take_screenshot', 'record_video', 'analyze_image', 'run_playtest'],
 } as const satisfies Record<string, readonly string[]>;
 
 export type ToolProfile = keyof typeof TOOL_PROFILES;
