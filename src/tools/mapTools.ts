@@ -9,6 +9,7 @@ import { generateTileLayoutV3, generateFromTemplate, templateTilesetId, THEME_TI
 import { getTileIdsForTileset } from './assetTools.js';
 import { nearestStandable, chooseSpawn } from '../utils/placement.js';
 import { normalizeMapEvents } from '../utils/eventNormalize.js';
+import { findInvalidAutotiles, reshapeAutotileCells } from '../utils/autotile.js';
 
 // Load the passage flags for a map's tileset (Tilesets[id].flags, one entry per
 // tileId). Returns null if Tilesets.json is missing or the tileset has no flags
@@ -715,6 +716,81 @@ async function fillMapLayer(projectPath: string, mapId: number, layer: number, t
   const mapPath = getMapPath(projectPath, numMapId);
   await writeMapJson(projectPath, mapPath, map);
   return { mapId: numMapId, layer: numLayer, tileId: numTileId, filled: map.width * map.height };
+}
+
+/** Tile ids MV can store: B-E sheets, A5, and the A1-A4 autotiles; 0 erases. */
+function validTileId(id: number): boolean {
+  return Number.isInteger(id) && ((id >= 0 && id < 1024) || (id >= 1536 && id < 1664) || (id >= 2048 && id < 8192));
+}
+
+/**
+ * Paint one tile into a set of cells (or a rectangle) of one layer. On layers
+ * 0-3 an autotile is written as its kind and every painted cell and its eight
+ * neighbours get the shape the editor would give them, so shorelines and wall
+ * edges join up; the rest of the map keeps the shapes it was saved with.
+ * Layer 5 takes region ids (0-255). Layer 4 (shadows) is not painted.
+ */
+async function paintMapTiles(projectPath: string, input: Record<string, unknown>) {
+  const mapId = toNum(input.mapId, 'mapId')!;
+  const layer = toNum(input.layer, 'layer')!;
+  let tileId = toNum(input.tileId, 'tileId')!;
+  if (!Number.isInteger(layer) || layer < 0 || layer > 5 || layer === 4) throw new Error('paint writes tile layers 0-3 or region layer 5');
+  if (layer === 5 ? !(Number.isInteger(tileId) && tileId >= 0 && tileId <= 255) : !validTileId(tileId)) {
+    throw new Error(layer === 5 ? 'Region ids are 0-255' : 'tileId ' + tileId + ' is not a tile id MV can store (0, 1-1023, 1536-1663 or 2048-8191)');
+  }
+  const map = await getMap(projectPath, mapId) as RpgMakerMap;
+  const cells: Array<[number, number]> = [];
+  const pushCell = (x: unknown, y: unknown) => {
+    const cx = Number(x), cy = Number(y);
+    if (!Number.isInteger(cx) || !Number.isInteger(cy) || cx < 0 || cy < 0 || cx >= map.width || cy >= map.height) {
+      throw new Error('Cell (' + String(x) + ', ' + String(y) + ') is outside the ' + map.width + 'x' + map.height + ' map');
+    }
+    cells.push([cx, cy]);
+  };
+  const rect = input.rect as Record<string, unknown> | undefined;
+  if ((input.cells === undefined) === (rect === undefined)) throw new Error('paint needs exactly one of cells or rect');
+  if (Array.isArray(input.cells)) {
+    for (const cell of input.cells) {
+      if (Array.isArray(cell)) pushCell(cell[0], cell[1]);
+      else if (cell && typeof cell === 'object') pushCell((cell as Record<string, unknown>).x, (cell as Record<string, unknown>).y);
+      else throw new Error('cells are [x, y] pairs or {x, y} objects');
+    }
+  } else if (rect) {
+    const rx = Number(rect.x), ry = Number(rect.y), rw = Number(rect.width), rh = Number(rect.height);
+    if (![rx, ry, rw, rh].every(Number.isInteger) || rw < 1 || rh < 1) throw new Error('rect needs whole x, y, width and height (width and height at least 1)');
+    for (let y = ry; y < ry + rh; y++) for (let x = rx; x < rx + rw; x++) pushCell(x, y);
+  } else {
+    throw new Error('cells must be an array');
+  }
+  if (cells.length === 0) throw new Error('paint needs at least one cell');
+  if (cells.length > 20000) throw new Error('paint is limited to 20000 cells per call');
+
+  // An autotile is painted as its kind; its shape comes from its neighbours below.
+  if (layer < 4 && tileId >= 2048) tileId = 2048 + Math.floor((tileId - 2048) / 48) * 48;
+  const layerBase = layer * map.width * map.height;
+  for (const [x, y] of cells) map.data[layerBase + y * map.width + x] = tileId;
+  let reshaped = 0;
+  if (layer < 4) {
+    const affected: Array<[number, number]> = [];
+    for (const [x, y] of cells) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) affected.push([x + dx, y + dy]);
+    reshaped = reshapeAutotileCells(map.data, map.width, map.height, layer, affected);
+  }
+  await writeMapJson(projectPath, getMapPath(projectPath, mapId), map);
+  return { mapId, layer, tileId, painted: new Set(cells.map(([x, y]) => x + ',' + y)).size, autotilesReshaped: reshaped };
+}
+
+/** Give every autotile cell the engine cannot draw a shape it can, touching nothing else. */
+async function repairMapAutotiles(projectPath: string, mapIdInput: unknown) {
+  const mapId = toNum(mapIdInput, 'mapId')!;
+  const map = await getMap(projectPath, mapId) as RpgMakerMap;
+  const invalid = findInvalidAutotiles(map.data, map.width, map.height);
+  let repaired = 0;
+  for (let layer = 0; layer < 4; layer++) {
+    const cells = invalid.filter((c) => c.layer === layer).map((c): [number, number] => [c.x, c.y]);
+    if (cells.length) repaired += reshapeAutotileCells(map.data, map.width, map.height, layer, cells);
+  }
+  if (repaired > 0) await writeMapJson(projectPath, getMapPath(projectPath, mapId), map);
+  return { mapId, invalid: invalid.length, repaired, cells: invalid.slice(0, 20) };
 }
 
 async function fillMapRect(projectPath: string, mapId: number, layer: number, x1: number, y1: number, x2: number, y2: number, tileId: number) {
@@ -1862,6 +1938,7 @@ async function createPuzzleSwitch(projectPath: string, mapId: number, x: number,
 
 export { getMapInfos };
 export { getMap };
+export { paintMapTiles, repairMapAutotiles };
 export { loadTilesetFlags };
 export { getMapEvents };
 export { getMapEvent };

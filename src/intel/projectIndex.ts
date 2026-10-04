@@ -18,6 +18,7 @@ import {
   extractReads, extractReadsFromMany, type RefSet, type WriteSet, type ReadSet,
 } from "./references.js";
 import type { RawCommand } from "./eventAst.js";
+import { findInvalidAutotiles, type InvalidAutotile } from "../utils/autotile.js";
 
 export type EntityKind =
   | "actors" | "classes" | "skills" | "items" | "weapons" | "armors"
@@ -67,6 +68,8 @@ export interface IndexedMap {
   encounterTroops: number[];
   /** True when MapInfos lists the map but the MapNNN.json file is absent. */
   missing: boolean;
+  /** Autotile cells whose shape the engine cannot draw: how many, and the first one. */
+  invalidAutotiles: { count: number; first?: InvalidAutotile };
 }
 
 export interface IndexedCommonEvent {
@@ -218,6 +221,7 @@ async function buildMap(dataDir: string, info: Record<string, unknown>, refSourc
     transfers: [],
     encounterTroops: [],
     missing: raw === null,
+    invalidAutotiles: { count: 0 },
   };
   if (!raw) return base;
 
@@ -225,6 +229,10 @@ async function buildMap(dataDir: string, info: Record<string, unknown>, refSourc
   base.tilesetId = num(raw.tilesetId);
   base.width = num(raw.width);
   base.height = num(raw.height);
+  if (Array.isArray(raw.data) && base.width > 0 && base.height > 0) {
+    const invalid = findInvalidAutotiles(raw.data as number[], base.width, base.height);
+    base.invalidAutotiles = { count: invalid.length, ...(invalid.length ? { first: invalid[0] } : {}) };
+  }
   base.encounterTroops = Array.isArray(raw.encounterList)
     ? [...new Set((raw.encounterList as Record<string, unknown>[]).map((e) => num(e?.troopId)).filter((n) => n > 0))]
     : [];

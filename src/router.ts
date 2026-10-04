@@ -287,6 +287,15 @@ async function editMap(executeTool: ExecuteTool, args: Record<string, unknown>) 
         encounters: requireArg(args, 'encounters', 'edit_map action "set_encounters"'),
         encounterStep: args.encounterStep
       });
+    case 'paint':
+      return executeTool('paint_map_tiles', {
+        mapId: requireArg(args, 'mapId', 'edit_map action "paint"'),
+        layer: requireArg(args, 'layer', 'edit_map action "paint"'),
+        tileId: requireArg(args, 'tileId', 'edit_map action "paint"'),
+        cells: args.cells, rect: args.rect
+      });
+    case 'repair_autotiles':
+      return executeTool('repair_map_autotiles', { mapId: requireArg(args, 'mapId', 'edit_map action "repair_autotiles"') });
     case 'fill_rect':
       return executeTool('fill_map_rect', {
         mapId: requireArg(args, 'mapId', 'edit_map action "fill_rect"'),
