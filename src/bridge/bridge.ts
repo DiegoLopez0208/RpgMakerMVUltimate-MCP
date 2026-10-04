@@ -15,13 +15,17 @@
  *  - a browser Origin is refused at the handshake (wsServer.ts);
  *  - every connection must present the session token within AUTH_TIMEOUT_MS,
  *    which is what actually stops a non-browser local process;
+ *  - the token must come with the realpath of the bridge's project, so a game
+ *    from another project cannot attach to it;
  *  - outbound commands are restricted to COMMAND_ACTIONS — there is no way to
- *    ask the game to evaluate arbitrary JavaScript.
+ *    ask the game to evaluate arbitrary JavaScript;
+ *  - frames and the telemetry buffer are size-capped, so a misbehaving game
+ *    cannot grow the server's memory without bound.
  */
 import { randomBytes, timingSafeEqual } from 'crypto';
-import { writeFile, unlink } from 'fs/promises';
+import { writeFile, unlink, readFile, realpath } from 'fs/promises';
 import path from 'path';
-import { resolveSafePath } from '../utils/security.js';
+import { projectFile } from './projectPaths.js';
 import * as logger from '../utils/logger.js';
 import { startWsServer, type WsConnection, type WsServer } from './wsServer.js';
 import {
@@ -32,8 +36,6 @@ import {
 export interface BridgeStatus {
   running: boolean;
   port: number | null;
-  /** Present only while running; the plugin needs it, nobody else does. */
-  token: string | null;
   projectPath: string | null;
   clients: number;
   authenticatedClients: number;
@@ -41,6 +43,8 @@ export interface BridgeStatus {
   droppedFrames: number;
   startedAt: string | null;
   handshakeFile: string | null;
+  /** Why the last game that tried to connect was turned away, until one succeeds. */
+  lastAuthError: string | null;
 }
 
 interface Pending {
@@ -57,6 +61,13 @@ let startedAtIso: string | null = null;
 let handshakePath: string | null = null;
 let dropped = 0;
 let requestSeq = 0;
+let bufferedBytes = 0;
+let lastAuthError: string | null = null;
+/** A telemetry frame larger than this is dropped rather than buffered. */
+const FRAME_LIMIT = 64 * 1024;
+/** Total bytes of buffered telemetry; the oldest frames go first past this. */
+const BUFFER_LIMIT = 2 * 1024 * 1024;
+const frameSizes = new WeakMap<StampedTelemetry, number>();
 
 const buffer: StampedTelemetry[] = [];
 const pending = new Map<string, Pending>();
@@ -113,8 +124,18 @@ function push(frame: Telemetry): void {
   // Binary capture replies are delivered directly to their waiter. Keeping a
   // second base64 copy in telemetry wastes tens of MB for a short video.
   if (frame.type !== 'screenshot_result' && frame.type !== 'recording_result') {
-    buffer.push(stamped);
-    while (buffer.length > TELEMETRY_BUFFER_MAX) { buffer.shift(); dropped++; }
+    const bytes = Buffer.byteLength(JSON.stringify(stamped));
+    if (bytes <= FRAME_LIMIT) {
+      buffer.push(stamped);
+      frameSizes.set(stamped, bytes);
+      bufferedBytes += bytes;
+      while (buffer.length > TELEMETRY_BUFFER_MAX || bufferedBytes > BUFFER_LIMIT) {
+        bufferedBytes -= frameSizes.get(buffer.shift()!) ?? 0;
+        dropped++;
+      }
+    } else {
+      dropped++;
+    }
   }
   const id = (frame as { requestId?: string }).requestId;
   if (id) {
@@ -143,6 +164,25 @@ function handleMessage(conn: WsConnection, text: string): void {
       conn.close(4401, 'bad token');
       return;
     }
+    if (msg.projectPath === undefined) {
+      // Plugins installed before project-bound auth send only the token.
+      lastAuthError = 'The game runs an outdated McpBridge plugin. Run manage_system action "install_bridge_plugin", then restart the playtest.';
+      logger.warn('Bridge auth rejected: outdated plugin', { conn: conn.id });
+      conn.close(4426, 'outdated plugin');
+      return;
+    }
+    if (!samePath(msg.projectPath, projectRoot)) {
+      // Both paths are reported: a mismatch here is almost always a junction, subst
+      // drive or casing difference, and the two strings make that obvious.
+      lastAuthError = 'A game from another folder presented the token: game "' + String(msg.projectPath) + '", bridge "' + projectRoot + '".';
+      logger.warn('Bridge auth rejected: game runs from another project', { conn: conn.id, game: String(msg.projectPath), bridge: projectRoot });
+      conn.close(4403, 'wrong project');
+      return;
+    }
+    lastAuthError = null;
+    // One game at a time, and the newest wins: after an F5 the old socket may
+    // not have closed yet, and refusing the reloaded game would strand it.
+    for (const other of authedConnections()) { other.meta.authed = false; other.close(4409, 'replaced by a newer game connection'); }
     conn.meta.authed = true;
     const timer = conn.meta.authTimer as NodeJS.Timeout | undefined;
     if (timer) clearTimeout(timer);
@@ -167,8 +207,9 @@ function handleMessage(conn: WsConnection, text: string): void {
  */
 export async function startBridge(projectPath: string, port?: number): Promise<BridgeStatus> {
   if (!projectPath) throw new Error('No project path set — call set_project_path first.');
+  projectPath = await realpath(projectPath);
   if (server) {
-    if (path.resolve(projectRoot) === path.resolve(projectPath)) return statusBridge();
+    if (samePath(projectRoot, projectPath)) return statusBridge();
     // The active MCP project changed. Keeping the old singleton would leave
     // the new project's plugin reading a stale/missing handshake while tools
     // reported that a bridge was already running.
@@ -176,12 +217,16 @@ export async function startBridge(projectPath: string, port?: number): Promise<B
   }
 
   const wanted = port ?? Number(process.env.RPGMV_BRIDGE_PORT || DEFAULT_PORT);
+  if (!Number.isInteger(wanted) || wanted < 0 || wanted > 65535) throw new Error('Bridge port must be an integer from 0 to 65535.');
+  const handshakeTarget = await projectFile(projectPath, HANDSHAKE_FILE);
   token = randomBytes(16).toString('hex');
   projectRoot = projectPath;
   startedAtMs = Date.now();
   startedAtIso = new Date(startedAtMs).toISOString();
   buffer.length = 0;
+  bufferedBytes = 0;
   dropped = 0;
+  lastAuthError = null;
 
   server = await startWsServer(wanted, {
     onConnection(conn) {
@@ -199,14 +244,19 @@ export async function startBridge(projectPath: string, port?: number): Promise<B
   });
 
   // The plugin has no way to learn the port or token except from disk.
-  handshakePath = resolveSafePath(projectRoot, HANDSHAKE_FILE);
   const handshake: Handshake = {
     port: server.port,
     token,
     pid: process.pid,
     startedAt: startedAtIso,
   };
-  await writeFile(handshakePath, JSON.stringify(handshake, null, 2), 'utf-8');
+  try {
+    await claimHandshake(handshakeTarget, handshake);
+  } catch (error) {
+    await stopBridge();
+    throw error;
+  }
+  handshakePath = handshakeTarget;
   logger.info('Bridge listening', { port: server.port });
   return statusBridge();
 }
@@ -221,10 +271,16 @@ export async function stopBridge(): Promise<BridgeStatus> {
     server = null;
   }
   if (handshakePath) {
-    await unlink(handshakePath).catch(() => {}); // already gone is fine
+    // Only remove the handshake this bridge wrote; another server may own it by now.
+    try {
+      const existing = JSON.parse(await readFile(handshakePath, 'utf8')) as Partial<Handshake>;
+      if (existing.token === token) await unlink(handshakePath);
+    } catch { /* already gone or unreadable: leave it */ }
     handshakePath = null;
   }
   token = '';
+  buffer.length = 0;
+  bufferedBytes = 0;
   startedAtIso = null;
   return statusBridge();
 }
@@ -234,14 +290,14 @@ export function statusBridge(): BridgeStatus {
   return {
     running: server !== null,
     port: server ? server.port : null,
-    token: server ? token : null,
     projectPath: server ? projectRoot : null,
     clients: conns.length,
-    authenticatedClients: conns.filter(isAuthed).length,
+    authenticatedClients: authedConnections().length,
     buffered: buffer.length,
     droppedFrames: dropped,
     startedAt: startedAtIso,
     handshakeFile: handshakePath,
+    lastAuthError,
   };
 }
 
@@ -257,16 +313,20 @@ export function drainTelemetry(opts: { limit?: number; types?: string[]; peek?: 
   const out = matching.slice(-limit);
   if (!opts.peek) {
     const taken = new Set(out);
-    for (let i = buffer.length - 1; i >= 0; i--) if (taken.has(buffer[i])) buffer.splice(i, 1);
+    for (let i = buffer.length - 1; i >= 0; i--) {
+      if (!taken.has(buffer[i])) continue;
+      bufferedBytes -= frameSizes.get(buffer[i]) ?? 0;
+      buffer.splice(i, 1);
+    }
   }
   return out;
 }
 
 function authedConnections(): WsConnection[] {
-  return server ? server.connections().filter(isAuthed) : [];
+  return server ? server.connections().filter((conn) => isAuthed(conn) && !conn.closed) : [];
 }
 
-/** Send a command to every authenticated client. Returns how many got it. */
+/** Send a command to the authenticated game. Returns how many clients got it (0 or 1). */
 export function sendCommand(cmd: Command): number {
   if (!server) throw new Error('Bridge is not running — start it with manage_system action "bridge_start".');
   if (!isCommandAction(cmd.action)) throw new Error('Refused command action "' + String(cmd.action) + '".');
@@ -309,3 +369,48 @@ export async function requestCommand(cmd: Omit<Command, 'requestId'>, timeoutMs 
   });
 }
 
+
+/**
+ * Whether two project paths name the same folder. Windows paths compare without
+ * case and with either slash; trailing separators never matter.
+ */
+export function samePath(a: unknown, b: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (typeof a !== 'string' || !a || !b) return false;
+  const p = platform === 'win32' ? path.win32 : path.posix;
+  const norm = (value: string) => p.resolve(value).replace(/[\\/]+$/, '');
+  return platform === 'win32' ? norm(a).toLowerCase() === norm(b).toLowerCase() : norm(a) === norm(b);
+}
+
+function processAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (error) {
+    // EPERM: the process exists but belongs to someone else.
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Write the handshake without clobbering a live bridge. A handshake left by a
+ * server that died without stopBridge (killed client, crash) is replaced;
+ * one whose pid is still alive belongs to another MCP server and is refused.
+ */
+export async function claimHandshake(file: string, handshake: Handshake): Promise<void> {
+  const text = JSON.stringify(handshake, null, 2);
+  try { await writeFile(file, text, { encoding: 'utf-8', flag: 'wx', mode: 0o600 }); return; } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  let owner: number | undefined;
+  try { owner = (JSON.parse(await readFile(file, 'utf8')) as Partial<Handshake>).pid; } catch { owner = undefined; }
+  if (typeof owner === 'number' && owner !== process.pid && processAlive(owner)) {
+    throw new Error('Another process (pid ' + owner + ') holds the bridge handshake ' + file + '. Stop that MCP server first; if pid ' + owner + ' is not an MCP server, delete the file.');
+  }
+  logger.info('Replacing a stale bridge handshake', { file, pid: owner });
+  await writeFile(file, text, { encoding: 'utf-8', mode: 0o600 });
+}
+
+/** Stop a bridge left running for another project before any tool can observe or drive that game. */
+export async function assertBridgeProject(projectPath: string): Promise<void> {
+  if (server && !samePath(await realpath(projectPath), projectRoot)) {
+    await stopBridge();
+    throw new Error('The live bridge belonged to another project and was stopped. Start it again for the active project with bridge_start.');
+  }
+}

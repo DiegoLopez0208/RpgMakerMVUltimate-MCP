@@ -156,6 +156,7 @@ export function startWsServer(port: number, handlers: WsServerHandlers): Promise
     // Accumulator for fragmented text messages.
     let fragOpcode = 0;
     let frag: Buffer[] = [];
+    let fragmentBytes = 0;
 
     const conn: WsConnection = {
       id,
@@ -202,12 +203,16 @@ export function startWsServer(port: number, handlers: WsServerHandlers): Promise
         if (op === 0xa) continue; // pong
         if (op === 0x2) continue; // binary is not part of the contract
         if (op === 0x0 || op === 0x1) {
-          if (op === 0x1) { fragOpcode = 0x1; frag = []; }
+          if (op === 0x1) { fragOpcode = 0x1; frag = []; fragmentBytes = 0; }
+          // Each frame is capped; without this, many small fragments could add up past the cap.
+          fragmentBytes += frame.payload.length;
+          if (fragmentBytes > MAX_FRAME_BYTES) { conn.close(1009, 'message too large'); finish(); return; }
           frag.push(frame.payload);
           if (!frame.fin) continue;
           if (fragOpcode !== 0x1) { frag = []; continue; }
           const text = Buffer.concat(frag).toString('utf-8');
           frag = [];
+          fragmentBytes = 0;
           try { handlers.onMessage(conn, text); } catch { /* a bad frame must not kill the server */ }
         }
       }
