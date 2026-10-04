@@ -20,79 +20,28 @@
  *   108/408 comments                  111[1] the button name of a key branch
  *
  * — and coercing those corrupts messages and breaks plugins. Any opcode absent
- * from the table below is passed through untouched.
+ * from the shared command table is passed through untouched.
  */
+
+import { EVENT_COMMANDS } from "./eventCommandTable.js";
 
 /**
  * Indices of `parameters` that RPG Maker MV defines as numeric, per command
- * code. An empty array documents "this opcode is known and has no numeric
- * slots", which is different from an opcode we simply do not model.
- *
- * Only the opcodes this server emits are listed. Adding one is safe; guessing
- * one is not, so anything unlisted stays as it arrived.
+ * code, taken from the shared command table. An opcode the table gives no
+ * `numeric` entry is passed through untouched: adding one is safe, guessing
+ * one is not.
  */
-const NUMERIC_PARAMS: Record<number, number[]> = {
-  0: [],           // end of list
-  101: [1, 2, 3],  // Show Text [faceName, faceIndex, background, positionType]
-  102: [1],        // Show Choices [choices[], cancelType]
-  108: [],         // Comment
-  111: [0],        // Conditional Branch: only the branch type; the rest is shape-dependent (type 12 is a script)
-  118: [],         // Label
-  119: [],         // Jump to Label
-  121: [0, 1, 2],  // Control Switches [start, end, value]
-  // 122 Control Variables is handled separately: its operand slots are numeric
-  // unless operandType is 4 (Script), where parameters[4] is a string.
-  123: [1],        // Control Self Switch ['A'..'D', value]
-  125: [0, 1, 2],  // Change Gold [operation, operandType, value]
-  126: [0, 1, 2, 3], // Change Items [itemId, operation, operandType, value]
-  127: [0, 1, 2, 3], // Change Weapons
-  128: [0, 1, 2, 3], // Change Armors
-  129: [0, 1],     // Change Party Member [actorId, operation, initialize]
-  201: [0, 1, 2, 3, 4, 5], // Transfer Player [type, mapId, x, y, direction, fadeType]
-  204: [0, 1, 2],  // Scroll Map [direction, distance, speed]
-  205: [0],        // Set Movement Route [characterId, route]
-  212: [0, 1],     // Show Animation [characterId, animationId, wait]
-  214: [],         // Erase Event
-  230: [0],        // Wait [duration]
-  231: [0, 2, 3, 4, 5, 6, 7, 8, 9], // Show Picture; [1] is the picture filename
-  241: [],         // Play BGM (audio object)
-  242: [0],        // Fadeout BGM [duration]
-  245: [],         // Play BGS (audio object)
-  246: [0],        // Fadeout BGS [duration]
-  249: [],         // Play ME (audio object)
-  250: [],         // Play SE (audio object)
-  301: [0, 1],     // Battle Processing [type, troopId, canEscape, canLose]
-  302: [0, 1, 2, 3], // Shop Processing [goodsType, id, priceType, price, purchaseOnly]
-  303: [0, 1],     // Name Input [actorId, maxLength]
-  311: [0, 1, 2, 3, 4], // Change HP
-  312: [0, 1, 2, 3, 4], // Change MP
-  313: [0, 1, 2, 3],    // Change State
-  314: [0, 1],          // Recover All
-  315: [0, 1, 2, 3, 4], // Change EXP
-  316: [0, 1, 2, 3, 4], // Change Level
-  318: [0, 1, 2, 3],    // Change Skill
-  319: [0, 1, 2],       // Change Equipment
-  320: [0],        // Change Name [actorId, name]
-  321: [0, 1],     // Change Class [actorId, classId, saveExp]
-  323: [0, 2],     // Change Vehicle Image [vehicleId, image, index]
-  353: [],         // Game Over
-  356: [],         // Plugin Command (single string)
-  401: [],         // Text data
-  402: [0],        // When [n, choiceName]
-  403: [],         // When Cancel
-  404: [],         // End of choices
-  411: [],         // Else
-  412: [],         // End of branch
-  505: [],         // Move route step (the step object is normalised via moveRoute)
-  601: [], 602: [], 603: [], 604: [], // Battle result branches
-  605: [],         // Repeat of the previous command's parameters
-};
+const NUMERIC_PARAMS: Record<number, readonly number[]> = Object.fromEntries(
+  Object.entries(EVENT_COMMANDS)
+    .filter(([, spec]) => spec.numeric !== undefined)
+    .map(([code, spec]) => [Number(code), spec.numeric as readonly number[]]),
+);
 
 /**
  * Move route command codes whose parameters carry a number, and where.
  * ROUTE_CHANGE_IMAGE is [characterName, characterIndex], so only index 1.
  */
-const ROUTE_NUMERIC_PARAMS: Record<number, number[]> = {
+const ROUTE_NUMERIC_PARAMS: Record<number, readonly number[]> = {
   15: [0], // Wait [frames]
   27: [0], // Switch ON [switchId]
   28: [0], // Switch OFF [switchId]
@@ -136,7 +85,7 @@ function normalizeFields(target: unknown, fields: string[]): void {
   }
 }
 
-function normalizeParams(code: number, parameters: unknown, table: Record<number, number[]>): void {
+function normalizeParams(code: number, parameters: unknown, table: Record<number, readonly number[]>): void {
   if (!Array.isArray(parameters)) return;
   const slots = Object.prototype.hasOwnProperty.call(table, code) ? table[code] : undefined;
   if (!slots) return;
