@@ -24,8 +24,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm run build
       - run: npm test
+      - run: npm run test:protocol
       - run: npm audit --audit-level=high || true
       - name: Verify server starts
         run: |

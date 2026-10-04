@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- `RPGMV_TOOLSET` narrows the advertised tools to profiles: `core` (always on), `events`, `mapgen`, `media`. A data-only session with `core` lists 11 tools in about 10k tokens instead of 17 in about 17k. Calling a tool outside the toolset says which profile to add; an unknown profile stops the server at startup.
+- A test fails when the default tool list grows past 72 KB (about 20k tokens) or any single tool past 16 KB, and every advertised tool must belong to exactly one profile. CI now also runs lint and the stdio protocol check.
 - `build_event_commands` gains 16 kinds: gold, items/weapons/armors, party members, actor HP/MP/EXP/level/state/recover all, audio, screen fade/tint/flash/shake, pictures, animations, balloons, battle processing with result branches, shops, name input, and the troop commands enemy appear, enemy state and abort battle. `insert_event_commands` checks the references they introduce (items, actors, states, animations, variables). Ported from the builders in #20 and checked slot by slot against the MV 1.6.1 interpreter.
 - `show_text` can wrap: `wrap: true` reflows the lines and splits them into four-line boxes; `"hard"` keeps each line as a break. Without it, lines longer than about 55 characters (38 with a face) produce a warning.
 - `npm run test:mv-effects`: runs the new builders through a local MV interpreter with spied game objects and checks every call it makes.

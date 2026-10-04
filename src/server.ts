@@ -47,6 +47,7 @@ import { buildEventCommands } from './utils/eventCommandBuilders.js';
 import { insertEventCommands } from './tools/eventCommandTools.js';
 import * as assetTools from './tools/assetTools.js';
 import { TOOL_DEFINITIONS } from './toolDefinitions.js';
+import { parseToolset, profileOf } from './toolProfiles.js';
 import { TOOL_DEFINITIONS_LEGACY } from './toolDefinitionsLegacy.js';
 import { routeTool, TOOL_NAMES } from './router.js';
 
@@ -1002,9 +1003,12 @@ export async function main() {
   // Default: the consolidated tools. RPGMV_LEGACY_TOOLS=1 additionally
   // advertises the legacy names (calls to legacy names always work either way).
   const legacyMode = process.env.RPGMV_LEGACY_TOOLS === '1';
+  // RPGMV_TOOLSET narrows the consolidated tools to chosen profiles (see toolProfiles.ts).
+  const toolset = parseToolset(process.env.RPGMV_TOOLSET);
+  const consolidated = toolset ? TOOL_DEFINITIONS.filter(function(t) { return toolset.has(t.name); }) : TOOL_DEFINITIONS;
   const advertisedTools = legacyMode
-    ? TOOL_DEFINITIONS.concat(TOOL_DEFINITIONS_LEGACY.filter(function(t) { return !TOOL_NAMES.includes(t.name); }) as typeof TOOL_DEFINITIONS)
-    : TOOL_DEFINITIONS;
+    ? consolidated.concat(TOOL_DEFINITIONS_LEGACY.filter(function(t) { return !TOOL_NAMES.includes(t.name); }) as typeof TOOL_DEFINITIONS)
+    : consolidated;
 
   server.setRequestHandler(ListToolsRequestSchema, async function() {
     return { tools: advertisedTools };
@@ -1016,6 +1020,10 @@ export async function main() {
     logger.info('Tool call: ' + toolName);
 
     try {
+      const profile = profileOf(toolName);
+      if (toolset && profile && !toolset.has(toolName)) {
+        throw new Error(toolName + ' is not enabled: add "' + profile + '" to RPGMV_TOOLSET (currently "' + process.env.RPGMV_TOOLSET + '").');
+      }
       const currentPath = projectTools.getProjectPath();
       if (!currentPath && toolName !== 'set_project_path' && toolName !== 'build_event_commands') {
         throw new Error('No project path set. Use set_project_path or set RPGMAKER_PROJECT_PATH.');
@@ -1082,5 +1090,5 @@ export async function main() {
     };
   }
   await server.connect(transport);
-  logger.info('RPG Maker MV MCP server v' + SERVER_VERSION + ' running on stdio (' + advertisedTools.length + ' tools' + (legacyMode ? ', legacy mode' : '') + ')');
+  logger.info('RPG Maker MV MCP server v' + SERVER_VERSION + ' running on stdio (' + advertisedTools.length + ' tools' + (toolset ? ', toolset ' + process.env.RPGMV_TOOLSET : '') + (legacyMode ? ', legacy mode' : '') + ')');
 }
