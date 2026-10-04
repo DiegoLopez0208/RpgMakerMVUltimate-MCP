@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- `build_event_commands` kind `move_route`: Set Movement Route from named steps (the engine's `ROUTE_*` names, with `times` to repeat). Writes the route on the 205 row and one 505 row per step without the end marker, as the editor does; #20's version included the end marker.
+- `update_database_entry` with `entity: "troops"` and `addPage` inserts one battle-event page from a compact trigger (`turn`, `enemyHpBelow`, `actorHpBelow`, `switchId`, `turnEnd`) without resending the other pages. Pages that could never run are refused. Also available as the legacy `add_troop_page` tool.
 - `build_event_commands` gains 16 kinds: gold, items/weapons/armors, party members, actor HP/MP/EXP/level/state/recover all, audio, screen fade/tint/flash/shake, pictures, animations, balloons, battle processing with result branches, shops, name input, and the troop commands enemy appear, enemy state and abort battle. `insert_event_commands` checks the references they introduce (items, actors, states, animations, variables). Ported from the builders in #20 and checked slot by slot against the MV 1.6.1 interpreter.
 - `show_text` can wrap: `wrap: true` reflows the lines and splits them into four-line boxes; `"hard"` keeps each line as a break. Without it, lines longer than about 55 characters (38 with a face) produce a warning.
 - `npm run test:mv-effects`: runs the new builders through a local MV interpreter with spied game objects and checks every call it makes.

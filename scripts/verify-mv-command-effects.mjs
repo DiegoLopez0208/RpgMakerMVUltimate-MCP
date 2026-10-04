@@ -52,7 +52,7 @@ const WORLD = `
   function Scene_Battle() {} function Scene_Shop() {} function Scene_Name() {}
   var $gamePlayer = spy('player', { makeEncounterTroopId: function() { return 5; },
     isTransferring: function() { return false; } });
-  var $gameMap = { mapId: function() { return 7; }, requestRefresh: function() {},
+  var $gameMap = { mapId: function() { return 7; }, requestRefresh: function() {}, refreshIfNeeded: function() {},
     event: function(id) { return spy('event' + id, {}); } };
   var $gameSwitches = new Game_Switches();
   var $gameVariables = new Game_Variables();
@@ -67,6 +67,7 @@ async function main(enginePath) {
   const version = coreSource.match(/Utils\.RPGMAKER_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1] ?? 'unknown';
   const extensionsSource = coreSource.slice(0, coreSource.indexOf('function Utils()'));
   const { buildEventCommands } = await import('../dist/utils/eventCommandBuilders.js');
+  const troopPage = await import('../dist/utils/troopPage.js');
   const build = (kind, parameters) => buildEventCommands({ kind, ...parameters }).commands;
   let passed = 0;
 
@@ -206,6 +207,69 @@ async function main(enginePath) {
     const states = only(run(build('change_enemy_state', { enemyIndex: -1, stateId: 1 }), { troop: true }), 'enemy').filter(([n]) => n.endsWith('addState'));
     assert.deepEqual(states, [['enemy0.addState', 1], ['enemy1.addState', 1], ['enemy2.addState', 1]]);
     assert.deepEqual(only(run(build('abort_battle', {}), { troop: true }), 'battle.'), [['battle.abort']]);
+  });
+
+  /** A fresh engine context, for checks that call engine functions directly instead of running an event. */
+  function engine() {
+    const context = vm.createContext({});
+    vm.runInContext(extensionsSource, context, { filename: basename(corePath), timeout: 2000 });
+    vm.runInContext(objectsSource, context, { filename: basename(enginePath), timeout: 2000 });
+    vm.runInContext(WORLD, context, { timeout: 2000 });
+    return (source) => vm.runInContext(source, context, { timeout: 2000 });
+  }
+
+  check('move_route hands the character its route, and every step name is the engine constant', () => {
+    const steps = [
+      'move_down', 'move_left', 'move_right', 'move_up', 'move_lower_l', 'move_lower_r', 'move_upper_l', 'move_upper_r',
+      'move_random', 'move_toward', 'move_away', 'move_forward', 'move_backward', 'turn_down', 'turn_left', 'turn_right',
+      'turn_up', 'turn_90d_r', 'turn_90d_l', 'turn_180d', 'turn_90d_r_l', 'turn_random', 'turn_toward', 'turn_away',
+      'walk_anime_on', 'walk_anime_off', 'step_anime_on', 'step_anime_off', 'dir_fix_on', 'dir_fix_off',
+      'through_on', 'through_off', 'transparent_on', 'transparent_off',
+    ].map((step) => ({ step }));
+    steps.push({ step: 'jump', x: 1, y: 2 }, { step: 'wait', frames: 3 }, { step: 'switch_on', switchId: 4 },
+      { step: 'switch_off', switchId: 4 }, { step: 'change_speed', value: 5 }, { step: 'change_freq', value: 3 },
+      { step: 'change_image', name: 'Actor1', index: 2 }, { step: 'change_opacity', value: 128 },
+      { step: 'change_blend_mode', value: 1 }, { step: 'play_se', name: 'Jump1' }, { step: 'script', text: 'x' });
+    const forced = only(run(build('move_route', { characterId: -1, steps, repeat: true })), 'player.forceMoveRoute');
+    assert.equal(forced.length, 1);
+    const route = forced[0][1];
+    assert.equal(route.repeat, true);
+    assert.equal(route.list.length, steps.length + 1);
+    const evaluate = engine();
+    steps.forEach(({ step }, i) => {
+      assert.equal(route.list[i].code, evaluate(`Game_Character.ROUTE_${step.toUpperCase()}`), `${step} code`);
+    });
+    assert.equal(route.list.at(-1).code, evaluate('Game_Character.ROUTE_END'));
+  });
+
+  check('troop pages trigger exactly when Game_Troop.meetsConditions says they should', () => {
+    const { buildTroopPage } = troopPage;
+    const evaluate = engine();
+    evaluate(`
+      var hp = { enemy1: 0.4, actor1: 0.6 }, turnEnd = false;
+      $gameTroop = { members: function() { return [{ hpRate: function() { return 1; } }, { hpRate: function() { return hp.enemy1; } }]; } };
+      $gameActors = { actor: function(id) { return id === 1 ? { hpRate: function() { return hp.actor1; } } : null; } };
+      BattleManager = { isTurnEnd: function() { return turnEnd; } };
+    `);
+    const meets = (when, turn = 1, state = '') => {
+      evaluate(`$gameSwitches = new Game_Switches(); hp = { enemy1: 0.4, actor1: 0.6 }; turnEnd = false; ${state}`);
+      return evaluate(`Game_Troop.prototype.meetsConditions.call({ _turnCount: ${turn} }, ${JSON.stringify(buildTroopPage({ when }).page)})`);
+    };
+    assert.deepEqual([1, 2, 3, 4, 5, 8].map((turn) => meets({ turn: [2, 3] }, turn)), [false, true, false, false, true, true]);
+    assert.deepEqual([0, 1, 2].map((turn) => meets({ turn: [1, 0] }, turn)), [false, true, false]);
+    assert.equal(meets({ enemyHpBelow: [1, 50] }), true);
+    assert.equal(meets({ enemyHpBelow: [1, 30] }), false);
+    assert.equal(meets({ enemyHpBelow: [0, 50] }), false);
+    assert.equal(meets({ actorHpBelow: [1, 60] }), true);
+    assert.equal(meets({ actorHpBelow: [1, 59] }), false);
+    assert.equal(meets({ switchId: 3 }), false);
+    assert.equal(meets({ switchId: 3 }, 1, '$gameSwitches.setValue(3, true);'), true);
+    assert.equal(meets({ turnEnd: true }), false);
+    assert.equal(meets({ turnEnd: true }, 1, 'turnEnd = true;'), true);
+    assert.equal(meets({ turn: [2, 0], enemyHpBelow: [1, 50] }, 2), true);
+    assert.equal(meets({ turn: [2, 0], enemyHpBelow: [1, 30] }, 2), false);
+    // A page with every check off never runs, which is why buildTroopPage refuses one.
+    assert.equal(evaluate('Game_Troop.prototype.meetsConditions.call({ _turnCount: 1 }, { conditions: {} })'), false);
   });
 
   console.log(`Verified ${passed} scenarios against RPG Maker MV ${version}.`);

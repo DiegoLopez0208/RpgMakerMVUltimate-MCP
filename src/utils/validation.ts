@@ -195,6 +195,8 @@ const UpdateDatabaseEntrySchema = z.object({
   fields: z.record(z.unknown()).optional(),
   appendCommand: eventCommandSchema.optional(),
   addEnemyId: idLike.optional(),
+  // troops: shape checked by buildTroopPage, which reports the exact field at fault
+  addPage: z.record(z.unknown()).optional(),
 }).passthrough();
 
 const DeleteDatabaseEntrySchema = z.object({

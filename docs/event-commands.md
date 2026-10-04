@@ -38,6 +38,7 @@ integer strings; numeric constants may be fractional finite numbers.
 | `enemy_appear` | `enemyIndex` | — (troop pages) |
 | `change_enemy_state` | `enemyIndex` (-1 = entire troop), `stateId` | `remove` (troop pages) |
 | `abort_battle` | — | — (troop pages) |
+| `move_route` | `steps: [{ step, times?, ... }]` | `characterId` (-1 player, 0 this event), `repeat`, `skippable`, `wait` (default true) |
 
 Each response has `commands`, plus advisory `warnings` when applicable. Fragments
 omit the final root end marker. Nested branches include their own end markers.
@@ -58,6 +59,39 @@ Conditions use a `type`: `switch`, `self_switch`, `variable`, `actor_in_party`,
 Variable operands use `type: constant` with `value`, `type: variable` with
 `variableId`, `type: random` with `min`/`max`, or `type: game_data` with MV's
 `dataType` (`0..7`) and `param1`/`param2` selectors. Invalid selectors are refused.
+
+## Move routes
+
+Step names are the engine's `Game_Character.ROUTE_*` constants in lower case:
+`move_down`, `move_toward` (toward the player), `turn_90d_r`, `dir_fix_on`, `through_on` and so on.
+`times` repeats a step. Steps that take parameters: `jump` `x`,`y`; `wait` `frames`;
+`switch_on`/`switch_off` `switchId`; `change_speed` `value` 1-6; `change_freq` `value` 1-5;
+`change_image` `name`,`index`; `change_opacity` `value` 0-255; `change_blend_mode` `value` 0-3;
+`play_se` `name` (+ `volume`, `pitch`, `pan`); `script` `text`.
+
+The route is written twice, as the editor does: on the 205 row, which the engine runs, and
+as one 505 row per step without the end marker, which the editor lists.
+
+```json
+{ "kind": "move_route", "characterId": 0, "repeat": true,
+  "steps": [{ "step": "move_left", "times": 3 }, { "step": "wait", "frames": 30 }, { "step": "move_right", "times": 3 }] }
+```
+
+## Troop battle pages
+
+A new battle-event page goes through `update_database_entry` with `entity: "troops"` and `addPage`:
+
+```json
+{ "entity": "troops", "id": 4, "addPage": {
+  "when": { "enemyHpBelow": [0, 50] }, "span": "battle",
+  "commands": [ ...from build_event_commands... ] } }
+```
+
+`when` checks are ANDed and at least one is required, because the engine never runs a page with
+none: `turn: [a, b]` (turn a + b*X; b 0 means only turn a), `enemyHpBelow: [troop slot from 0, pct]`,
+`actorHpBelow: [actorId, pct]`, `switchId`, `turnEnd: true`. `span` is `battle`, `turn` or `moment`;
+`position` inserts before an existing page. Conditions that could never hold (an empty enemy slot, a
+missing actor) and broken references in `commands` are refused.
 
 ## Compose choices, preview, then insert
 
@@ -148,7 +182,8 @@ The optional final command runs the real local MV interpreter in a Node VM with
 scene/asset boundaries stubbed. It checks command execution, not GUI rendering or
 third-party plugin behavior. The engine files stay local and are read-only.
 
-`test:mv-effects` runs the party, presentation, scene and troop builders through the same
+`test:mv-effects` runs the party, presentation, scene, troop and move route builders through the same
 interpreter with the game world replaced by spies, and checks the exact calls it makes
 (for example `$gameParty.gainItem(weapon 2, -3, true)` or `SceneManager.prepareNextScene(goods, true)`),
-so each parameter is proven to sit in the slot the engine reads.
+so each parameter is proven to sit in the slot the engine reads. It also checks every move route step
+against `Game_Character.ROUTE_*` and evaluates built troop pages with `Game_Troop.meetsConditions`.
