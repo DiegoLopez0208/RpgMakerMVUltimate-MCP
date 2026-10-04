@@ -97,8 +97,13 @@ describe("commandBuilder", () => {
 
   describe("shopProcessing", () => {
     it("should create shop processing command", () => {
-      const result = cmd.shopProcessing([[1, 0, 0, 100]]);
-      expect(result.length).toBeGreaterThan(0);
+      const result = cmd.shopProcessing([[0, 1, 0, 0], [1, 2, 1, 250]], true);
+      // The engine reads the 302 row as the first good and purchaseOnly from its fifth slot.
+      expect(result).toEqual([
+        { code: 302, indent: 0, parameters: [0, 1, 0, 0, true] },
+        { code: 605, indent: 0, parameters: [1, 2, 1, 250] },
+      ]);
+      expect(() => cmd.shopProcessing([], false)).toThrow(/at least one good/);
     });
   });
 

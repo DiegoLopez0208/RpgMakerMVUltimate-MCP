@@ -42,11 +42,12 @@ describe("extractRefs", () => {
   it("captures common events, battles, shops and animations", () => {
     expect(extractRefs([{ code: 117, parameters: [6] }]).commonEvents).toEqual([6]);
     expect(extractRefs([{ code: 301, parameters: [0, 14] }]).troops).toEqual([14]);
-    const shop = extractRefs([{ code: 302, parameters: [[[0, 3], [1, 2], [2, 5]]] }]);
+    // As the editor saves it: the 302 row is the first good, each further good is a 605 row.
+    const shop = extractRefs([{ code: 302, parameters: [0, 3, 0, 0, false] }, { code: 605, parameters: [1, 2, 0, 0] }, { code: 605, parameters: [2, 5, 1, 300] }]);
     expect(shop.items).toEqual([3]);
     expect(shop.weapons).toEqual([2]);
     expect(shop.armors).toEqual([5]);
-    expect(extractRefs([{ code: 212, parameters: [0, 0, 41] }]).animations).toEqual([41]);
+    expect(extractRefs([{ code: 212, parameters: [0, 41, false] }]).animations).toEqual([41]);
   });
 
   it("captures audio and image asset names", () => {
