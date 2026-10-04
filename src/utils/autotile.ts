@@ -59,11 +59,37 @@ export function computeShape(
 }
 
 /**
+ * The id one cell of a layer should have, from its neighbours in `orig` (that
+ * layer as saved). Off-map cells count as the same kind (MV extends autotiles
+ * past the edge). Waterfalls (odd A1 kinds from 5) keep a valid shape: the
+ * editor's waterfall shapes do not follow the neighbours simply enough to
+ * recompute (half of the reference maps' waterfall cells keep shape 0 next to
+ * other tiles). An out-of-range one, which makes ShaderTilemap throw while
+ * drawing, becomes 0. Non-autotiles come back unchanged.
+ */
+function reshapedId(orig: number[], width: number, height: number, x: number, y: number): number {
+  const id = orig[y * width + x];
+  if (!isAutotile(id)) return id;
+  const k = autotileKind(id);
+  const floor = isFloorTypeAutotile(id);
+  if (!floor && !isWallTypeAutotile(id)) {
+    return isWaterfallTile(id) && autotileShape(id) >= WATERFALL_SHAPES ? TILE_ID_A1 + k * 48 : id;
+  }
+  const same = (nx: number, ny: number): boolean => {
+    if (nx < 0 || ny < 0 || nx >= width || ny >= height) return true; // off-map
+    const n = orig[ny * width + nx];
+    return n >= TILE_ID_A1 && autotileKind(n) === k;
+  };
+  const shape = computeShape(
+    floor, same(x, y - 1), same(x + 1, y), same(x, y + 1), same(x - 1, y),
+    same(x + 1, y - 1), same(x + 1, y + 1), same(x - 1, y + 1), same(x - 1, y - 1)
+  );
+  return TILE_ID_A1 + k * 48 + shape;
+}
+
+/**
  * Recompute autotile shapes in-place for tile layers 0-3 of an MV map data
- * array. Off-map cells count as the same kind (MV extends autotiles past the
- * edge). Waterfall autotiles (odd A1 kinds from 5) keep their shape, except one
- * the engine has no entry for: its table has 4 shapes, so 4-47 crash the tile
- * draw and are reset to 0. Non-autotiles, shadow (layer 4) and region (layer 5)
+ * array (see reshapedId for the rule). Shadow (layer 4) and region (layer 5)
  * are untouched.
  */
 export function applyAutotileShapes(data: number[], width: number, height: number): void {
@@ -71,36 +97,55 @@ export function applyAutotileShapes(data: number[], width: number, height: numbe
   for (let layer = 0; layer < 4; layer++) {
     const base = layer * layerSize;
     const orig = data.slice(base, base + layerSize);
-    const kindAt = (x: number, y: number): number => {
-      if (x < 0 || y < 0 || x >= width || y >= height) return -1; // off-map sentinel
-      const id = orig[y * width + x];
-      return id >= TILE_ID_A1 ? autotileKind(id) : -2; // -2 = not an autotile
-    };
     for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const id = orig[y * width + x];
-        if (!isAutotile(id)) continue;
-        const floor = isFloorTypeAutotile(id);
-        const wall = isWallTypeAutotile(id);
-        if (!floor && !wall) {
-          // The editor's waterfall shapes do not follow the neighbours simply enough to recompute
-          // (half of the reference maps' waterfall cells keep shape 0 next to other tiles), so a
-          // valid shape is kept. An out-of-range one would make ShaderTilemap throw while drawing.
-          if (isWaterfallTile(id) && autotileShape(id) >= WATERFALL_SHAPES) data[base + y * width + x] = TILE_ID_A1 + autotileKind(id) * 48;
-          continue;
-        }
-        const k = autotileKind(id);
-        const same = (nx: number, ny: number): boolean => {
-          const nk = kindAt(nx, ny);
-          return nk === -1 /* off-map */ || nk === k;
-        };
-        const n = same(x, y - 1), e = same(x + 1, y), s = same(x, y + 1), w = same(x - 1, y);
-        const shape = computeShape(
-          floor, n, e, s, w,
-          same(x + 1, y - 1), same(x + 1, y + 1), same(x - 1, y + 1), same(x - 1, y - 1)
-        );
-        data[base + y * width + x] = TILE_ID_A1 + k * 48 + shape;
+      for (let x = 0; x < width; x++) data[base + y * width + x] = reshapedId(orig, width, height, x, y);
+    }
+  }
+}
+
+/**
+ * Recompute shapes for some cells of one layer only, leaving the rest of the map
+ * exactly as saved. Used after painting (the painted cells and their neighbours)
+ * and to repair invalid shapes. Returns how many cells changed.
+ */
+export function reshapeAutotileCells(
+  data: number[], width: number, height: number, layer: number, cells: Iterable<[number, number]>
+): number {
+  const layerSize = width * height;
+  const base = layer * layerSize;
+  const orig = data.slice(base, base + layerSize);
+  const done = new Set<number>();
+  let changed = 0;
+  for (const [x, y] of cells) {
+    if (x < 0 || y < 0 || x >= width || y >= height) continue;
+    const i = y * width + x;
+    if (done.has(i)) continue;
+    done.add(i);
+    const next = reshapedId(orig, width, height, x, y);
+    if (next !== orig[i]) { data[base + i] = next; changed++; }
+  }
+  return changed;
+}
+
+/** Shapes in the engine's table for this autotile: 4 for waterfalls, 16 wall-type, 48 floor-type. */
+export function autotileShapeCount(id: number): number {
+  if (isWaterfallTile(id)) return WATERFALL_SHAPES;
+  return isWallTypeAutotile(id) ? 16 : 48;
+}
+
+export interface InvalidAutotile { x: number; y: number; layer: number; tileId: number }
+
+/** Autotile cells on layers 0-3 whose shape the engine has no table entry for. */
+export function findInvalidAutotiles(data: number[], width: number, height: number): InvalidAutotile[] {
+  const out: InvalidAutotile[] = [];
+  const layerSize = width * height;
+  for (let layer = 0; layer < 4; layer++) {
+    for (let i = 0; i < layerSize; i++) {
+      const id = data[layer * layerSize + i];
+      if (isAutotile(id) && autotileShape(id) >= autotileShapeCount(id)) {
+        out.push({ x: i % width, y: Math.floor(i / width), layer, tileId: id });
       }
     }
   }
+  return out;
 }

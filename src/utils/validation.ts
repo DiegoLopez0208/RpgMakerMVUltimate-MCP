@@ -236,7 +236,7 @@ const encounterSchema = z.object({
 }).passthrough();
 
 const EditMapSchema = z.object({
-  action: z.enum(["fill_layer", "fill_rect", "set_tile", "replace_tile", "set_display_names", "organize_tree", "connect", "set_encounters"]),
+  action: z.enum(["fill_layer", "fill_rect", "set_tile", "replace_tile", "paint", "repair_autotiles", "set_display_names", "organize_tree", "connect", "set_encounters"]),
   layer: idLike.optional(),
   tileId: idLike.optional(),
   names: z.array(z.record(z.unknown())).optional(),
@@ -245,7 +245,7 @@ const EditMapSchema = z.object({
   encounterStep: idLike.optional(),
 }).passthrough().superRefine((a, ctx) => {
   // fill_layer / fill_rect / set_tile write into a specific layer index 0-5.
-  if (a.layer !== undefined && ["fill_layer", "fill_rect", "set_tile"].includes(a.action)) {
+  if (a.layer !== undefined && ["fill_layer", "fill_rect", "set_tile", "paint"].includes(a.action)) {
     const n = Number(a.layer);
     if (!Number.isInteger(n) || n < 0 || n > 5) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["layer"], message: "layer must be an integer 0-5" });

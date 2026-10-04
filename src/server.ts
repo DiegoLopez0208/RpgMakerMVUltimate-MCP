@@ -439,6 +439,10 @@ async function handleToolCall(name: string, args: ToolArgs) {
       return await mapTools.getMapEvent(p, args.mapId, args.eventId);
     case 'create_map':
       return await mapTools.createMap(p, args);
+    case 'paint_map_tiles':
+      return await mapTools.paintMapTiles(p, args as unknown as Record<string, unknown>);
+    case 'repair_map_autotiles':
+      return await mapTools.repairMapAutotiles(p, args.mapId);
     case 'fill_map_layer':
       return await mapTools.fillMapLayer(p, args.mapId, args.layer, args.tileId);
     case 'fill_map_rect':

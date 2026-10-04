@@ -51,6 +51,14 @@ export function validateProject(index: ProjectIndex): ValidationReport {
   const commonIds = new Set(index.commonEvents.map((c) => c.id));
   const liveMapIds = new Set(index.maps.filter((m) => !m.missing).map((m) => m.id));
 
+  // Autotile cells the engine cannot draw (ShaderTilemap throws on them).
+  for (const m of index.maps) {
+    const bad = m.invalidAutotiles;
+    if (!bad || bad.count === 0 || !bad.first) continue;
+    issues.push({ severity: "error", category: "invalid-autotile", mapId: m.id, message:
+      `Map ${m.id} has ${bad.count} autotile cell(s) with a shape the engine cannot draw (first at ${bad.first.x},${bad.first.y} on layer ${bad.first.layer}); MV throws while drawing them. Fix with edit_map action "repair_autotiles".` });
+  }
+
   // 1. Duplicate database IDs.
   for (const kind of Object.keys(index.entities) as EntityKind[]) {
     const seen = new Set<number>();
