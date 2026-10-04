@@ -252,7 +252,7 @@ Narrow with `category`, loosen or tighten with `thresholdSd` (default 2).
 
 <br>
 
-## 🧰 The 17 tools
+## 🧰 The 18 tools
 
 <details>
 <summary>Click to expand the full surface</summary>
@@ -272,7 +272,8 @@ Narrow with `category`, loosen or tighten with `thresholdSd` (default 2).
 | `edit_map` | Fill tile layers, set display names, organize the map tree, connect two maps, set encounters |
 | `manage_map_event` | Create (presets: npc, chest, teleport, door, shop, inn, boss, puzzle_switch), update, **convert** an NPC into a merchant/inn/sign in place, delete, add commands, bulk-populate |
 | `manage_system` | Title, switch/variable names, starting position, **author a plugin**, **scaffold an editor-openable project**, **playtest**, **open/repair in editor**, **mine templates**, and the **live bridge** |
-| `take_screenshot` | Capture and name a live playtest PNG through the authenticated MCP bridge |
+| `take_screenshot` | Capture and name a live playtest PNG through the authenticated MCP bridge, or with `mapId` render a map headless as the engine draws it, no game running |
+| `run_playtest` | Play a script of steps headless (load, start an event, read its text, choose, walk, battle, screenshot) and report what happened |
 | `record_video` | Start or stop a named live playtest WebM recording through the authenticated MCP bridge |
 | `analyze_project` | The read-only intelligence layer above |
 | `get_project_context` | Project digest, asset index, per-tileset tile IDs, bundled-template catalog |
@@ -309,7 +310,8 @@ the supported kinds, nesting rules, MV-specific differences, and verification.
 | `RPGMV_BRIDGE_PORT` | optional | Loopback port for the live bridge (default `32123`) |
 | `RPGMV_BACKUP_KEEP` | optional | Backups kept per file (default `10`) |
 | `RPGMV_LEGACY_TOOLS` | optional | `1` also advertises the 101 legacy tool names |
-| `RPGMV_TOOLSET` | optional | Advertise only some tool groups, e.g. `events,media`. `core` (project, database, maps, events, system, analysis) is always on; the others are `events` (build/insert event commands), `mapgen` (generate_map) and `media` (screenshot, video, image analysis). Unset or `all` lists everything. `core` alone is about 11k tokens instead of 18k. |
+| `RPGMAKER_MCP_CHROMIUM` | optional | Chromium executable for headless renders and `run_playtest`. Without it the newest browser in the Playwright cache is used (`npx playwright install chromium-headless-shell`). Headless tools also need the optional `playwright-core` dependency. |
+| `RPGMV_TOOLSET` | optional | Advertise only some tool groups, e.g. `events,media`. `core` (project, database, maps, events, system, analysis) is always on; the others are `events` (build/insert event commands), `mapgen` (generate_map) and `media` (screenshot, video, image analysis, headless playtest). Unset or `all` lists everything. `core` alone is about 11k tokens instead of 18k. |
 | `VISION_API_URL` | to enable vision | Base URL of an OpenAI-compatible vision endpoint. **Unset = vision disabled** |
 | `VISION_API_KEY` | optional | Bearer token; only sent when set |
 | `VISION_MODEL` | optional | Model name (default `meta/llama-3.2-90b-vision-instruct`) |

@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- **`run_playtest`, a new tool.** Plays a script of steps headless with the real engine in Chromium: `load` a map with party, gold, switches and items; `startEvent`; `advanceText` returns the lines shown; `choose`; `walk` reports where the player ended or which tile blocked; `press`; `wait`; `autoBattle` fights to the end (fast-forwarded unless `realtime`); `screenshot`; `eval`. No editor, NW.js or running game is needed, and project data is not changed. Long runs send MCP progress notifications when the client asks with a progressToken.
+- **`take_screenshot` with `mapId` renders a map headless**, the whole map or a view centred on a tile, as the engine draws it (autotiles, events, optional switches and autorun events). Without `mapId` it still captures the live playtest.
+- Both need the optional `playwright-core` and a cached Chromium (or `RPGMAKER_MCP_CHROMIUM`); without them only these two calls fail, with instructions. PNGs go under `.mcp-cache/renders/`. Ported from #20 without its caller-chosen output path.
+- The server closes headless browsers and the live bridge when the client disconnects or on SIGINT/SIGTERM.
 - `RPGMV_TOOLSET` narrows the advertised tools to profiles: `core` (always on), `events`, `mapgen`, `media`. A data-only session with `core` lists 11 tools in about 11k tokens instead of 17 in about 18k. Calling a tool outside the toolset says which profile to add; an unknown profile stops the server at startup.
 - A test fails when the default tool list grows past 72 KB (about 20k tokens) or any single tool past 16 KB, and every advertised tool must belong to exactly one profile. CI now also runs lint and the stdio protocol check.
 - `build_event_commands` kind `move_route`: Set Movement Route from named steps (the engine's `ROUTE_*` names, with `times` to repeat). Writes the route on the 205 row and one 505 row per step without the end marker, as the editor does; #20's version included the end marker.

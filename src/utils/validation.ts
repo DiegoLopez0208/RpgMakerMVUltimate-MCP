@@ -355,6 +355,14 @@ const ManageSystemSchema = z.object({
 const TakeScreenshotSchema = z.object({
   name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
   timeoutMs: idLike.optional(),
+  // mapId switches to a headless render; the render tool checks these strictly.
+  mapId: idLike.optional(),
+  x: idLike.optional(),
+  y: idLike.optional(),
+  showEvents: z.boolean().optional(),
+  showPlayer: z.boolean().optional(),
+  switches: z.array(idLike).optional(),
+  runEvents: z.boolean().optional(),
 });
 
 const RecordVideoSchema = z.object({

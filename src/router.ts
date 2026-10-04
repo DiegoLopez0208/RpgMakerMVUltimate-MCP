@@ -471,7 +471,7 @@ export const TOOL_NAMES = [
   'query_database', 'create_database_entry', 'update_database_entry', 'delete_database_entry',
   'query_map', 'generate_map', 'edit_map', 'manage_map_event',
   'manage_system', 'take_screenshot', 'get_project_context', 'set_project_path', 'analyze_image',
-  'record_video',
+  'record_video', 'run_playtest',
   'list_plugins', 'get_plugin_status', 'toggle_plugin', 'analyze_project'
 ];
 
@@ -493,7 +493,15 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
     case 'edit_map': return editMap(executeTool, args);
     case 'manage_map_event': return manageMapEvent(executeTool, args);
     case 'manage_system': return manageSystem(executeTool, args);
-    case 'take_screenshot': return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.name });
+    case 'take_screenshot':
+      // With a mapId the map is rendered headless by the engine; without one the live playtest is captured.
+      if (args.mapId !== undefined) {
+        const render: Record<string, unknown> = {};
+        for (const key of ['mapId', 'x', 'y', 'showEvents', 'showPlayer', 'switches', 'runEvents']) if (args[key] !== undefined) render[key] = args[key];
+        return executeTool('render_map', render);
+      }
+      return executeTool('bridge_screenshot', { timeoutMs: args.timeoutMs, name: args.name });
+    case 'run_playtest': return executeTool('run_playtest', args);
     case 'record_video': return executeTool('bridge_record_video', {
       action: requireArg(args, 'action', 'record_video'), name: args.name,
       fps: args.fps, bitrateKbps: args.bitrateKbps, timeoutMs: args.timeoutMs

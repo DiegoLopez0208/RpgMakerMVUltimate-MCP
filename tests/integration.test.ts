@@ -81,8 +81,8 @@ describe("consolidated tool surface", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("exposes exactly 17 tools, all annotated and described", () => {
-    expect(TOOL_DEFINITIONS.length).toBe(17);
+  it("exposes exactly 18 tools, all annotated and described", () => {
+    expect(TOOL_DEFINITIONS.length).toBe(18);
     for (const t of TOOL_DEFINITIONS) {
       expect(t.annotations, t.name).toBeDefined();
       expect(t.description.length, t.name).toBeGreaterThan(120);
