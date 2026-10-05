@@ -78,6 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # needed to push the tag and create the GitHub Release
+      actions: write    # needed to start publish-registry.yml
     env:
       VERSION: ${{ needs.version-gate.outputs.version }}
     steps:
@@ -118,6 +119,13 @@ jobs:
             echo "No CHANGELOG entry for $VERSION - generating notes instead."
             gh release create "v$VERSION" --title "v$VERSION" --generate-notes --latest
           fi
+      # The tag above is pushed with GITHUB_TOKEN, which GitHub does not let start other
+      # workflows: v5.19.0 never triggered publish-registry.yml and had to be published by
+      # hand. workflow_dispatch is allowed; a second run for the same version is harmless.
+      - name: Publish to the MCP registry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run publish-registry.yml --ref main -f ref="v$VERSION"
 
   # Kept as a manual escape hatch: pushing a tag by hand still releases. The
   # version check below is what stops a hand-pushed tag from disagreeing with
