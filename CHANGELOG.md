@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [5.19.0] - 2026-10-04
+
+**Upgrade notes.** Projects that use the live bridge must reinstall its plugin (`manage_system` action `install_bridge_plugin`) and restart the playtest: older plugins are refused, and `bridge_status` says so in `lastAuthError`. `delete_database_entry` now refuses entries that are still referenced; pass `dryRun: true` to see where, or `force: true` to delete anyway. Node.js 20 or newer is required.
+
 ### Added
 - **`edit_map` action `paint`** writes one tile into a list of cells or a rectangle of one layer. An autotile is written as its kind, and the painted cells and their eight neighbours get the shapes the editor would give them, so shorelines and wall edges join up; the rest of the map keeps the shapes it was saved with. Layer 5 takes region ids.
 - **`analyze_project` validate reports `invalid-autotile`**: autotile cells whose shape the engine has no table entry for, which make MV throw while drawing the map. `edit_map` action `repair_autotiles` fixes only those cells.
