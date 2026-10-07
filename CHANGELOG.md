@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- **`manage_system` action `stop_playtest`** closes the game this server started for the active project, together with the processes it spawned.
+
+### Fixed
+- **Relaunching a playtest restarted nothing.** NW.js, like Chromium, runs a single instance per profile: a second `game.exe` on the shared profile handed its command to the game already open and exited, so the pid returned was dead and the old game kept running (with the old code and its bridge connection) until someone killed it by hand. `playtest` now gives each project its own profile under `.mcp-cache/nw-profile`, remembers the game it started, and closes that one first. A pid is only killed if it is still a process of the executable that was launched, so a pid the system has since reused is never touched; `keepRunning: true` leaves the earlier game open. The result carries `replacedPid`.
+
 ## [5.19.0] - 2026-10-04
 
 **Upgrade notes.** Projects that use the live bridge must reinstall its plugin (`manage_system` action `install_bridge_plugin`) and restart the playtest: older plugins are refused, and `bridge_status` says so in `lastAuthError`. `delete_database_entry` now refuses entries that are still referenced; pass `dryRun: true` to see where, or `force: true` to delete anyway. Node.js 20 or newer is required.
