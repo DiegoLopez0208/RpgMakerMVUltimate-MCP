@@ -11,7 +11,7 @@
  * server doesn't block on them.
  */
 import { spawn, spawnSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { readFileSync, readlinkSync } from 'fs';
 import { access, writeFile } from 'fs/promises';
 import path from 'path';
 
@@ -36,7 +36,13 @@ function processName(pid: number): string | null {
       const match = /^"([^"]+)"/.exec(out.trim());
       return match ? match[1].toLowerCase().replace(/\.exe$/, '') : null;
     }
-    return readFileSync('/proc/' + pid + '/comm', 'utf8').trim().toLowerCase();
+    // The executable the kernel is running. /proc/<pid>/comm is not a safe name to compare: it is the
+    // thread name, which Node 24 no longer sets to "node", and it is cut at 15 characters.
+    try {
+      return path.basename(readlinkSync('/proc/' + pid + '/exe').replace(/ \(deleted\)$/, '')).toLowerCase();
+    } catch {
+      return readFileSync('/proc/' + pid + '/comm', 'utf8').trim().toLowerCase();
+    }
   } catch {
     return null;
   }
