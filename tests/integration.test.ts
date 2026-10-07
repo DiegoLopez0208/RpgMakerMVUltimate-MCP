@@ -251,6 +251,8 @@ describe("manage_map_event", () => {
   });
 
   it("preset puzzle_switch names both events and keeps the door open (4.1.0 regressions)", async () => {
+    // the fixture has 2 switches; a real project has room for the one the preset uses
+    await dispatchTool("manage_system", { action: "name_switch", id: 7, name: "Puzzle" });
     const result = await dispatchTool("manage_map_event", {
       action: "create", preset: "puzzle_switch",
       mapId: 1, switchX: 1, switchY: 1, doorX: 4, doorY: 4, gameSwitchId: 7,
@@ -263,6 +265,7 @@ describe("manage_map_event", () => {
   });
 
   it("preset door makes an action-button transfer; lockedSwitchId adds a gated second page", async () => {
+    await dispatchTool("manage_system", { action: "name_switch", id: 3, name: "Llave" });
     const open = await dispatchTool("manage_map_event", {
       action: "create", preset: "door", mapId: 1, x: 4, y: 4, destMapId: 9, destX: 5, destY: 6
     }) as any;

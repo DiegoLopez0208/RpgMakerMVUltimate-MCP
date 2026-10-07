@@ -7,7 +7,7 @@ import type { MapEvent, EventCommand, EventPage, CreateMapParams, CreateMapV3Par
 
 import { generateTileLayoutV3, generateFromTemplate, templateTilesetId, THEME_TILESET, makeNpcEvent, makeChestEvent, makeBossEvent, makeTransferEvent, makeDoorEvent } from '../utils/mapGenerator.js';
 import { getTileIdsForTileset } from './assetTools.js';
-import { nearestStandable, chooseSpawn } from '../utils/placement.js';
+import { nearestStandable, chooseSpawn, largestStandableRegion } from '../utils/placement.js';
 import { normalizeMapEvents } from '../utils/eventNormalize.js';
 import { findInvalidAutotiles, reshapeAutotileCells } from '../utils/autotile.js';
 
@@ -583,9 +583,34 @@ async function populateMapEvents(projectPath: string, mapId: number, eventType: 
   opts = opts || {};
   const numCount = toNum(count ?? 3, 'count');
   const added: unknown[] = [];
+  const warnings: string[] = [];
+  // Random spots come from the main walkable area, minus tiles that already hold an event, so
+  // nothing lands in a wall or in a pocket the player cannot reach. Explicit x/y are kept as given.
+  const explicit = opts.x !== undefined || opts.y !== undefined;
+  const flags = explicit ? null : await loadTilesetFlags(projectPath, map.tilesetId);
+  let spots: number[] | null = null;
+  if (flags) {
+    const taken = new Set<number>();
+    for (const existing of map.events) if (existing) taken.add(existing.y * map.width + existing.x);
+    spots = largestStandableRegion(map, flags).filter((index) => !taken.has(index));
+    if (spots.length === 0) throw new Error('Map ' + numMapId + ' has no free walkable tile to place events on.');
+  } else if (!explicit) {
+    warnings.push('Tileset passage flags are unavailable, so positions are random and not checked for walkability.');
+  }
   for (let i = 0; i < numCount!; i++) {
-        const x = opts.x !== undefined ? toNum(opts.x, 'opts.x') : Math.floor(Math.random() * (map.width - 4)) + 2;
-        const y = opts.y !== undefined ? toNum(opts.y, 'opts.y') : Math.floor(Math.random() * (map.height - 4)) + 2;
+        let x: number, y: number;
+        if (spots) {
+          if (spots.length === 0) {
+            warnings.push('Placed ' + i + ' of ' + numCount + ': no more free walkable tiles.');
+            break;
+          }
+          const spot = spots.splice(Math.floor(Math.random() * spots.length), 1)[0];
+          x = spot % map.width;
+          y = Math.floor(spot / map.width);
+        } else {
+          x = opts.x !== undefined ? toNum(opts.x, 'opts.x') : Math.floor(Math.random() * (map.width - 4)) + 2;
+          y = opts.y !== undefined ? toNum(opts.y, 'opts.y') : Math.floor(Math.random() * (map.height - 4)) + 2;
+        }
         const newId = nextId(map.events);
         let ev: MapEvent;
         if (eventType === 'npc') ev = makeNpcEvent(newId, x, y, (opts.name as string) || 'NPC');
@@ -603,7 +628,7 @@ async function populateMapEvents(projectPath: string, mapId: number, eventType: 
         added.push(ev);
     }
   await writeMapJson(projectPath, getMapPath(projectPath, numMapId), map);
-  return { added: added, mapId: numMapId };
+  return warnings.length ? { added: added, mapId: numMapId, warnings: warnings } : { added: added, mapId: numMapId };
 }
 
 /**
