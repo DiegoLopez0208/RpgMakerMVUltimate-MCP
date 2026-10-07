@@ -54,6 +54,7 @@ import { TOOL_DEFINITIONS } from './toolDefinitions.js';
 import { parseToolset, profileOf } from './toolProfiles.js';
 import { TOOL_DEFINITIONS_LEGACY } from './toolDefinitionsLegacy.js';
 import { routeTool, TOOL_NAMES } from './router.js';
+import { imagesFromResult } from './utils/imageContent.js';
 
 /**
  * The version advertised in the MCP handshake — the only version a client sees.
@@ -1073,12 +1074,15 @@ export async function main() {
       const structured = (typeof result === 'object' && result !== null && !Array.isArray(result))
         ? result as Record<string, unknown>
         : { result: result };
+      // Screenshots and renders are returned as pictures too, so the client model can see them.
+      const images = await imagesFromResult(result);
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(result, null, 2)
-          }
+          },
+          ...images
         ],
         structuredContent: structured
       };

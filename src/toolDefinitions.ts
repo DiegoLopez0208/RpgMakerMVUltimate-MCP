@@ -255,7 +255,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'take_screenshot',
-    description: 'Capture the current RPG Maker MV playtest frame through the authenticated MCP bridge and save it as a PNG under `.mcp-cache/screenshots/`. Returns `{path, bytes, mimeType, name}` so the image can be inspected or attached as QA evidence without shell commands. Requires `manage_system` actions `install_bridge_plugin`, `bridge_start`, and `playtest` first. Optional `name` becomes a safe filename prefix; each capture keeps a timestamp. `manage_system {action:"bridge_screenshot"}` remains available as a compatibility alias.',
+    description: 'Capture the current RPG Maker MV playtest frame through the authenticated MCP bridge and save it as a PNG under `.mcp-cache/screenshots/`. Returns `{path, bytes, mimeType, name}` and the PNG itself as an image block (up to 1.5 MB; RPGMV_INLINE_IMAGES=0 turns that off), so you can look at it. Requires `manage_system` actions `install_bridge_plugin`, `bridge_start`, and `playtest` first. Optional `name` becomes a safe filename prefix; each capture keeps a timestamp. `manage_system {action:"bridge_screenshot"}` remains available as a compatibility alias.',
     annotations: { title: 'Take playtest screenshot', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     inputSchema: {
       type: 'object',
