@@ -14,7 +14,8 @@ import {
   findUsage, explainSwitch, explainVariable, buildMapGraph,
   reachableMaps, unreachableMaps, whatBreaksIfMapRemoved, type RefKind,
 } from "./graph.js";
-import { validateProject, type Severity } from "./validate.js";
+import { type Severity } from "./validate.js";
+import { validateWithAssets } from "./assetCheck.js";
 import { parseEventCommands, astToOutline, type RawCommand } from "./eventAst.js";
 import { analyzePlugins } from "./plugins.js";
 import { critiqueMap, type CritiqueEvent } from "./critique.js";
@@ -188,7 +189,7 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
 
   switch (view) {
     case "overview": {
-      const report = validateProject(index);
+      const report = await validateWithAssets(projectPath, index);
       return {
         gameTitle: index.gameTitle,
         start: index.start,
@@ -209,7 +210,7 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
         namedVariables: index.variables.filter((v) => v.name),
       };
     case "validate": {
-      const report = validateProject(index);
+      const report = await validateWithAssets(projectPath, index);
       const filter = args.severity ? String(args.severity) as Severity : undefined;
       const issues = filter ? report.issues.filter((i) => i.severity === filter) : report.issues;
       return { issueCount: issues.length, bySeverity: report.bySeverity, issues };
