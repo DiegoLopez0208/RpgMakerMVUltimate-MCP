@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [5.20.0] - 2026-10-07
+
+**Upgrade notes.** No bridge reinstall is needed. `playtest` now starts the game with its own NW.js profile under `.mcp-cache/nw-profile` (add it to your `.gitignore` if the project is under git) and closes the game an earlier playtest started; pass `keepRunning: true` to keep the old one. Tool results for `take_screenshot` and `run_playtest` now include the PNG as an image block; set `RPGMV_INLINE_IMAGES=0` to get paths only. `analyze_project` validate can report new warnings (`missing-asset`, `asset-case`), and `generate_map` and the `manage_map_event` presets can return `warnings`; none of them blocks the write, except presets that point at a troop, item, weapon, armor or switch that does not exist, which are now refused.
+
 ### Added
 - **`manage_system` action `stop_playtest`** closes the game this server started for the active project, together with the processes it spawned.
 - **`manage_system` action `resize_list`** `{section, size}` sets the highest valid switch or variable id (1 to 5000), like the editor's "Change Maximum". MV ignores ids past the end of these arrays, so an event writing variable 40 into a 20-variable project did nothing and gave no error. Growing adds empty names; shrinking past a named id is refused unless `force: true`.
