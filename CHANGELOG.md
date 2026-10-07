@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+- **`generate_map` checks that the map can be walked.** Every mode except `blank` and `duplicate` now returns `walkability` per generated map (walkable tiles, size of the main walkable area, tiles cut off from it) and `warnings` when the map has no walkable tile, only a tiny one, or more than a fifth of its walkable tiles unreachable from the main area. The map is still written; the warning says what to fix.
+- **`manage_map_event` presets validate before writing.** A troop, item, weapon, armor or switch that does not exist, or a position outside the map, is refused. A tile the player cannot stand on, a tile that already holds an event, and a teleport or door destination that is unwalkable or whose map does not exist yet come back as `warnings` on the created event. Action-button doors may sit on wall tiles without a warning.
+
+### Changed
+- **`populate` places events on free tiles of the main walkable area** instead of random coordinates that could land in a wall or an unreachable pocket. It stops with a warning when the area is full, and refuses a map with no free tile. Explicit `opts.x`/`opts.y` are used as given.
+- The `set_starting_position` description now says what it already did: a tile the player cannot stand on is moved to the nearest walkable one, reported as `relocated`.
+
 ## [5.19.0] - 2026-10-04
 
 **Upgrade notes.** Projects that use the live bridge must reinstall its plugin (`manage_system` action `install_bridge_plugin`) and restart the playtest: older plugins are refused, and `bridge_status` says so in `lastAuthError`. `delete_database_entry` now refuses entries that are still referenced; pass `dryRun: true` to see where, or `force: true` to delete anyway. Node.js 20 or newer is required.

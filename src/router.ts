@@ -14,6 +14,7 @@ import { searchTemplates } from './utils/mapGenerator.js';
 import { analyzeProject } from './intel/analyze.js';
 import { validateConsolidated } from './utils/validation.js';
 import { referencesTo, type DeletableEntity } from './intel/deleteGuard.js';
+import { checkEventPreset, withWalkReport } from './tools/walkability.js';
 
 type ExecuteTool = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -326,7 +327,7 @@ async function editMap(executeTool: ExecuteTool, args: Record<string, unknown>) 
   }
 }
 
-async function manageMapEvent(executeTool: ExecuteTool, args: Record<string, unknown>) {
+async function manageMapEvent(executeTool: ExecuteTool, projectPath: string, args: Record<string, unknown>) {
   const action = (args.action as string) || 'create';
   switch (action) {
     case 'create': {
@@ -338,7 +339,10 @@ async function manageMapEvent(executeTool: ExecuteTool, args: Record<string, unk
         if (!presetTool) {
           throw new Error('Unknown preset "' + args.preset + '". Valid presets: ' + Object.keys(EVENT_PRESETS).join(', '));
         }
-        return executeTool(presetTool, rest);
+        // Missing maps, troops, items and switches stop here; odd placements come back as warnings.
+        const warnings = await checkEventPreset(projectPath, args.preset as string, rest);
+        const created = await executeTool(presetTool, rest);
+        return warnings.length && typeof created === 'object' && created !== null ? { ...created, warnings } : created;
       }
       return executeTool('create_map_event', rest);
     }
@@ -515,9 +519,13 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
     case 'update_database_entry': return updateDatabaseEntry(executeTool, args);
     case 'delete_database_entry': return deleteDatabaseEntry(executeTool, projectPath, args);
     case 'query_map': return queryMap(executeTool, args);
-    case 'generate_map': return generateMap(executeTool, projectPath, args);
+    case 'generate_map': {
+      const generated = await generateMap(executeTool, projectPath, args);
+      // A blank map has nothing to walk on by design, and a duplicate copies a map that was already judged.
+      return args.mode === 'blank' || args.mode === 'duplicate' ? generated : withWalkReport(projectPath, generated);
+    }
     case 'edit_map': return editMap(executeTool, args);
-    case 'manage_map_event': return manageMapEvent(executeTool, args);
+    case 'manage_map_event': return manageMapEvent(executeTool, projectPath, args);
     case 'manage_system': return manageSystem(executeTool, args);
     case 'take_screenshot':
       // With a mapId the map is rendered headless by the engine; without one the live playtest is captured.
