@@ -14,6 +14,7 @@ import { searchTemplates } from './utils/mapGenerator.js';
 import { analyzeProject } from './intel/analyze.js';
 import { validateConsolidated } from './utils/validation.js';
 import { referencesTo, type DeletableEntity } from './intel/deleteGuard.js';
+import { checkEventPreset, withWalkReport } from './tools/walkability.js';
 
 type ExecuteTool = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -116,7 +117,28 @@ async function listEntity(executeTool: ExecuteTool, _projectPath: string, entity
   return executeTool(LIST_TOOL[entity], {});
 }
 
-async function createDatabaseEntry(executeTool: ExecuteTool, args: Record<string, unknown>) {
+const MAX_BATCH_ENTRIES = 200;
+
+async function createDatabaseEntry(executeTool: ExecuteTool, args: Record<string, unknown>): Promise<unknown> {
+  if (args.entries !== undefined) {
+    const entries = args.entries;
+    if (!Array.isArray(entries) || entries.length === 0 || entries.length > MAX_BATCH_ENTRIES) {
+      throw new Error('entries must be a list of 1 to ' + MAX_BATCH_ENTRIES + ' data objects');
+    }
+    const created: unknown[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      try {
+        const entry: unknown = entries[i];
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new Error('each entry must be an object of fields');
+        created.push(await createDatabaseEntry(executeTool, { ...args, entries: undefined, data: entries[i] }));
+      } catch (error) {
+        const ids = created.map((entry) => (entry as { id?: number } | null)?.id).filter((id) => id !== undefined);
+        throw new Error('entries[' + i + '] failed: ' + (error instanceof Error ? error.message : String(error)) +
+          '. ' + created.length + ' earlier entries were created' + (ids.length ? ' (ids ' + ids.join(', ') + ')' : '') + '.');
+      }
+    }
+    return { count: created.length, created: created };
+  }
   const data = (args.data || {}) as Record<string, unknown>;
 
   if (args.preset) {
@@ -326,7 +348,7 @@ async function editMap(executeTool: ExecuteTool, args: Record<string, unknown>) 
   }
 }
 
-async function manageMapEvent(executeTool: ExecuteTool, args: Record<string, unknown>) {
+async function manageMapEvent(executeTool: ExecuteTool, projectPath: string, args: Record<string, unknown>) {
   const action = (args.action as string) || 'create';
   switch (action) {
     case 'create': {
@@ -338,7 +360,10 @@ async function manageMapEvent(executeTool: ExecuteTool, args: Record<string, unk
         if (!presetTool) {
           throw new Error('Unknown preset "' + args.preset + '". Valid presets: ' + Object.keys(EVENT_PRESETS).join(', '));
         }
-        return executeTool(presetTool, rest);
+        // Missing maps, troops, items and switches stop here; odd placements come back as warnings.
+        const warnings = await checkEventPreset(projectPath, args.preset as string, rest);
+        const created = await executeTool(presetTool, rest);
+        return warnings.length && typeof created === 'object' && created !== null ? { ...created, warnings } : created;
       }
       return executeTool('create_map_event', rest);
     }
@@ -402,6 +427,19 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         id: requireArg(args, 'id', 'manage_system action "name_variable"'),
         name: requireArg(args, 'name', 'manage_system action "name_variable"')
       });
+    case 'resize_list':
+      return executeTool('resize_system_list', {
+        section: requireArg(args, 'section', 'manage_system action "resize_list"'),
+        size: requireArg(args, 'size', 'manage_system action "resize_list"'),
+        force: args.force
+      });
+    case 'list_backups':
+      return executeTool('list_backups', { file: args.file });
+    case 'restore_backup':
+      return executeTool('restore_backup', {
+        file: requireArg(args, 'file', 'manage_system action "restore_backup"'),
+        backup: args.backup
+      });
     case 'set_starting_position':
       return executeTool('update_starting_position', {
         mapId: requireArg(args, 'mapId', 'manage_system action "set_starting_position"'),
@@ -454,7 +492,7 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         zip: args.zip, prune: args.prune, dryRun: args.dryRun
       });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, stop_playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates, export_web');
+      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, resize_list, list_backups, restore_backup, set_starting_position, create_plugin, scaffold_project, playtest, stop_playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates, export_web');
   }
 }
 
@@ -517,9 +555,13 @@ export async function routeTool(executeTool: ExecuteTool, projectPath: string, n
     case 'update_database_entry': return updateDatabaseEntry(executeTool, args);
     case 'delete_database_entry': return deleteDatabaseEntry(executeTool, projectPath, args);
     case 'query_map': return queryMap(executeTool, args);
-    case 'generate_map': return generateMap(executeTool, projectPath, args);
+    case 'generate_map': {
+      const generated = await generateMap(executeTool, projectPath, args);
+      // A blank map has nothing to walk on by design, and a duplicate copies a map that was already judged.
+      return args.mode === 'blank' || args.mode === 'duplicate' ? generated : withWalkReport(projectPath, generated);
+    }
     case 'edit_map': return editMap(executeTool, args);
-    case 'manage_map_event': return manageMapEvent(executeTool, args);
+    case 'manage_map_event': return manageMapEvent(executeTool, projectPath, args);
     case 'manage_system': return manageSystem(executeTool, args);
     case 'take_screenshot':
       // With a mapId the map is rendered headless by the engine; without one the live playtest is captured.
