@@ -54,6 +54,7 @@ import { TOOL_DEFINITIONS } from './toolDefinitions.js';
 import { parseToolset, profileOf } from './toolProfiles.js';
 import { TOOL_DEFINITIONS_LEGACY } from './toolDefinitionsLegacy.js';
 import { routeTool, TOOL_NAMES } from './router.js';
+import * as backupTools from './tools/backupTools.js';
 
 /**
  * The version advertised in the MCP handshake — the only version a client sees.
@@ -334,6 +335,7 @@ async function validateMap(projectPath: string, mapId: number) {
  * Record<string, unknown> coming off the transport.
  */
 interface ToolArgs {
+  section: string; size: number; force: boolean; backup: string;
   // numeric identifiers / coordinates / counts
   id: number; mapId: number; eventId: number; x: number; y: number;
   x1: number; y1: number; x2: number; y2: number; layer: number;
@@ -501,6 +503,12 @@ case 'search_map_events':
       return await systemTools.updateGameTitle(p, args.title);
 case 'update_starting_position':
   return await systemTools.updateStartingPosition(p, args.mapId, args.x, args.y);
+case 'resize_system_list':
+  return await systemTools.resizeSystemList(p, args.section as string, args.size, args.force === true);
+case 'list_backups':
+  return await backupTools.listBackups(p, args.file as string | undefined);
+case 'restore_backup':
+  return await backupTools.restoreBackup(p, { file: args.file as string, backup: args.backup as string | undefined });
 case 'list_plugins':
   return await systemTools.listPlugins(p);
 case 'get_plugin_status':

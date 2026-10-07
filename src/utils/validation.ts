@@ -297,7 +297,7 @@ const ManageMapEventSchema = z.object({
 
 const ManageSystemSchema = z.object({
   action: z.enum([
-    "get", "set_title", "name_switch", "name_variable", "set_starting_position",
+    "get", "set_title", "name_switch", "name_variable", "resize_list", "list_backups", "restore_backup", "set_starting_position",
     "create_plugin", "scaffold_project", "playtest", "open_editor",
     "mine_templates",
     "install_bridge_plugin", "bridge_start", "bridge_stop", "bridge_status",
@@ -326,6 +326,9 @@ const ManageSystemSchema = z.object({
   telemetryInterval: idLike.optional(),
   command: z.enum(["ping", "get_state", "reload_map", "reload_database", "capture_screenshot", "teleport_player", "interact", "press_button"]).optional(),
   file: z.string().optional(),
+  // resize_list / restore_backup
+  force: z.boolean().optional(),
+  backup: z.string().optional(),
   types: z.array(z.string()).optional(),
   limit: idLike.optional(),
   peek: z.boolean().optional(),

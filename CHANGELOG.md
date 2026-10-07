@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+- **`manage_system` action `resize_list`** `{section, size}` sets the highest valid switch or variable id (1 to 5000), like the editor's "Change Maximum". MV ignores ids past the end of these arrays, so an event writing variable 40 into a 20-variable project did nothing and gave no error. Growing adds empty names; shrinking past a named id is refused unless `force: true`.
+- **`manage_system` actions `list_backups` and `restore_backup`.** Every write already kept the previous version in `.mcp-backups/`; now they can be listed (`{file?}`, grouped by file, newest first) and put back (`{file, backup?}`, default the newest, which undoes the last write). Restoring is a write too, so the version it replaces is backed up and a restore can be undone. Covers `data/*.json` and `plugins.js`; a backup that is not valid JSON is refused.
+- **`create_database_entry` takes `entries`** (up to 200 data objects) instead of `data`, to create many items, skills or enemies in one call. It returns `{count, created[]}`; a failing entry stops the run and the error names the entries already created.
+
+### Changed
+- **`create_plugin` keeps `js/plugins.js` in the editor's format.** It used to rewrite the whole file as indented JSON under a different header. It now keeps the file's own header and line endings and writes one compact entry per line, so adding or replacing a plugin changes only that line.
+
 ## [5.19.0] - 2026-10-04
 
 **Upgrade notes.** Projects that use the live bridge must reinstall its plugin (`manage_system` action `install_bridge_plugin`) and restart the playtest: older plugins are refused, and `bridge_status` says so in `lastAuthError`. `delete_database_entry` now refuses entries that are still referenced; pass `dryRun: true` to see where, or `force: true` to delete anyway. Node.js 20 or newer is required.
