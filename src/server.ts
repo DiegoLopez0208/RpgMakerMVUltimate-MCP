@@ -522,6 +522,8 @@ case 'scaffold_project':
   return await scaffoldTools.scaffoldProject(p, args as unknown as scaffoldTools.ScaffoldParams);
 case 'playtest_project':
   return await runTools.playtest(p, args as unknown as runTools.RunParams);
+case 'stop_playtest':
+  return await runTools.stopPlaytest(p);
 case 'open_in_editor':
   return await runTools.openInEditor(p, args as unknown as runTools.RunParams);
 

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **`manage_system` action `stop_playtest`** closes the game this server started for the active project, together with the processes it spawned.
 - **`manage_system` action `resize_list`** `{section, size}` sets the highest valid switch or variable id (1 to 5000), like the editor's "Change Maximum". MV ignores ids past the end of these arrays, so an event writing variable 40 into a 20-variable project did nothing and gave no error. Growing adds empty names; shrinking past a named id is refused unless `force: true`.
 - **`manage_system` actions `list_backups` and `restore_backup`.** Every write already kept the previous version in `.mcp-backups/`; now they can be listed (`{file?}`, grouped by file, newest first) and put back (`{file, backup?}`, default the newest, which undoes the last write). Restoring is a write too, so the version it replaces is backed up and a restore can be undone. Covers `data/*.json` and `plugins.js`; a backup that is not valid JSON is refused.
 - **`create_database_entry` takes `entries`** (up to 200 data objects) instead of `data`, to create many items, skills or enemies in one call. It returns `{count, created[]}`; a failing entry stops the run and the error names the entries already created.
@@ -15,6 +16,9 @@
 - **`create_plugin` keeps `js/plugins.js` in the editor's format.** It used to rewrite the whole file as indented JSON under a different header. It now keeps the file's own header and line endings and writes one compact entry per line, so adding or replacing a plugin changes only that line.
 - **`populate` places events on free tiles of the main walkable area** instead of random coordinates that could land in a wall or an unreachable pocket. It stops with a warning when the area is full, and refuses a map with no free tile. Explicit `opts.x`/`opts.y` are used as given.
 - The `set_starting_position` description now says what it already did: a tile the player cannot stand on is moved to the nearest walkable one, reported as `relocated`.
+
+### Fixed
+- **Relaunching a playtest restarted nothing.** NW.js, like Chromium, runs a single instance per profile: a second `game.exe` on the shared profile handed its command to the game already open and exited, so the pid returned was dead and the old game kept running (with the old code and its bridge connection) until someone killed it by hand. `playtest` now gives each project its own profile under `.mcp-cache/nw-profile`, remembers the game it started, and closes that one first. A pid is only killed if it is still a process of the executable that was launched, so a pid the system has since reused is never touched; `keepRunning: true` leaves the earlier game open. The result carries `replacedPid`.
 
 ## [5.19.0] - 2026-10-04
 

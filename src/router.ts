@@ -459,7 +459,9 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         startMapId: args.mapId, startX: args.x, startY: args.y
       });
     case 'playtest':
-      return executeTool('playtest_project', { install: args.install, test: args.test });
+      return executeTool('playtest_project', { install: args.install, test: args.test, keepRunning: args.keepRunning });
+    case 'stop_playtest':
+      return executeTool('stop_playtest', {});
     case 'open_editor':
       return executeTool('open_in_editor', { install: args.install });
     case 'install_bridge_plugin':
@@ -490,7 +492,7 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         zip: args.zip, prune: args.prune, dryRun: args.dryRun
       });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, resize_list, list_backups, restore_backup, set_starting_position, create_plugin, scaffold_project, playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates, export_web');
+      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, resize_list, list_backups, restore_backup, set_starting_position, create_plugin, scaffold_project, playtest, stop_playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates, export_web');
   }
 }
 

@@ -55,7 +55,8 @@ describe("playtest (Phase: run)", () => {
       expect(result.launched).toBe(true);
       expect(spawnCalls).toHaveLength(1);
       expect(spawnCalls[0].opts.cwd).toBe(dir);
-      expect(spawnCalls[0].args).toEqual([dir, "test"]);
+      // the profile of its own keeps a launch from being handed to a game that is already open
+      expect(spawnCalls[0].args).toEqual([dir, "test", "--user-data-dir=" + path.join(dir, ".mcp-cache", "nw-profile")]);
     } finally {
       rmSync(install, { recursive: true, force: true });
     }
