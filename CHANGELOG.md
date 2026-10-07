@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Screenshots and renders come back as pictures.** `take_screenshot` (live game, or headless with `mapId`) and `run_playtest` frames are now attached to the tool result as MCP `image` blocks next to the JSON, so the client model can see the map instead of only reading a file path. Only PNGs this server wrote under `.mcp-cache/renders` or `.mcp-cache/screenshots` are attached, at most 4 per result and 1.5 MB each; set `RPGMV_INLINE_IMAGES=0` to get paths only.
+
 ## [5.19.0] - 2026-10-04
 
 **Upgrade notes.** Projects that use the live bridge must reinstall its plugin (`manage_system` action `install_bridge_plugin`) and restart the playtest: older plugins are refused, and `bridge_status` says so in `lastAuthError`. `delete_database_entry` now refuses entries that are still referenced; pass `dryRun: true` to see where, or `force: true` to delete anyway. Node.js 20 or newer is required.
