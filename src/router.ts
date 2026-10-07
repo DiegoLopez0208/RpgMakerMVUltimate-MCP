@@ -117,7 +117,28 @@ async function listEntity(executeTool: ExecuteTool, _projectPath: string, entity
   return executeTool(LIST_TOOL[entity], {});
 }
 
-async function createDatabaseEntry(executeTool: ExecuteTool, args: Record<string, unknown>) {
+const MAX_BATCH_ENTRIES = 200;
+
+async function createDatabaseEntry(executeTool: ExecuteTool, args: Record<string, unknown>): Promise<unknown> {
+  if (args.entries !== undefined) {
+    const entries = args.entries;
+    if (!Array.isArray(entries) || entries.length === 0 || entries.length > MAX_BATCH_ENTRIES) {
+      throw new Error('entries must be a list of 1 to ' + MAX_BATCH_ENTRIES + ' data objects');
+    }
+    const created: unknown[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      try {
+        const entry: unknown = entries[i];
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new Error('each entry must be an object of fields');
+        created.push(await createDatabaseEntry(executeTool, { ...args, entries: undefined, data: entries[i] }));
+      } catch (error) {
+        const ids = created.map((entry) => (entry as { id?: number } | null)?.id).filter((id) => id !== undefined);
+        throw new Error('entries[' + i + '] failed: ' + (error instanceof Error ? error.message : String(error)) +
+          '. ' + created.length + ' earlier entries were created' + (ids.length ? ' (ids ' + ids.join(', ') + ')' : '') + '.');
+      }
+    }
+    return { count: created.length, created: created };
+  }
   const data = (args.data || {}) as Record<string, unknown>;
 
   if (args.preset) {
@@ -406,6 +427,19 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         id: requireArg(args, 'id', 'manage_system action "name_variable"'),
         name: requireArg(args, 'name', 'manage_system action "name_variable"')
       });
+    case 'resize_list':
+      return executeTool('resize_system_list', {
+        section: requireArg(args, 'section', 'manage_system action "resize_list"'),
+        size: requireArg(args, 'size', 'manage_system action "resize_list"'),
+        force: args.force
+      });
+    case 'list_backups':
+      return executeTool('list_backups', { file: args.file });
+    case 'restore_backup':
+      return executeTool('restore_backup', {
+        file: requireArg(args, 'file', 'manage_system action "restore_backup"'),
+        backup: args.backup
+      });
     case 'set_starting_position':
       return executeTool('update_starting_position', {
         mapId: requireArg(args, 'mapId', 'manage_system action "set_starting_position"'),
@@ -456,7 +490,7 @@ async function manageSystem(executeTool: ExecuteTool, args: Record<string, unkno
         zip: args.zip, prune: args.prune, dryRun: args.dryRun
       });
     default:
-      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, set_starting_position, create_plugin, scaffold_project, playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates, export_web');
+      throw new Error('Unknown action "' + action + '". Valid actions: get, set_title, name_switch, name_variable, resize_list, list_backups, restore_backup, set_starting_position, create_plugin, scaffold_project, playtest, open_editor, install_bridge_plugin, bridge_start, bridge_stop, bridge_status, bridge_telemetry, bridge_command, take_screenshot, bridge_screenshot, mine_templates, export_web');
   }
 }
 
