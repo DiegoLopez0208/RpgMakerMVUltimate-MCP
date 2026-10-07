@@ -61,7 +61,7 @@ export function isStandable(map: PlaceableMap, flags: number[], x: number, y: nu
 // playable area — isolated one-off standable tiles (a floor cell walled in on
 // all sides) are intentionally excluded so we never place an event somewhere
 // the player can't reach.
-function largestStandableRegion(map: PlaceableMap, flags: number[]): number[] {
+export function largestStandableRegion(map: PlaceableMap, flags: number[]): number[] {
   const w = map.width, h = map.height;
   const seen = new Uint8Array(w * h);
   let best: number[] = [];

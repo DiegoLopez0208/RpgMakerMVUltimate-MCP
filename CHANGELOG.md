@@ -3,7 +3,13 @@
 ## [Unreleased]
 
 ### Added
+- **`generate_map` checks that the map can be walked.** Every mode except `blank` and `duplicate` now returns `walkability` per generated map (walkable tiles, size of the main walkable area, tiles cut off from it) and `warnings` when the map has no walkable tile, only a tiny one, or more than a fifth of its walkable tiles unreachable from the main area. The map is still written; the warning says what to fix.
+- **`manage_map_event` presets validate before writing.** A troop, item, weapon, armor or switch that does not exist, or a position outside the map, is refused. A tile the player cannot stand on, a tile that already holds an event, and a teleport or door destination that is unwalkable or whose map does not exist yet come back as `warnings` on the created event. Action-button doors may sit on wall tiles without a warning.
 - **Screenshots and renders come back as pictures.** `take_screenshot` (live game, or headless with `mapId`) and `run_playtest` frames are now attached to the tool result as MCP `image` blocks next to the JSON, so the client model can see the map instead of only reading a file path. Only PNGs this server wrote under `.mcp-cache/renders` or `.mcp-cache/screenshots` are attached, at most 4 per result and 1.5 MB each; set `RPGMV_INLINE_IMAGES=0` to get paths only.
+
+### Changed
+- **`populate` places events on free tiles of the main walkable area** instead of random coordinates that could land in a wall or an unreachable pocket. It stops with a warning when the area is full, and refuses a map with no free tile. Explicit `opts.x`/`opts.y` are used as given.
+- The `set_starting_position` description now says what it already did: a tile the player cannot stand on is moved to the nearest walkable one, reported as `relocated`.
 
 ## [5.19.0] - 2026-10-04
 
