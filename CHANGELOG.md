@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **`analyze_project` validate reports image and audio files the project lacks** (`missing-asset`, warning). It reads the names the engine would request, from map battlebacks, parallax and BGM/BGS, event graphics, audio, picture and battleback commands, actors, enemies, animations, tilesets and `System.json`, and compares them with `img/` and `audio/`. Each distinct file is reported once with the first place that uses it and how many times. A file that exists only under a different letter case is reported as `asset-case`, since it loads on Windows and fails on a case-sensitive web host. A folder that does not exist is skipped, and RTP assets that are not copied into the project show up too, so the message says so. The counts feed `bySeverity` and the `overview` health.
+
 ## [5.19.0] - 2026-10-04
 
 **Upgrade notes.** Projects that use the live bridge must reinstall its plugin (`manage_system` action `install_bridge_plugin`) and restart the playtest: older plugins are refused, and `bridge_status` says so in `lastAuthError`. `delete_database_entry` now refuses entries that are still referenced; pass `dryRun: true` to see where, or `force: true` to delete anyway. Node.js 20 or newer is required.
