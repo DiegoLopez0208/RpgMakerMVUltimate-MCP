@@ -37,6 +37,8 @@ It does three things that are usually missing:
 
 Install **Node.js 20.19.0 or newer**, and close the MV editor before asking the agent to edit project files. Start with a copy of your project.
 
+For containers and directory hosting, see [Docker and Glama build configuration](docs/docker.md).
+
 Check the environment before adding the server (PowerShell on Windows):
 
 ```powershell
