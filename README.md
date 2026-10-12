@@ -15,7 +15,7 @@
 
 <sub>24-second tour, <a href="docs/promo.mp4">click for the video with sound</a>. Telemetry and analysis output in the video are illustrative examples.</sub>
 
-**[Quick start](#-quick-start) · [First useful result](docs/first-result.md) · [Map generation](#️-map-generation) · [Live bridge](#-the-live-bridge) · [Intelligence](#-project-intelligence) · [Tools](#-the-18-tools)**
+**[Quick start](#-quick-start) · [First useful result](docs/first-result.md) · [Map generation](#️-map-generation) · [Live bridge](#-the-live-bridge) · [Intelligence](#-project-intelligence) · [Tools](#tools)**
 
 </div>
 
@@ -46,6 +46,8 @@ npx.cmd -y rpgmaker-mv-mcp --doctor "C:/path/to/your/RPGMakerMV/project"
 `coreReady: true` means Node and System data checks pass. `headlessReady: true` additionally means Playwright and Chromium are available. The check does not start a browser or certify assets/plugins. Bridge warnings do not block offline queries. Missing Chromium: run `npx.cmd playwright install chromium-headless-shell`, or set `RPGMAKER_MCP_CHROMIUM` to your Chrome executable.
 
 **1 — Add it to your MCP client.** No clone needed; the package ships an executable.
+
+### Configuration
 
 ```json
 {
@@ -274,7 +276,9 @@ Index, overview, validation, graph, usage, explain and refactor also report inco
 
 <br>
 
-## 🧰 The 18 tools
+## Tools
+
+The server exposes **18 consolidated tools**. The legacy aliases are optional.
 
 <details>
 <summary>Click to expand the full surface</summary>
