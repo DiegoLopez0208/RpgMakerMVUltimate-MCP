@@ -11,6 +11,18 @@ permissions:
   contents: read
 
 jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: docker build -t rpgmaker-mv-mcp:docker-test .
+      - run: node scripts/verify-docker-protocol.mjs
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -37,7 +49,7 @@ jobs:
   # what shipped, not as the trigger — a tag pushed with GITHUB_TOKEN does not
   # start another workflow run, which is exactly what keeps this from looping.
   version-gate:
-    needs: test
+    needs: [test, docker]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
@@ -129,7 +141,7 @@ jobs:
   # version check below is what stops a hand-pushed tag from disagreeing with
   # package.json, which is the failure this whole file now avoids by default.
   release:
-    needs: test
+    needs: [test, docker]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
