@@ -1,5 +1,5 @@
 /**
- * search.ts — find things by meaning, not by ID.
+ * search.ts — offline text search across names, dialogue and descriptions.
  *
  * The structured index answers "what references switch 5?"; this answers
  * "where is the blacksmith?" / "the dark forest" / "the sad dialogue" by
@@ -11,7 +11,7 @@
  * for (#5) and can later be backed by real embeddings without changing callers.
  */
 
-import { readJson } from "../utils/fileHandler.js";
+import { diagnosticReader } from './readDiagnostics.js';
 import type { RawCommand } from "./eventAst.js";
 
 export interface SearchDoc {
@@ -36,12 +36,16 @@ const STOPWORDS = new Set([
   "el", "la", "los", "las", "un", "una", "de", "del", "y", "o", "en",
 ]);
 
+function normalize(s: string): string {
+  return s.normalize('NFKC').toLowerCase();
+}
+
 function tokenize(s: string): string[] {
-  return (s.toLowerCase().match(/[a-z0-9áéíóúñü]+/gi) ?? []).map((t) => t.toLowerCase());
+  return normalize(s).match(/[\p{L}\p{N}\p{M}]+/gu) ?? [];
 }
 
 function queryTerms(q: string): string[] {
-  return [...new Set(tokenize(q).filter((t) => t.length > 1 && !STOPWORDS.has(t)))];
+  return [...new Set(tokenize(q).filter((t) => !STOPWORDS.has(t)))];
 }
 
 /** Rank docs against a query. Label matches weigh more than body matches; an
@@ -49,12 +53,12 @@ function queryTerms(q: string): string[] {
 export function rankDocuments(docs: SearchDoc[], query: string, limit = 20): SearchHit[] {
   const terms = queryTerms(query);
   if (terms.length === 0) return [];
-  const phrase = query.trim().toLowerCase();
+  const phrase = normalize(query.trim());
 
   const hits: SearchHit[] = [];
   for (const doc of docs) {
-    const label = doc.label.toLowerCase();
-    const text = doc.text.toLowerCase();
+    const label = normalize(doc.label);
+    const text = normalize(doc.text);
     const labelTokens = tokenize(doc.label);
     const bodyTokens = tokenize(doc.text);
     let score = 0;
@@ -121,8 +125,12 @@ function entityDocs(arr: unknown, type: string, textFields: string[]): SearchDoc
 
 /** Read the project and build the searchable document set. */
 export async function gatherDocuments(projectPath: string): Promise<SearchDoc[]> {
+  return (await gatherSearchIndex(projectPath)).docs;
+}
+
+export async function gatherSearchIndex(projectPath: string) {
   const docs: SearchDoc[] = [];
-  const safe = async (f: string) => { try { return await readJson(projectPath, f); } catch { return null; } };
+  const { read: safe, diagnostics } = diagnosticReader(projectPath);
 
   docs.push(...entityDocs(await safe("Items.json"), "item", ["description", "note"]));
   docs.push(...entityDocs(await safe("Weapons.json"), "weapon", ["description", "note"]));
@@ -160,5 +168,5 @@ export async function gatherDocuments(projectPath: string): Promise<SearchDoc[]>
     }
   }
 
-  return docs;
+  return { docs, diagnostics };
 }

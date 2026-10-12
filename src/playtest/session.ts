@@ -29,7 +29,7 @@ type PlaywrightModule = typeof import('playwright-core');
  */
 export async function loadPlaywright(): Promise<PlaywrightModule> {
   if (Number(process.versions.node.split('.')[0]) < 20) {
-    throw new Error('Headless rendering requires Node.js 20 or newer for playwright-core; the other MV tools remain available on Node.js 18.');
+    throw new Error('Headless rendering requires Node.js 20 or newer for playwright-core; this package requires Node.js 20.19.0 or newer.');
   }
   try {
     const mod = (await import('playwright-core')) as PlaywrightModule & {

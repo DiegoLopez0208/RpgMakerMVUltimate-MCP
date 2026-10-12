@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [5.21.0] - 2026-10-12
+
+### Fixed
+- Refuse filesystem escapes through symlinks and Windows junctions, including new files under linked parents.
+- Validate System JSON and known fields before selecting a project; reject MZ engine files while supporting partial MV data.
+- Match Unicode names in offline text search, including CJK and normalized Unicode.
+- Report skipped/unreadable files and incomplete analysis; empty search results now explain their limits.
+- Refuse stale-read writes, competing file writers and failed backups; use unique temporary files and backup identifiers. Multi-file edits are still not transactions.
+- Update Sharp, the MCP SDK and test dependencies; make high-severity npm audit findings fail CI, with Windows and Linux test jobs.
+
+### Added
+- Read-only `--doctor [projectPath]` environment check and three first-result recipes.
+
+### Changed
+- Require Node.js 20.19.0+; align docs with 18 tools and lexical search.
+
+
 ## [5.20.0] - 2026-10-07
 
 **Upgrade notes.** No bridge reinstall is needed. `playtest` now starts the game with its own NW.js profile under `.mcp-cache/nw-profile` (add it to your `.gitignore` if the project is under git) and closes the game an earlier playtest started; pass `keepRunning: true` to keep the old one. Tool results for `take_screenshot` and `run_playtest` now include the PNG as an image block; set `RPGMV_INLINE_IMAGES=0` to get paths only. `analyze_project` validate can report new warnings (`missing-asset`, `asset-case`), and `generate_map` and the `manage_map_event` presets can return `warnings`; none of them blocks the write, except presets that point at a troop, item, weapon, armor or switch that does not exist, which are now refused.

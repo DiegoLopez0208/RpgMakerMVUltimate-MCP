@@ -12,9 +12,10 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node-version: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
@@ -28,10 +29,7 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run test:protocol
-      - run: npm audit --audit-level=high || true
-      - name: Verify server starts
-        run: |
-          timeout 5 node dist/index.js < /dev/null 2>&1 | head -1 || true
+      - run: npm audit --audit-level=high
 
   # Publishing is driven by package.json, not by a tag someone remembers to push.
   # A merge to main that changes the version publishes that version; every other

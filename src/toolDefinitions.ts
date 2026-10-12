@@ -377,7 +377,7 @@ export const TOOL_DEFINITIONS = [
         category: { type: 'string', enum: ['skills', 'weapons', 'armors', 'enemies', 'all'], description: 'view "balance": analyse one category instead of all four (default "all")' },
         thresholdSd: { ...ID_TYPE, description: 'view "balance": how many standard deviations from its peers an entry must sit before it is flagged (default 2; raise to see only the worst)' },
         expected: { type: 'string', enum: ['interior', 'dungeon', 'exterior'], description: 'view "metrics": what kind of space this map is meant to be, which sets the dead-space band (default "exterior")' },
-        query: { type: 'string', description: 'view "search": free-text query, e.g. "the blacksmith", "dark forest"' },
+        query: { type: 'string', description: 'view "search": Unicode text matching over names/dialogue/notes, e.g. "the blacksmith". Offline lexical search, no synonym or translation expansion. Check complete, skippedFiles and warnings.' },
         limit: { ...ID_TYPE, description: 'view "search": max results (default 20)' },
         minLen: { ...ID_TYPE, description: 'view "refactor": minimum shared command-run length to report (default 4)' },
         severity: { type: 'string', enum: ['error', 'warning', 'info'], description: 'view "validate": keep only issues of this severity' },
