@@ -44,6 +44,9 @@ function idSet(entities: { id: number }[]): Set<number> {
 
 export function validateProject(index: ProjectIndex): ValidationReport {
   const issues: ValidationIssue[] = [];
+  for (const warning of index.diagnostics?.warnings ?? []) {
+    issues.push({ severity: 'error', category: 'unreadable-data', message: `${warning.file}: ${warning.message}. Analysis is incomplete.` });
+  }
 
   // Existence sets.
   const entityIds: Partial<Record<EntityKind, Set<number>>> = {};

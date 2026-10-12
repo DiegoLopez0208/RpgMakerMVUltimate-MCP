@@ -1,11 +1,14 @@
-import { readFile, writeFile, copyFile, rename, mkdir, readdir, unlink, stat } from 'fs/promises';
+import { readFile, writeFile, copyFile, rename, mkdir, readdir, unlink, stat, open } from 'fs/promises';
 import { dirname, basename, join } from 'path';
+import { randomUUID, createHash } from 'crypto';
 import { resolveSafePath } from './security.js';
 
 /**
  * How many timestamped backups to keep per file (env RPGMV_BACKUP_KEEP, default 10).
  */
 const BACKUP_KEEP = Math.max(1, parseInt(process.env.RPGMV_BACKUP_KEEP || '10', 10) || 10);
+const observedContent = new Map<string, string>();
+const digest = (content: string) => createHash('sha256').update(content).digest('hex');
 
 /**
  * Dry-run mode. When active, mutating writes are recorded instead of performed,
@@ -31,8 +34,10 @@ function getDryRunLog(): { filePath: string; bytes: number }[] {
 }
 
 /** Compact sortable timestamp: YYYYMMDD-HHMMSS-mmm (local time). */
+let lastBackupTime = 0;
 function backupTimestamp(): string {
-  const d = new Date();
+  lastBackupTime = Math.max(Date.now(), lastBackupTime + 1);
+  const d = new Date(lastBackupTime);
   const p = (n: number, w = 2) => String(n).padStart(w, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-` +
     `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(d.getMilliseconds(), 3)}`;
@@ -42,26 +47,27 @@ function backupTimestamp(): string {
  * Copy the current version of a data file into {projectRoot}/.mcp-backups/ with a
  * timestamped name, then prune to the newest BACKUP_KEEP for that file. Data and
  * map files both live under {projectRoot}/data/, so the project root is the file's
- * grandparent directory. Best-effort: never throws (a backup failure must not block
- * the write it protects, and a missing source file just means nothing to back up).
+ * grandparent directory. A backup failure aborts the write; pruning old backups
+ * is best-effort. New files have no previous version to back up.
  */
 async function rotateBackup(filePath: string): Promise<void> {
   try {
     await stat(filePath); // nothing to back up if the file doesn't exist yet
-  } catch {
-    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
   }
   const projectRoot = dirname(dirname(filePath));
-  const backupDir = join(projectRoot, '.mcp-backups');
+  const backupDir = resolveSafePath(projectRoot, '.mcp-backups');
   const name = basename(filePath);
   const dot = name.lastIndexOf('.');
   const base = dot > 0 ? name.slice(0, dot) : name;
   const ext = dot > 0 ? name.slice(dot) : '';
   try {
     await mkdir(backupDir, { recursive: true });
-    await copyFile(filePath, join(backupDir, `${base}.${backupTimestamp()}${ext}`));
-  } catch {
-    return; // if we can't even create the backup, don't block the real write
+    await copyFile(filePath, resolveSafePath(backupDir, `${base}.${backupTimestamp()}-${randomUUID()}${ext}`));
+  } catch (error) {
+    throw new Error('Backup failed; original file was not changed: ' + (error instanceof Error ? error.message : String(error)));
   }
   try {
     const prefix = base + '.';
@@ -81,7 +87,7 @@ async function rotateBackup(filePath: string): Promise<void> {
  * Ordering guarantees:
  *  1. In dry-run, records the intent and returns without touching disk.
  *  2. Rotates a timestamped backup of the current file (keeps the last N).
- *  3. Writes to a `.tmp` sibling, then renames it over the target. rename() is
+ *  3. Writes to a unique `.tmp` sibling, then renames it over the target. rename() is
  *     atomic on the same volume, so an interrupted write can never leave a
  *     half-written JSON in place — the old file survives until the rename.
  * The legacy single-level `.bak` is still produced for backward compatibility.
@@ -92,16 +98,37 @@ async function safeWrite(filePath: string, content: string): Promise<void> {
     console.error(`[DRY-RUN] would write ${filePath}`);
     return;
   }
-  await rotateBackup(filePath);
+  const parent = dirname(filePath);
+  const target = resolveSafePath(parent, basename(filePath));
+  const lockPath = resolveSafePath(parent, '.' + basename(filePath) + '.mcp-write.lock');
+  const lock = await open(lockPath, 'wx').catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'EEXIST') throw new Error('File is locked by another write: ' + filePath + '. If a previous process crashed, verify it has stopped before removing ' + lockPath);
+    throw error;
+  });
+  const tmpPath = resolveSafePath(parent, '.' + basename(filePath) + '.' + randomUUID() + '.tmp');
+  const currentHash = async () => {
+    try { return digest(await readFile(target, 'utf-8')); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+  };
   try {
-    await copyFile(filePath, filePath + '.bak');
-  } catch {
-    // legacy .bak: file may not exist yet
+    await lock.writeFile(JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
+    const before = await currentHash();
+    const observed = observedContent.get(filePath);
+    if (observed !== undefined && before !== observed) {
+      throw new Error('File changed since it was read: ' + filePath + '. Close the editor and read it again before retrying.');
+    }
+    await rotateBackup(target);
+    if (before !== null) await copyFile(target, resolveSafePath(parent, basename(filePath) + '.bak'));
+    await writeFile(tmpPath, content, { encoding: 'utf-8', flag: 'wx' });
+    if (await currentHash() !== before) throw new Error('File changed during the write; original was not replaced: ' + filePath);
+    await rename(tmpPath, target);
+    observedContent.set(filePath, digest(content));
+    console.error(`[WRITE] ${filePath}`);
+  } finally {
+    await unlink(tmpPath).catch(() => {});
+    await lock.close();
+    await unlink(lockPath);
   }
-  const tmpPath = filePath + '.tmp';
-  await writeFile(tmpPath, content, 'utf-8');
-  await rename(tmpPath, filePath);
-  console.error(`[WRITE] ${filePath}`);
 }
 
 /**
@@ -130,6 +157,7 @@ function getMapPath(projectPath: string, mapId: number) {
 async function readJson(projectPath: string, filename: string) {
     const filePath = getDataPath(projectPath, filename);
     const content = await readFile(filePath, 'utf-8');
+    observedContent.set(filePath, digest(content));
     return JSON.parse(content.replace(/^\uFEFF/, '')) as unknown;
 }
 
@@ -184,14 +212,38 @@ function nextId(array: unknown[]): number {
 
 /**
  * Validate that the RPG Maker MV project path is valid.
- * Checks that data/System.json exists (essential project file).
+ * Checks JSON and known System fields; accepts data-only projects. This is not
+ * a guarantee that all assets, maps, plugins, or an executable engine are present.
  * @param {string} projectPath - The project root path to validate
  * @returns {Promise<boolean>} True if valid project path
  */
 async function validateProjectPath(projectPath: string): Promise<boolean> {
   try {
     const systemPath = getDataPath(projectPath, 'System.json');
-    await readFile(systemPath, 'utf-8');
+    const system = JSON.parse((await readFile(systemPath, 'utf-8')).replace(/^\uFEFF/, '')) as unknown;
+    if (!system || typeof system !== 'object' || Array.isArray(system)) return false;
+    const fields = system as Record<string, unknown>;
+    if ('gameTitle' in fields && typeof fields.gameTitle !== 'string') return false;
+    for (const key of ['switches', 'variables']) {
+      if (key in fields && (!Array.isArray(fields[key]) || !(fields[key] as unknown[]).every(v => v === null || typeof v === 'string'))) return false;
+    }
+    for (const key of ['startMapId', 'startX', 'startY']) {
+      if (key in fields && (!Number.isInteger(fields[key]) || Number(fields[key]) < (key === 'startMapId' ? 1 : 0))) return false;
+    }
+    // Data-only fixtures are supported. If engine code exists, refuse MZ.
+    try {
+      await readFile(resolveSafePath(projectPath, 'js', 'rmmz_core.js'), 'utf-8');
+      return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    try {
+      const core = await readFile(resolveSafePath(projectPath, 'js', 'rpg_core.js'), 'utf-8');
+      const engine = core.match(/Utils\.RPGMAKER_NAME\s*=\s*['"]([^'"]+)['"]/);
+      if (engine && engine[1] !== 'MV') return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
     return true;
   } catch (_) {
     return false;

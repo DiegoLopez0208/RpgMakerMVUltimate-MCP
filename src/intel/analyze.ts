@@ -22,7 +22,8 @@ import { critiqueMap, type CritiqueEvent } from "./critique.js";
 import { computeMapMetrics, type MetricEvent } from "./mapMetrics.js";
 import { analyseBalance } from "./balance.js";
 import { detectDuplicates, type RefactorSource } from "./refactor.js";
-import { gatherDocuments, rankDocuments } from "./search.js";
+import { gatherSearchIndex, rankDocuments } from "./search.js";
+import { diagnosticReader } from './readDiagnostics.js';
 
 type Args = Record<string, unknown>;
 
@@ -84,9 +85,9 @@ function metricEvents(map: Record<string, unknown>): MetricEvent[] {
 }
 
 /** Every event-page and common-event command list, labelled, for refactor analysis. */
-async function gatherCommandSources(projectPath: string): Promise<RefactorSource[]> {
+async function gatherCommandSources(projectPath: string) {
   const sources: RefactorSource[] = [];
-  const safe = async (f: string) => { try { return await readJson(projectPath, f); } catch { return null; } };
+  const { read: safe, diagnostics } = diagnosticReader(projectPath);
 
   const commons = await safe("CommonEvents.json");
   if (Array.isArray(commons)) {
@@ -115,7 +116,7 @@ async function gatherCommandSources(projectPath: string): Promise<RefactorSource
       }
     }
   }
-  return sources;
+  return { sources, diagnostics };
 }
 
 export async function analyzeProject(projectPath: string, args: Args): Promise<unknown> {
@@ -134,12 +135,14 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
   if (view === "search") {
     const query = String(args.query ?? "");
     if (!query.trim()) throw new Error('view "search" requires a non-empty query');
-    const docs = await gatherDocuments(projectPath);
-    return { query, results: rankDocuments(docs, query, args.limit ? num(args.limit) : 20) };
+    const { docs, diagnostics } = await gatherSearchIndex(projectPath);
+    const results = rankDocuments(docs, query, args.limit ? num(args.limit) : 20);
+    return { query, results, searchMode: 'lexical', ...diagnostics,
+      ...(results.length === 0 ? { noResultsReason: diagnostics.complete ? 'No text matched; synonyms and translations are not expanded.' : 'No text matched in the readable files; inspect skippedFiles and warnings.' } : {}) };
   }
   if (view === "refactor") {
-    const sources = await gatherCommandSources(projectPath);
-    return detectDuplicates(sources, args.minLen ? num(args.minLen) : 4);
+    const { sources, diagnostics } = await gatherCommandSources(projectPath);
+    return { ...detectDuplicates(sources, args.minLen ? num(args.minLen) : 4), ...diagnostics };
   }
   if (view === "critique") {
     const mapId = num(args.mapId);
@@ -195,12 +198,14 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
         start: index.start,
         counts: index.counts,
         health: report.bySeverity,
+        ...index.diagnostics,
         topIssues: report.issues.slice(0, 15),
         unreachableMaps: unreachableMaps(index),
       };
     }
     case "index":
       return {
+        ...index.diagnostics,
         gameTitle: index.gameTitle,
         start: index.start,
         counts: index.counts,
@@ -213,24 +218,24 @@ export async function analyzeProject(projectPath: string, args: Args): Promise<u
       const report = await validateWithAssets(projectPath, index);
       const filter = args.severity ? String(args.severity) as Severity : undefined;
       const issues = filter ? report.issues.filter((i) => i.severity === filter) : report.issues;
-      return { issueCount: issues.length, bySeverity: report.bySeverity, issues };
+      return { issueCount: issues.length, bySeverity: report.bySeverity, issues, ...index.diagnostics };
     }
     case "graph":
-      return { ...buildMapGraph(index), reachableFromStart: reachableMaps(index, index.start.mapId), unreachable: unreachableMaps(index) };
+      return { ...buildMapGraph(index), reachableFromStart: reachableMaps(index, index.start.mapId), unreachable: unreachableMaps(index), ...index.diagnostics };
     case "usage": {
       const kind = KIND_MAP[String(args.kind)];
       if (!kind) throw new Error(`Unknown kind "${args.kind}". Valid: ${Object.keys(KIND_MAP).join(", ")}`);
       const id = num(args.id);
       if (!id) throw new Error('view "usage" requires a numeric id');
-      return { kind: args.kind, id, usedBy: findUsage(index, kind, id) };
+      return { kind: args.kind, id, usedBy: findUsage(index, kind, id), ...index.diagnostics };
     }
     case "explain": {
       const target = String(args.target ?? "switch");
       const id = num(args.id);
       if (!id) throw new Error('view "explain" requires a numeric id');
-      if (target === "switch") return explainSwitch(index, id);
-      if (target === "variable") return explainVariable(index, id);
-      if (target === "map") return { ...whatBreaksIfMapRemoved(index, id), reachableFrom: reachableMaps(index, id) };
+      if (target === "switch") return { ...explainSwitch(index, id), ...index.diagnostics };
+      if (target === "variable") return { ...explainVariable(index, id), ...index.diagnostics };
+      if (target === "map") return { ...whatBreaksIfMapRemoved(index, id), reachableFrom: reachableMaps(index, id), ...index.diagnostics };
       throw new Error(`Unknown target "${target}". Valid: switch, variable, map`);
     }
     default:

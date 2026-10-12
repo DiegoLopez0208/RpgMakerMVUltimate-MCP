@@ -54,9 +54,9 @@ async function getProjectSummary(projectPath: string): Promise<ProjectSummary> {
 
 async function setProjectPath(newPath: string) {
   const valid = await validateProjectPath(newPath);
-  if (!valid) throw new Error('Invalid project path: ' + newPath + '. Must contain data/System.json');
+  if (!valid) throw new Error('Invalid MV project path: ' + newPath + '. Expected readable, valid data/System.json with valid System fields; MZ projects and paths escaping through links are refused.');
   _currentProjectPath = newPath;
-  return { projectPath: newPath, valid: true };
+  return { projectPath: newPath, valid: true, validation: 'System data checked; use analyze_project view validate and run_playtest to check the rest of the project.' };
 }
 
 export { getProjectSummary };

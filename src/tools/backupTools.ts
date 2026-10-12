@@ -6,11 +6,10 @@
  * replaces is backed up too and a restore can be undone the same way.
  */
 import { readFile, readdir, stat } from 'fs/promises';
-import { join } from 'path';
 import { getDataPath, safeWrite } from '../utils/fileHandler.js';
 import { resolveSafePath } from '../utils/security.js';
 
-const BACKUP_NAME = /^(.+)\.(\d{8}-\d{6}-\d{3})(\.[^.]+)?$/;
+const BACKUP_NAME = /^(.+)\.(\d{8}-\d{6}-\d{3}(?:-[0-9a-f-]{36})?)(\.[^.]+)?$/;
 
 export interface BackupInfo { id: string; bytes: number; path: string; }
 export interface BackedUpFile { file: string; backups: BackupInfo[]; }
@@ -26,7 +25,7 @@ export async function listBackups(projectPath: string, file?: string): Promise<{
     if (!match) continue;
     const original = match[1] + (match[3] ?? '');
     if (file !== undefined && original !== file) continue;
-    const path = join(dir, name);
+    const path = resolveSafePath(dir, name);
     const info = await stat(path).catch(() => null);
     if (!info?.isFile()) continue;
     const list = groups.get(original) ?? [];

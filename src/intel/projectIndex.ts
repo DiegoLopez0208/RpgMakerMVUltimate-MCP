@@ -11,8 +11,10 @@
  * Roadmap #1 (Comprensión del proyecto).
  */
 
-import { readFile, readdir, stat } from "fs/promises";
+import { readdir, stat } from "fs/promises";
 import path from "path";
+import { getDataPath } from "../utils/fileHandler.js";
+import { diagnosticReader, type ReadDiagnostics } from "./readDiagnostics.js";
 import {
   extractRefs, extractRefsFromMany, extractWrites, extractWritesFromMany,
   extractReads, extractReadsFromMany, type RefSet, type WriteSet, type ReadSet,
@@ -106,24 +108,12 @@ export interface ProjectIndex {
   variables: NamedSlot[];
   refSources: RefSource[];
   counts: Record<string, number>;
+  diagnostics?: ReadDiagnostics;
 }
 
 function num(v: unknown, d = 0): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
-}
-
-function stripBom(s: string): string {
-  return s.replace(/^﻿/, "");
-}
-
-async function readJsonSafe(dir: string, file: string): Promise<unknown> {
-  try {
-    const content = await readFile(path.join(dir, file), "utf-8");
-    return JSON.parse(stripBom(content));
-  } catch {
-    return null;
-  }
 }
 
 /** Cheap fingerprint of the data directory: file names + mtimes. */
@@ -203,10 +193,10 @@ function scanTransfers(mapId: number, eventId: number | null, lists: RawCommand[
   return transfers;
 }
 
-async function buildMap(dataDir: string, info: Record<string, unknown>, refSources: RefSource[]): Promise<IndexedMap> {
+async function buildMap(read: (file: string) => Promise<unknown>, info: Record<string, unknown>, refSources: RefSource[]): Promise<IndexedMap> {
   const id = num(info.id);
   const file = `Map${String(id).padStart(3, "0")}.json`;
-  const raw = (await readJsonSafe(dataDir, file)) as Record<string, unknown> | null;
+  const raw = (await read(file)) as Record<string, unknown> | null;
   const base: IndexedMap = {
     id,
     name: String(info.name ?? ""),
@@ -271,22 +261,23 @@ let cache: ProjectIndex | null = null;
  * bypass the cache.
  */
 export async function getProjectIndex(projectPath: string, force = false): Promise<ProjectIndex> {
-  const dataDir = path.join(projectPath, "data");
+  const dataDir = getDataPath(projectPath, "");
   const { signature } = await dataSignature(dataDir);
   if (!force && cache && cache.projectPath === projectPath && cache.signature === signature) {
     return cache;
   }
 
   const refSources: RefSource[] = [];
+  const { read, diagnostics } = diagnosticReader(projectPath);
 
   // Databases
   const entities = {} as Record<EntityKind, IndexedEntity[]>;
   for (const kind of Object.keys(ENTITY_FILES) as EntityKind[]) {
-    entities[kind] = indexEntityArray(await readJsonSafe(dataDir, ENTITY_FILES[kind]));
+    entities[kind] = indexEntityArray(await read(ENTITY_FILES[kind]));
   }
 
   // Troop battle-event pages contribute references too.
-  const troopsRaw = (await readJsonSafe(dataDir, "Troops.json")) as unknown[] | null;
+  const troopsRaw = (await read("Troops.json")) as unknown[] | null;
   if (Array.isArray(troopsRaw)) {
     for (const t of troopsRaw) {
       if (!t || typeof t !== "object") continue;
@@ -299,7 +290,7 @@ export async function getProjectIndex(projectPath: string, force = false): Promi
   }
 
   // Common events
-  const commonRaw = (await readJsonSafe(dataDir, "CommonEvents.json")) as unknown[] | null;
+  const commonRaw = (await read("CommonEvents.json")) as unknown[] | null;
   const commonEvents: IndexedCommonEvent[] = [];
   if (Array.isArray(commonRaw)) {
     for (const ce of commonRaw) {
@@ -314,19 +305,19 @@ export async function getProjectIndex(projectPath: string, force = false): Promi
   }
 
   // System
-  const system = (await readJsonSafe(dataDir, "System.json")) as Record<string, unknown> | null;
+  const system = (await read("System.json")) as Record<string, unknown> | null;
   const gameTitle = String(system?.gameTitle ?? "");
   const start = { mapId: num(system?.startMapId), x: num(system?.startX), y: num(system?.startY) };
   const switches = namedSlots(system?.switches);
   const variables = namedSlots(system?.variables);
 
   // Maps
-  const mapInfos = (await readJsonSafe(dataDir, "MapInfos.json")) as unknown[] | null;
+  const mapInfos = (await read("MapInfos.json")) as unknown[] | null;
   const maps: IndexedMap[] = [];
   if (Array.isArray(mapInfos)) {
     for (const info of mapInfos) {
       if (!info || typeof info !== "object") continue;
-      maps.push(await buildMap(dataDir, info as Record<string, unknown>, refSources));
+      maps.push(await buildMap(read, info as Record<string, unknown>, refSources));
     }
   }
   maps.sort((a, b) => a.id - b.id);
@@ -353,6 +344,7 @@ export async function getProjectIndex(projectPath: string, force = false): Promi
     variables,
     refSources,
     counts,
+    diagnostics,
   };
   cache = index;
   return index;

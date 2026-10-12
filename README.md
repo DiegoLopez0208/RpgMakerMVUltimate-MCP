@@ -2,26 +2,26 @@
 
 # 🎮 RPG Maker MV Ultimate
 
-### An AI copilot that builds, understands and *watches* your RPG Maker MV game
+### Find why an MV event never fires — then verify the fix in the real engine
 
 [![npm](https://img.shields.io/npm/v/rpgmaker-mv-mcp?logo=npm&color=cb3837)](https://www.npmjs.com/package/rpgmaker-mv-mcp)
 [![downloads](https://img.shields.io/npm/dm/rpgmaker-mv-mcp?color=blue)](https://www.npmjs.com/package/rpgmaker-mv-mcp)
 [![CI](https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/actions/workflows/ci.yml)
 [![MCP Registry](https://img.shields.io/badge/MCP-registry-6E56CF)](https://registry.modelcontextprotocol.io)
-[![node](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![node](https://img.shields.io/badge/node-%E2%89%A520.19-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/rpgmaker-mv-mcp?color=green)](LICENSE)
 
 <a href="docs/promo.mp4"><img src="docs/promo-preview.gif" width="300" alt="24-second tour: the agent generates a map inside the editor, finds a switch that is never set ON, and hot-reloads a running game"></a>
 
 <sub>24-second tour, <a href="docs/promo.mp4">click for the video with sound</a>. Telemetry and analysis output in the video are illustrative examples.</sub>
 
-**[Quick start](#-quick-start) · [What it does](#-what-it-does) · [Map generation](#️-map-generation) · [Live bridge](#-the-live-bridge) · [Intelligence](#-project-intelligence) · [Tools](#-the-13-tools)**
+**[Quick start](#-quick-start) · [First useful result](docs/first-result.md) · [Map generation](#️-map-generation) · [Live bridge](#-the-live-bridge) · [Intelligence](#-project-intelligence) · [Tools](#-the-18-tools)**
 
 </div>
 
 ---
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent work on a **real RPG Maker MV project on disk** — database, maps, events, plugins, system — through **17 consolidated tools** validated against the actual engine, so what comes out is coherent and playable.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent inspect and edit a **real RPG Maker MV project on disk** through **18 consolidated tools**. Find broken references and switch conditions, build events with MV-compatible commands, and run repeatable playtests. Generated data still needs validation in your game's tilesets and plugins.
 
 It does three things that are usually missing:
 
@@ -34,6 +34,16 @@ It does three things that are usually missing:
 <br>
 
 ## ⚡ Quick start
+
+Install **Node.js 20.19.0 or newer**, and close the MV editor before asking the agent to edit project files. Start with a copy of your project.
+
+Check the environment before adding the server (PowerShell on Windows):
+
+```powershell
+npx.cmd -y rpgmaker-mv-mcp --doctor "C:/path/to/your/RPGMakerMV/project"
+```
+
+`coreReady: true` means Node and System data checks pass. `headlessReady: true` additionally means Playwright and Chromium are available. The check does not start a browser or certify assets/plugins. Bridge warnings do not block offline queries. Missing Chromium: run `npx.cmd playwright install chromium-headless-shell`, or set `RPGMAKER_MCP_CHROMIUM` to your Chrome executable.
 
 **1 — Add it to your MCP client.** No clone needed; the package ships an executable.
 
@@ -85,6 +95,8 @@ analyze_project     { view: "overview" }      → health, counts, unreachable ma
 ```
 
 Works with Claude Desktop, Claude Code, opencode, and any MCP-compatible client.
+
+For Codex CLI, use `codex mcp add rpgmaker --env RPGMAKER_PROJECT_PATH=C:/path/to/project -- npx -y rpgmaker-mv-mcp`. In Windows clients that cannot launch `npx`, use the command `cmd` with arguments `["/c", "npx", "-y", "rpgmaker-mv-mcp"]`. Restart the client, then try the [three first-result recipes](docs/first-result.md).
 
 <br>
 
@@ -207,7 +219,7 @@ sequenceDiagram
 | `metrics` | The same map **measured** — see below |
 | `balance` | Database entries that are out of line with their peers — see below |
 | `refactor` | Command sequences copy-pasted across events, worth extracting into a Common Event |
-| `search` | Find things by meaning across names, dialogue and descriptions |
+| `search` | Offline Unicode text matching across names, dialogue, descriptions and notes; no synonym or translation expansion |
 | `index` | The structured digest the other views are built on |
 
 <details>
@@ -248,6 +260,12 @@ Damage formulas are **parsed, never executed** (tokenise → shunting-yard → e
 Narrow with `category`, loosen or tighten with `thresholdSd` (default 2).
 
 </details>
+
+### When a search returns nothing
+
+Search returns `searchMode: "lexical"`, `complete`, `indexedFiles`, `skippedFiles` and `warnings`. `complete: false` means some data could not be read; it does not mean the game contains no matching content. An empty result includes `noResultsReason`. Use a name or phrase actually present in the project: `herrero` does not translate into `Blacksmith`. Unicode names, including Japanese, are supported. A database query for an absent ID can return `null`; inspect it before using that ID.
+
+Index, overview, validation, graph, usage, explain and refactor also report incomplete input. Unreadable files appear as validation errors.
 
 ### Offline map inspection
 
@@ -298,7 +316,7 @@ proposed command lists. See [Event command authoring](docs/event-commands.md) fo
 the supported kinds, nesting rules, MV-specific differences, and verification.
 
 - **Atomic.** Every write goes to a temp file and is renamed over the target, so an interrupted call can never leave half-written JSON.
-- **Backed up.** Rotated timestamped copies under `.mcp-backups/` (last N, `RPGMV_BACKUP_KEEP`, default 10).
+- **Backed up.** Rotated timestamped copies under `.mcp-backups/` (last N, `RPGMV_BACKUP_KEEP`, default 10). A backup failure aborts replacement. Writes use unique temporary files and exclusive per-file locks; changes detected since a data read are refused. Close the editor: it does not honor MCP locks, and multi-file operations are not transactions.
 - **Previewable.** Pass `dryRun: true` to any mutating tool to see exactly what it would write, without touching disk.
 
 > ⚠️ **Close the RPG Maker editor while an agent is working.** The editor holds the project in memory and will overwrite changes when it saves.
