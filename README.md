@@ -11,6 +11,10 @@
 [![node](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/rpgmaker-mv-mcp?color=green)](LICENSE)
 
+<a href="docs/promo.mp4"><img src="docs/promo-preview.gif" width="300" alt="24-second tour: the agent generates a map inside the editor, finds a switch that is never set ON, and hot-reloads a running game"></a>
+
+<sub>24-second tour, <a href="docs/promo.mp4">click for the video with sound</a>. Telemetry and analysis output in the video are illustrative examples.</sub>
+
 **[Quick start](#-quick-start) · [What it does](#-what-it-does) · [Map generation](#️-map-generation) · [Live bridge](#-the-live-bridge) · [Intelligence](#-project-intelligence) · [Tools](#-the-13-tools)**
 
 </div>
