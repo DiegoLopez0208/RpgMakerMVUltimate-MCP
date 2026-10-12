@@ -20,7 +20,9 @@ For an MCP client, use `docker` as the command with these arguments:
 
 Use an absolute host path (on Windows, e.g. `C:/Games/MyProject`). The mounted
 project must be writable by the container user for editing. Do not allocate a
-TTY (`-t`): this is a stdio MCP server. Without a mount and project environment
+TTY (`-t`): this is a stdio MCP server. On Linux, add `--user` with your host UID
+and GID (e.g. `1000:1000`) if needed to match bind-mount permissions. Without a
+mount and project environment
 variable, discovery and pure builders work; project operations request a project.
 The image does not include Chromium or the RPG Maker engine. Browser playtests
 require a separately configured browser and a runnable project.

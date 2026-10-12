@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -24,12 +24,11 @@ try {
   await mkdir(path.join(project, 'data'));
   await writeFile(path.join(project, 'data/System.json'), JSON.stringify({ gameTitle: 'Docker fixture', switches: ['', 'Door'], variables: ['', 'Count'] }));
   await writeFile(path.join(project, 'data/Map001.json'), JSON.stringify({ width: 4, height: 4, data: [], events: [null, { id: 1, name: 'Door', x: 1, y: 1, pages: [{ list: [{ code: 0, indent: 0, parameters: [] }] }] }] }));
-  // Only this disposable fixture is made writable across host/container UIDs.
-  for (const dir of [project, path.join(project, 'data')]) await chmod(dir, 0o777);
-  for (const file of ['System.json', 'Map001.json']) await chmod(path.join(project, 'data', file), 0o666);
   for (const mounted of [false, true]) {
     const transport = new StdioClientTransport({ command: 'docker', args: [
       'run', '--rm', '-i',
+      // Linux bind mounts preserve UIDs; match the host for this writable fixture.
+      ...(mounted && process.platform === 'linux' ? ['--user', `${process.getuid()}:${process.getgid()}`] : []),
       ...(mounted ? ['--mount', `type=bind,source=${project},target=/app/project`, '-e', 'RPGMAKER_PROJECT_PATH=/app/project'] : []),
       image
     ], stderr: 'pipe' });
