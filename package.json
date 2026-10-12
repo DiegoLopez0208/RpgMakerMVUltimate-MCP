@@ -1,7 +1,7 @@
 {
   "name": "rpgmaker-mv-mcp",
   "version": "5.21.0",
-  "description": "RPG Maker MV Copilot — MCP tools to debug events, edit maps, and playtest RPG Maker MV projects.",
+  "description": "RPG Maker MV Copilot MCP — Debug events, edit maps, and playtest RPG Maker MV projects with AI.",
   "keywords": [
     "mcp",
     "model-context-protocol",
