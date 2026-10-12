@@ -1,6 +1,6 @@
 ---
 name: rpgmaker-mv-mcp
-description: "Use when building, editing or reasoning about an RPG Maker MV game through the RpgMakerMVUltimate MCP server (tools prefixed rpgmaker_* / the 18 consolidated tools: query_database, create_database_entry, generate_map, manage_map_event, analyze_project, etc.). Covers the correct workflow so maps, NPCs, chests, shops, doors, enemies and battles actually work in-engine, plus analyze_project to understand/validate/critique a project. Trigger: RPG Maker MV, RPGMV, generate map, town/dungeon, troops/encounters, events, tilesets, validate project, why doesn't this work, ProjectR."
+description: "Use when building, editing or reasoning about an RPG Maker MV game through the RPG Maker MV Copilot MCP server (tools prefixed rpgmaker_* / the 18 consolidated tools: query_database, create_database_entry, generate_map, manage_map_event, analyze_project, etc.). Covers the correct workflow so maps, NPCs, chests, shops, doors, enemies and battles actually work in-engine, plus analyze_project to understand/validate/critique a project. Trigger: RPG Maker MV, RPGMV, generate map, town/dungeon, troops/encounters, events, tilesets, validate project, why doesn't this work, ProjectR."
 ---
 
 # Driving the RPG Maker MV MCP correctly

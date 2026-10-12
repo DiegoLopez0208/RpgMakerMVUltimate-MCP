@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.DiegoLopez0208/rpgmaker-mv-ultimate",
-  "title": "RPG Maker MV Ultimate MCP",
-  "description": "RPG Maker MV Ultimate: AI copilot to generate, edit and understand RPG Maker MV projects (MCP)",
+  "title": "RPG Maker MV Copilot MCP",
+  "description": "MCP tools to debug events, edit maps, and playtest RPG Maker MV projects.",
   "version": "5.21.0",
   "repository": {
     "url": "https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP",
