@@ -11,9 +11,9 @@
 [![node](https://img.shields.io/badge/node-%E2%89%A520.19-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/rpgmaker-mv-mcp?color=green)](LICENSE)
 
-<a href="docs/promo.mp4"><img src="docs/promo-preview.gif" width="300" alt="24-second tour: the agent generates a map inside the editor, finds a switch that is never set ON, and hot-reloads a running game"></a>
+<a href="https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/releases/download/v5.21.0/door-demo.mp4"><img src="https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/releases/download/v5.21.0/door-demo.gif" width="500" alt="Find an unset door switch, preview the fix, and verify the event page in RPG Maker MV 1.6.1"></a>
 
-<sub>24-second tour, <a href="docs/promo.mp4">click for the video with sound</a>. Telemetry and analysis output in the video are illustrative examples.</sub>
+<sub>30-second silent workflow: a visual replay of verified MCP calls and a real MV 1.6.1 playtest. <a href="https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/releases/download/v5.21.0/door-demo-evidence.json">Inspect the evidence</a>.</sub>
 
 **[Quick start](#-quick-start) · [First useful result](docs/first-result.md) · [Map generation](#️-map-generation) · [Live bridge](#-the-live-bridge) · [Intelligence](#-project-intelligence) · [Tools](#tools)**
 
@@ -38,6 +38,10 @@ It does three things that are usually missing:
 Install **Node.js 20.19.0 or newer**, and close the MV editor before asking the agent to edit project files. Start with a copy of your project.
 
 For containers and directory hosting, see [Docker and Glama build configuration](docs/docker.md).
+
+**Windows x64 MCPB bundle:** [download v5.21.0](https://github.com/DiegoLopez0208/RpgMakerMVUltimate-MCP/releases/download/v5.21.0/rpgmaker-mv-copilot-mcp-5.21.0-win32-x64.mcpb) for a compatible MCPB client. See [bundle requirements and verification](docs/distribution.md). The npm setup below works across supported operating systems.
+
+Find the project on [itch.io](https://bycht.itch.io/rpgmaker-mv-copilot-mcp) and [Smithery](https://smithery.ai/servers/lopezdiegog26/rpgmaker-mv-copilot-mcp).
 
 Check the environment before adding the server (PowerShell on Windows):
 
