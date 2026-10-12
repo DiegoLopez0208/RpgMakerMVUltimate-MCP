@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎮 RPG Maker MV Ultimate
+# 🎮 RPG Maker MV Copilot
 
 ### Find why an MV event never fires — then verify the fix in the real engine
 

@@ -1,7 +1,7 @@
 {
   "name": "rpgmaker-mv-mcp",
   "version": "5.21.0",
-  "description": "RPG Maker MV Ultimate — AI copilot (MCP) for RPG Maker MV: generate maps, edit the database and events, and understand your project — validate broken references, explain why an event never fires, critique maps, and search names and dialogue offline.",
+  "description": "RPG Maker MV Copilot — MCP tools to debug events, edit maps, and playtest RPG Maker MV projects.",
   "keywords": [
     "mcp",
     "model-context-protocol",
